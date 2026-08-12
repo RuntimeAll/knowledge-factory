@@ -8,6 +8,13 @@
 # testing
 /coverage
 
+# Python 侧车环境（AI:PRD-003 · 003-B）
+# 🔴 环境不入 git，requirements.txt 入 git —— 装法见 sidecar/README.md
+/sidecar/.venv-sidecar/
+sidecar/.venv-sidecar/
+__pycache__/
+*.pyc
+
 # database
 # 🔴 本地 SQLite 库全部落在 data/，整目录不入 git（库文件 + WAL + 备份）
 /data/

@@ -1,0 +1,11 @@
+# Python 侧车依赖（AI:PRD-003 · 003-B）—— 🔴 版本钉死（==），不接受浮动
+#
+# 为什么钉死：分词结果与实算判定是**入库数据的一部分**（stem_plain 进 FTS、
+# calc_verify 结论进 solution_grade 判档）。依赖一浮动，同一道题今天 verified
+# 明天 cannot_verify，而库里已经落了旧结论——那是最难查的一类数据漂移。
+# 升级走「改这里 → 重装 → 跑 pnpm test → 看 sidecar 三态用例还绿不绿」，不图省事。
+#
+# 装法见 README.md（本目录）。
+jieba==0.42.1
+sympy==1.14.0
+mpmath==1.3.0
