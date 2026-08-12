@@ -1,0 +1,302 @@
+{
+  "_说明": [
+    "AI:PRD-003 · 003-E 录题管道金标料（REG-C2 / REG-C4）。",
+    "🔴 全部是真题拷贝，逐条注明来源（见每条的 来源 字段）。改动只有两处，且都写在 来源 里：",
+    "  · 坏料②：真题面前面加了「变式 1：」——就是要试指令词闸；",
+    "  · 坏料④/实算-错答案：只动了考点 id / 答案数字——就是要试那道闸。",
+    "🔴 好料一律取**未入库**的真题（打卡册 day4 / 群卷第二天 no.6-12）：种子集那 61 道已经在库里，",
+    "   拿它们当好料会顺带撞查重闸，一份料同时亮两盏红灯，就分不清是哪道闸拦的。",
+    "🔴 坏料③反过来：它就是要撞查重，所以用的是**已入库**的种子集 seq=1。",
+    "   ⇒ 本文件的基准依赖「种子集已入库」这个事实。库被清空后 REG-C2 会红 —— 红对了：",
+    "     那说明库不是收卡时那个库，该去查为什么，不是回来改金标。",
+    "解析（analysis）字段：好料与坏料的解析**都不是**源文件里的（源里没有解析）——",
+    "  实算组那三条的解析是为了试逐行恒等闸**按真题的真答案**写的正确链条，",
+    "  中间行错那条是照 2026-07-30 事故（举一反三产物/解题模型库/_验算/逐行恒等校验.py 文件头）复刻的错链条。"
+  ],
+
+  "金标": {
+    "基准": {
+      "counts": { "total": 10, "accepted": 6, "queued": 0, "rejected": 4 },
+      "逐题": [
+        {
+          "seq": 1,
+          "verdict": "accepted",
+          "code": null,
+          "solutionGrade": "analysis_only",
+          "来源": "举一反三产物/打卡/七上绝对值压轴突破/_源/punch_days.json · day4 第1题（未入库）"
+        },
+        {
+          "seq": 2,
+          "verdict": "accepted",
+          "code": null,
+          "solutionGrade": "analysis_only",
+          "来源": "同上 · day4 第3题（未入库）"
+        },
+        {
+          "seq": 3,
+          "verdict": "accepted",
+          "code": null,
+          "solutionGrade": "analysis_only",
+          "来源": "同上 · day4 第5题（未入库）"
+        },
+        {
+          "seq": 4,
+          "verdict": "accepted",
+          "code": null,
+          "solutionGrade": "analysis_only",
+          "来源": "同上 · day4 第7题（未入库）"
+        },
+        {
+          "seq": 5,
+          "verdict": "accepted",
+          "code": null,
+          "solutionGrade": "calc_verified",
+          "来源": "订阅特训/群打卡/第01期/混合运算/第二天/题单.json · no=6（未入库）"
+        },
+        {
+          "seq": 6,
+          "verdict": "accepted",
+          "code": null,
+          "solutionGrade": "calc_verified",
+          "来源": "同上 · no=7（未入库）"
+        },
+        {
+          "seq": 7,
+          "verdict": "rejected",
+          "code": "KP_NOT_FOUND",
+          "solutionGrade": null,
+          "来源": "打卡册 day4 第2题（未入库）· 坏料①：考点名换成编的「绝对值宇宙无敌考点」"
+        },
+        {
+          "seq": 8,
+          "verdict": "rejected",
+          "code": "STEM_HAS_META_WORD",
+          "solutionGrade": null,
+          "来源": "种子集 seq=1 · 坏料②：题面前面加「变式 1：」"
+        },
+        {
+          "seq": 9,
+          "verdict": "rejected",
+          "code": "DUPLICATE",
+          "solutionGrade": null,
+          "来源": "种子集 seq=1 · 坏料③：一个字没改，原样再投（它已入库）"
+        },
+        {
+          "seq": 10,
+          "verdict": "rejected",
+          "code": "KP_ID_NOT_FOUND",
+          "solutionGrade": null,
+          "来源": "打卡册 day4 第4题（未入库）· 坏料④：kp_id 是编的"
+        }
+      ]
+    },
+    "payload": {
+      "contract": "kb-ingest/v1",
+      "source": "ingest-golden@20260813",
+      "items": [
+        {
+          "seq": 1,
+          "stem": "若 |x|=|-7|，则 x=________。",
+          "answer": "x=±7",
+          "qtype": "填空",
+          "kps": [{ "ref": "已知绝对值求原数" }],
+          "prov": { "type": "pipeline", "pipelineRef": "ingest-golden@20260813" }
+        },
+        {
+          "seq": 2,
+          "stem": "当 x=______ 时，|x+5|+4 有最小值，且最小值是 ______。",
+          "answer": "x=-5，最小值 4",
+          "qtype": "填空",
+          "kps": [{ "ref": "绝对值的性质与非负性" }],
+          "prov": { "type": "pipeline", "pipelineRef": "ingest-golden@20260813" }
+        },
+        {
+          "seq": 3,
+          "stem": "若 |a+5|+|b-1/5|=0，则 a²⁰²⁵b²⁰²⁵=______。",
+          "answer": "-1",
+          "qtype": "填空",
+          "kps": [{ "ref": "绝对值的性质与非负性" }],
+          "prov": { "type": "pipeline", "pipelineRef": "ingest-golden@20260813" }
+        },
+        {
+          "seq": 4,
+          "stem": "数轴上表示 3 与 -8 的两点之间的距离可表示为 |3-(-8)|=______；数轴上到表示 3 的点的距离为 4 的点所表示的数是 ______。",
+          "answer": "11；-1 或 7",
+          "qtype": "填空",
+          "kps": [{ "ref": "绝对值的几何意义与数轴距离" }],
+          "prov": { "type": "pipeline", "pipelineRef": "ingest-golden@20260813" }
+        },
+        {
+          "seq": 5,
+          "stem": "\\(-13+\\left(-16\\right)-\\left(-7\\right)+\\left|-18\\right|\\)",
+          "answer": "-4",
+          "qtype": "计算",
+          "kps": [{ "ref": "含绝对值的有理数混合运算" }],
+          "prov": { "type": "pipeline", "pipelineRef": "ingest-golden@20260813" }
+        },
+        {
+          "seq": 6,
+          "stem": "\\((-1)^{2024}\\times9+(-5)^{2}\\div5\\)",
+          "answer": "14",
+          "qtype": "计算",
+          "kps": [{ "ref": "有理数乘方的运算与符号判定" }],
+          "prov": { "type": "pipeline", "pipelineRef": "ingest-golden@20260813" }
+        },
+        {
+          "seq": 7,
+          "stem": "若 |a|=6，|b|=2，且 a<b，求 a-b 的值。",
+          "answer": "由 |a|=6 得 a=±6，由 |b|=2 得 b=±2。",
+          "qtype": "解答",
+          "kps": [{ "ref": "绝对值宇宙无敌考点" }],
+          "prov": { "type": "pipeline", "pipelineRef": "ingest-golden@20260813" }
+        },
+        {
+          "seq": 8,
+          "stem": "变式 1：若 |x-3|=5，则 x=________。",
+          "answer": "x₁=-2，x₂=8",
+          "qtype": "填空",
+          "kps": [{ "ref": "已知绝对值求原数" }],
+          "prov": { "type": "pipeline", "pipelineRef": "ingest-golden@20260813" }
+        },
+        {
+          "seq": 9,
+          "stem": "若 |x-3|=5，则 x=________。",
+          "answer": "x₁=-2，x₂=8",
+          "qtype": "填空",
+          "kps": [{ "ref": "已知绝对值求原数" }],
+          "prov": { "type": "pipeline", "pipelineRef": "ingest-golden@20260813" }
+        },
+        {
+          "seq": 10,
+          "stem": "当 a=______ 时，6-|2-a| 的值最大，最大值为 ______。",
+          "answer": "a=2，最大值 6",
+          "qtype": "填空",
+          "kps": [{ "ref": "kp_01FAKEFAKEFAKEFAKEFAKEFAKE" }],
+          "prov": { "type": "pipeline", "pipelineRef": "ingest-golden@20260813" }
+        }
+      ]
+    }
+  },
+
+  "实算": {
+    "基准": {
+      "counts": { "total": 5, "accepted": 3, "queued": 0, "rejected": 2 },
+      "逐题": [
+        {
+          "seq": 1,
+          "verdict": "accepted",
+          "code": null,
+          "calcVerdict": "verified",
+          "lineVerdict": "all_identical",
+          "来源": "群卷第01期·混合运算·第二天 no=6（题面与答案是真题；解析为本闸样例，按真答案写的正确链）"
+        },
+        {
+          "seq": 2,
+          "verdict": "accepted",
+          "code": null,
+          "calcVerdict": "verified",
+          "lineVerdict": "all_identical",
+          "来源": "同上 no=7"
+        },
+        {
+          "seq": 3,
+          "verdict": "accepted",
+          "code": null,
+          "calcVerdict": "verified",
+          "lineVerdict": "all_identical",
+          "来源": "同上 no=12"
+        },
+        {
+          "seq": 4,
+          "verdict": "rejected",
+          "code": "CALC_MISMATCH",
+          "calcVerdict": "mismatch",
+          "lineVerdict": null,
+          "来源": "同上 no=10（真题面，答案由 10 改成 11 —— 就是要试答案闸）"
+        },
+        {
+          "seq": 5,
+          "verdict": "rejected",
+          "code": "CALC_LINE_MISMATCH",
+          "calcVerdict": "verified",
+          "lineVerdict": "line_mismatch",
+          "来源": "2026-07-30 有理数打卡第二天第9题事故复刻（案情见 举一反三产物/解题模型库/_验算/逐行恒等校验.py 文件头）：去括号漏变号，最后一行又锚回正确答案 —— 🔴 答案闸放行、逐行闸拦下"
+        }
+      ]
+    },
+    "payload": {
+      "contract": "kb-ingest/v1",
+      "source": "ingest-golden@20260813-calc",
+      "items": [
+        {
+          "seq": 1,
+          "stem": "\\(-13+\\left(-16\\right)-\\left(-7\\right)+\\left|-18\\right|\\)",
+          "answer": "-4",
+          "analysis": "原式 = -13-16+7+18\n= -29+25\n= -4",
+          "qtype": "计算",
+          "kps": [{ "ref": "含绝对值的有理数混合运算" }],
+          "prov": { "type": "pipeline", "pipelineRef": "ingest-golden@20260813-calc" }
+        },
+        {
+          "seq": 2,
+          "stem": "\\((-1)^{2024}\\times9+(-5)^{2}\\div5\\)",
+          "answer": "14",
+          "analysis": "原式 = 1×9+25÷5\n= 9+5\n= 14",
+          "qtype": "计算",
+          "kps": [{ "ref": "有理数乘方的运算与符号判定" }],
+          "prov": { "type": "pipeline", "pipelineRef": "ingest-golden@20260813-calc" }
+        },
+        {
+          "seq": 3,
+          "stem": "\\(\\frac{2}{3}-\\frac{5}{6}+\\frac{1}{2}\\)",
+          "answer": "1/3",
+          "analysis": "原式 = 4/6-5/6+3/6\n= 2/6\n= 1/3",
+          "qtype": "计算",
+          "kps": [{ "ref": "有理数的加减混合运算" }],
+          "prov": { "type": "pipeline", "pipelineRef": "ingest-golden@20260813-calc" }
+        },
+        {
+          "seq": 4,
+          "stem": "\\(5.8-2.6+14.2-7.4\\)",
+          "answer": "11",
+          "qtype": "计算",
+          "kps": [{ "ref": "有理数的加减混合运算" }],
+          "prov": { "type": "pipeline", "pipelineRef": "ingest-golden@20260813-calc" }
+        },
+        {
+          "seq": 5,
+          "stem": "-2^3-(-3+(-3)^2÷(-1/6))",
+          "answer": "49",
+          "analysis": "原式 = -8-(-3+9÷(-1/6))\n= -8-(-3-54)\n= -8+3-54\n= 49",
+          "qtype": "计算",
+          "kps": [{ "ref": "含绝对值的有理数混合运算" }],
+          "prov": { "type": "pipeline", "pipelineRef": "ingest-golden@20260813-calc" }
+        }
+      ]
+    }
+  },
+
+  "配图": {
+    "_说明": [
+      "REG-C3 题干图必审。题是真题（种子集 seq=61，因为源图是内联 SVG、磁盘无独立文件，",
+      "它在 003-E 首批入库时被闸⑥拦进了隔离区，所以库里没有它 —— 正好当这条回归的料）。",
+      "🔴 figures 留空：图的路径要在运行时才有（测试自己往临时目录写一张），由测试注入。"
+    ],
+    "基准": { "counts": { "total": 1, "accepted": 1, "queued": 1, "rejected": 0 } },
+    "payload": {
+      "contract": "kb-ingest/v1",
+      "source": "ingest-golden@20260813-figure",
+      "items": [
+        {
+          "seq": 1,
+          "stem": "已知有理数 a、b、c、d 在数轴上对应的点的位置如图所示，化简：|a+c|+|b−d|−|c−b|。\n［图·内联SVG］",
+          "answer": null,
+          "analysis": "由图 a<b<0<c<d 且 |a|>c。a+c<0；b−d<0；c−b>0。原式 = (−a−c)+(d−b)−(c−b) = −a−2c+d。〔母题保留〕",
+          "qtype": "解答",
+          "kps": [{ "ref": "绝对值的化简与去号" }],
+          "prov": { "type": "pipeline", "pipelineRef": "ingest-golden@20260813-figure" }
+        }
+      ]
+    }
+  }
+}

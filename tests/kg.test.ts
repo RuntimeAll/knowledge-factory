@@ -55,6 +55,12 @@ import {
 } from "~/server/db/schema";
 
 const 真库路径 = join(process.cwd(), "data", "资料库.db");
+/**
+ * 🔴 副本的资产仓指回**真库的** data/assets：VACUUM INTO 只搬库不搬图，
+ *    不指过去的话 C1(c)「有登记行找不到文件」会当场假红（003-E 起真库有资产行了）。
+ *    这里只读目录清单，不写一个字节。
+ */
+const 真资产目录 = join(process.cwd(), "data", "assets");
 const 副本清单: string[] = [];
 const 句柄清单: CoreDbHandle[] = [];
 
@@ -376,7 +382,11 @@ describe("① mergeKp 正常路（D-11 全量语义）", () => {
   });
 
   it("对账：C2 悬挂引用绿、C1a 审计覆盖一行不漏、闸静息、链接得上", async () => {
-    const report = await integrityCheck({ handle: h, metric: false });
+    const report = await integrityCheck({
+      handle: h,
+      metric: false,
+      assetsDir: 真资产目录,
+    });
 
     const c2 = pick(report, "C2");
     expect(c2.ok, c2.details.join("\n")).toBe(true);
@@ -468,7 +478,10 @@ describe("② mergeKp 拒绝路（目标必须 active，防环断链）", () => 
     );
     expect(退了[0]?.status).toBe("retired");
     // 诚实：强退留下的正是 C2 要抓的悬挂引用
-    const c2 = pick(await integrityCheck({ handle: h, metric: false }), "C2");
+    const c2 = pick(
+      await integrityCheck({ handle: h, metric: false, assetsDir: 真资产目录 }),
+      "C2",
+    );
     expect(c2.ok).toBe(false);
     expect(c2.stats?.kp_alias).toBe(1);
   });
@@ -743,7 +756,10 @@ describe("⑤ importKgBatch 全进或全不进", () => {
 
     // 一批 = 一条审计行，rowRefs 全量（7 行业务 = 2 kp + 1 tree + 2 node + 2 alias… + 2 map）
     expect(r.rowRefs).toHaveLength(9);
-    const c1 = pick(await integrityCheck({ handle: h, metric: false }), "C1");
+    const c1 = pick(
+      await integrityCheck({ handle: h, metric: false, assetsDir: 真资产目录 }),
+      "C1",
+    );
     expect(c1.stats?.a_无审计覆盖行, c1.details.join("\n")).toBe(0);
   });
 

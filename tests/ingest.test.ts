@@ -14,6 +14,7 @@
  *   ④ 题干图：入库即 review_required=1 + 开一张 kind='图片' 工单。
  */
 import {
+  cpSync,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -43,7 +44,13 @@ function fileUrl(p: string): string {
   return `file:${p.replace(/\\/g, "/")}`;
 }
 
-/** 一份副本 = 一个独立目录（库 + assets/ + backup/ 全在里面） */
+/**
+ * 一份副本 = 一个独立目录（库 + assets/ + backup/ 全在里面）。
+ *
+ * 🔴 连 `data/assets/` 一起拷（003-E 起真库里有资产行了）：只拷库不拷图，
+ *    对账 C1(c) 会当场红「登记行有、文件不在」—— 那是本测试自己造的假红。
+ *    快照就该带着它的资产走，这也正是 C1(c) 想表达的意思。
+ */
 async function 造副本(tag: string): Promise<CoreDbHandle> {
   const dir = join(tmpdir(), `kf-ingest-${process.pid}-${tag}`);
   rmSync(dir, { recursive: true, force: true });
@@ -56,6 +63,10 @@ async function 造副本(tag: string): Promise<CoreDbHandle> {
     await 真库.execute(`VACUUM INTO '${p.replace(/'/g, "''")}'`);
   } finally {
     真库.close();
+  }
+  const 真资产 = join(process.cwd(), "data", "assets");
+  if (existsSync(真资产)) {
+    cpSync(真资产, join(dir, "assets"), { recursive: true });
   }
   const h = await createCoreDb(fileUrl(p));
   句柄清单.push(h);
@@ -106,10 +117,14 @@ function 三题批() {
         punchPos: { day: 1, section: "有理数混合运算", seq: 3 },
       },
       {
+        // 🔴 「句中『化简：』一个字不许剥」的反例样本（备料 §5②）。
+        //    原型是种子集 seq=58，但那道题 003-E 已经真入库了，原样再用会撞查重闸 ——
+        //    所以这里换了字母（p/q/r），句中指令词这个**反例性质**原样保留。
+        //    要看逐字原题的回归，在 ingest-gates.test.ts 闸④（纯函数，不碰库）。
         seq: 2,
-        stem: "有理数 a < 0，b < 0，c > 0，且 |a|<|c|<|b|。化简：|a+c|−|b+c|+|a−b|。",
+        stem: "有理数 p < 0，q < 0，r > 0，且 |p|<|r|<|q|。化简：|p+r|−|q+r|+|p−q|。",
         answer: null,
-        analysis: "c>|a| ⟹ a+c>0；|b|>c ⟹ b+c<0；a>b ⟹ a−b>0。原式 = 2a+2c。",
+        analysis: "r>|p| ⟹ p+r>0；|q|>r ⟹ q+r<0；p>q ⟹ p−q>0。原式 = 2p+2r。",
         qtype: "解答",
         kps: [
           { ref: "绝对值的化简与去号", isPrimary: true },
@@ -150,9 +165,12 @@ afterAll(() => {
 describe("① 三题小批：好题落库 / 坏题隔离 / 页页有账", () => {
   let h: CoreDbHandle;
   let r: IngestResult;
+  /** 🔴 副本里本来就有题（003-E 首批已入库）—— 断言一律按**增量**写，不写绝对数 */
+  let 投料前: Record<string, number>;
 
   beforeAll(async () => {
     h = await 造副本("main");
+    投料前 = await 全表计数(h);
     r = await runIngestBatch(三题批(), { actor: "system", handle: h });
   }, 60_000);
 
@@ -274,7 +292,8 @@ describe("① 三题小批：好题落库 / 坏题隔离 / 页页有账", () => 
       })
     ).rows.map((x) => (x as unknown as { qid: string }).qid);
     expect(hits).toContain(r.questionIds[1]);
-    expect(await 数(h, "question_fts")).toBe(2); // 只有落库的两题
+    // 只有落库的两题进了投影（被拒的那道一行都不许有）
+    expect(await 数(h, "question_fts")).toBe(投料前.question_fts! + 2);
   });
 
   it("对账：无 red；C1(f) FTS 投影对齐、C1(a) 审计覆盖闭合", async () => {
@@ -329,8 +348,13 @@ describe("① 三题小批：好题落库 / 坏题隔离 / 页页有账", () => 
 });
 
 describe("② dryRun：库与磁盘零变化", () => {
-  it("同一批 dryRun 跑完，十二张表计数前后全等，assets 目录不生成", async () => {
+  it("同一批 dryRun 跑完，十二张表计数前后全等，assets 目录一个文件都不多", async () => {
     const h = await 造副本("dry");
+    const dir = join(tmpdir(), `kf-ingest-${process.pid}-dry`);
+    const 资产目录 = join(dir, "assets");
+    // 🔴 副本自带资产文件（造副本 会连 data/assets 一起拷）——所以判据从
+    //    「assets 目录不生成」改成「assets 目录里的文件一个都不多」，钉的还是同一件事
+    const 图前 = existsSync(资产目录) ? readdirSync(资产目录).sort() : [];
     const 前 = await 全表计数(h);
 
     const r = await runIngestBatch(三题批(), {
@@ -347,8 +371,9 @@ describe("② dryRun：库与磁盘零变化", () => {
     expect(r.gateReport.items[2]!.failure?.code).toBe("KP_NOT_FOUND");
 
     expect(await 全表计数(h)).toEqual(前);
-    const dir = join(tmpdir(), `kf-ingest-${process.pid}-dry`);
-    expect(readdirSync(dir).filter((f) => f === "assets")).toEqual([]);
+    expect(existsSync(资产目录) ? readdirSync(资产目录).sort() : []).toEqual(
+      图前,
+    );
   }, 60_000);
 });
 
@@ -432,8 +457,15 @@ describe("④ 题干图：入库即必审", () => {
     expect(wo.ref_id).toBe(r.questionIds[0]);
     expect(wo.state).toBe("open");
 
+    // 🔴 按本题的图取：真库里已经有别的批留下的资产行（003-E 首批那张 SVG），
+    //    裸 `SELECT … FROM asset LIMIT 1` 会拿到别人的图
     const a = (
-      await h.client.execute("SELECT path, hash, kind, bytes FROM asset")
+      await h.client.execute({
+        sql: `SELECT a.path, a.hash, a.kind, a.bytes FROM asset a
+                JOIN question_figure f ON f.asset_id = a.id
+               WHERE f.question_id = ?`,
+        args: [r.questionIds[0]!],
+      })
     ).rows[0] as unknown as {
       path: string;
       hash: string;
@@ -445,7 +477,10 @@ describe("④ 题干图：入库即必审", () => {
     expect(existsSync(join(dir, "assets", a.path))).toBe(true);
 
     const f = (
-      await h.client.execute("SELECT role, review_state FROM question_figure")
+      await h.client.execute({
+        sql: "SELECT role, review_state FROM question_figure WHERE question_id = ?",
+        args: [r.questionIds[0]!],
+      })
     ).rows[0] as unknown as { role: string; review_state: string };
     expect(f.role).toBe("stem");
     expect(f.review_state).toBe("pending");

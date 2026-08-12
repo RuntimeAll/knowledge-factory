@@ -148,7 +148,11 @@ describe("① 预分词才查得动（方案甲的全部理由）", () => {
     expect(hits).not.toContain(坏);
 
     // 两行都在索引里（对照行不是没写进去，是写进去了查不着——这才叫静默失效）
-    const 全 = await h.client.execute("SELECT COUNT(*) AS c FROM question_fts");
+    // 🔴 只数本例这两行：副本里本来就有真库的投影（003-E 起 question 非空），数总数没意义
+    const 全 = await h.client.execute({
+      sql: "SELECT COUNT(*) AS c FROM question_fts WHERE question_id IN (?, ?)",
+      args: [好, 坏],
+    });
     expect(Number((全.rows[0] as unknown as { c: number }).c)).toBe(2);
   });
 

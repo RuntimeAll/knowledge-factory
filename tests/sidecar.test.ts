@@ -1,12 +1,15 @@
 /**
- * Python 侧车闸（AI:PRD-003 · 003-B）
+ * Python 侧车闸（AI:PRD-003 · 003-B / 003-E）
  *
- * 测试在精不在多，只钉四件必须永远成立的事：
+ * 测试在精不在多，只钉六件必须永远成立的事：
  *   ① segment：LaTeX 符号一个都不许进词串，中文真的被切开（不然 unicode61 白搭）；
  *   ② calc_verify 三态各一例 —— 尤其 **cannot_verify 是如实报**，
  *      应用题绝不许被"看着像对的"判成 verified；
  *   ③ mismatch 要给得出实算值（人拿着它就能直接判是答案错还是题面录错）；
- *   ④ 环境没装 = CONFIG_MISSING + 一句能照着修的人话，不是一坨 ENOENT。
+ *   ④ 环境没装 = CONFIG_MISSING + 一句能照着修的人话，不是一坨 ENOENT；
+ *   ⑤ line_verify 一红一绿：中间行断了必须报出**是哪一行、算成了多少**；
+ *   ⑥ line_verify 判不了的**如实说判不了**（含未知量的变形链）——
+ *      这道闸是红灯闸，宁可漏判也不能假红把真题拦下。
  *
  * 🔴 侧车是真起 python 子进程（jieba 载词典 ~0.4s），单例耗时秒级属正常。
  */
@@ -15,6 +18,7 @@ import { describe, expect, it } from "vitest";
 import {
   SidecarError,
   calcVerify,
+  lineVerify,
   pingSidecar,
   segmentTexts,
   sidecarStatus,
@@ -78,7 +82,61 @@ describe("② calc_verify 三态", () => {
   });
 });
 
-describe("③ 环境", () => {
+describe("③ line_verify 逐行恒等", () => {
+  it("🔴 一红：中间行断了 —— 报得出是哪一行、算成了多少（答案对也照拦）", async () => {
+    // 2026-07-30 有理数打卡第二天第 9 题事故复刻：去括号漏变号（-8+3-54=-59），
+    // 最后一行又锚回正确答案 49 —— calc_verify 对这种错完全免疫。
+    const [r] = await lineVerify([
+      {
+        id: "事故",
+        analysis: "原式 = -8-(-3+9÷(-1/6))\n= -8-(-3-54)\n= -8+3-54\n= 49",
+      },
+    ]);
+    expect(r?.verdict).toBe("line_mismatch");
+    expect(r?.badLines).toHaveLength(1);
+    expect(r?.badLines[0]!.line).toBe(3);
+    expect(r?.badLines[0]!.right).toBe("-8+3-54");
+    expect(r?.badLines[0]!.computed).toBe("-59");
+    expect(r?.badLines[0]!.expected).toBe("49");
+  });
+
+  it("一绿：正确的链全等；多小问各算各的链，不互相比", async () => {
+    const rs = await lineVerify([
+      { id: "对", analysis: "原式 = -13-16+7+18\n= -29+25\n= -4" },
+      // 🔴 两条链值不同（5 与 12），但它们是两个小问 —— 不该被判成断裂。
+      //    「不以等号开头的行另起一条链」就是为这个存在的。
+      { id: "多小问", analysis: "（1）原式 = 2+3\n= 5\n（2）原式 = 4×3\n= 12" },
+      { id: "链形态", lines: ["3+5*2", "6+7", "13"] },
+    ]);
+    const by = new Map(rs.map((r) => [r.id, r]));
+    expect(by.get("对")?.verdict).toBe("all_identical");
+    expect(by.get("多小问")?.verdict).toBe("all_identical");
+    expect(by.get("多小问")?.chains).toBe(2); // 两个小问 = 两条链
+    expect(by.get("链形态")?.verdict).toBe("all_identical");
+    expect(by.get("链形态")?.checked).toBe(2);
+  });
+
+  it("🔴 判不了就说判不了：含未知量的变形链、判断句，一律 no_checkable_lines", async () => {
+    const rs = await lineVerify([
+      // 解方程的变形链：判它要比**解集**，拿恒等去判 x=1 会当场假红
+      { id: "解方程", analysis: "4-3x=6-5x\n2x=2\nx=1" },
+      // 字母化简
+      { id: "化简", analysis: "原式 = (a+c)-(-b-c)+(a-b) = 2a+2c" },
+      // 判断句不是恒等链
+      {
+        id: "判断句",
+        analysis: "3^3 = 27，4^3 = 64，27 < 50 < 64\n所以十位是 3",
+      },
+      { id: "纯文字", analysis: "先定号，再逐项去壳。" },
+    ]);
+    for (const r of rs) {
+      expect(r.verdict, `${r.id} 不该给出结论`).toBe("no_checkable_lines");
+      expect(r.checked).toBe(0);
+    }
+  });
+});
+
+describe("④ 环境", () => {
   it("装好了：ping 报得出 jieba / sympy 版本", async () => {
     const p = await pingSidecar();
     expect(p.versions.jieba).toMatch(/^\d+\./);

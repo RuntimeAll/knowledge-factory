@@ -37,6 +37,12 @@ import {
 import { kp, kpAlias } from "~/server/db/schema";
 
 const 真库路径 = join(process.cwd(), "data", "资料库.db");
+/**
+ * 🔴 副本的资产仓指回**真库的** data/assets：VACUUM INTO 只搬库不搬图，
+ *    不指过去的话 C1(c)「有登记行找不到文件」会当场假红（003-E 起真库有资产行了）。
+ *    这里只读目录清单，不写一个字节。
+ */
+const 真资产目录 = join(process.cwd(), "data", "assets");
 const 副本清单: string[] = [];
 
 function fileUrl(p: string): string {
@@ -162,7 +168,7 @@ describe("② integrityCheck · 空库", () => {
   it("六项跑通、无 red（C5 按真圣域数据可能 warn，warn 不拦）", async () => {
     const h = await 造副本("clean");
     try {
-      const report = await integrityCheck({ handle: h });
+      const report = await integrityCheck({ handle: h, assetsDir: 真资产目录 });
 
       expect(report.checks.map((c) => c.id)).toEqual([
         "C1",
@@ -177,7 +183,10 @@ describe("② integrityCheck · 空库", () => {
         `不该有 red：${JSON.stringify(reds(report))}`,
       ).toEqual([]);
       expect(report.ok).toBe(true);
-      expect(pick(report, "C1").ok).toBe(true);
+      // 🔴 003-E 起真库有题、还没有向量 ⇒ C1 常驻 warn(b) 有题无向量。
+      //    本例要钉的是「一条 red 都没有」，不是「C1 全绿」——把 warn 当红会逼人
+      //    要么改判据、要么去凑向量，两条都是坏路。
+      expect(pick(report, "C1").level).not.toBe("red");
       expect(pick(report, "C1").stats?.e_write_gate).toBe(0);
       expect(pick(report, "C4").ok).toBe(true); // 圣域 schema 与契约附件一致
       expect(pick(report, "C5").level).toBe("warn"); // 名义级别就是 warn
@@ -200,7 +209,7 @@ describe("③ 红旗（每道闸一红）", () => {
         裸.close();
       }
 
-      const report = await integrityCheck({ handle: h });
+      const report = await integrityCheck({ handle: h, assetsDir: 真资产目录 });
       const c1 = pick(report, "C1");
       expect(c1.ok).toBe(false);
       expect(c1.level).toBe("red");
@@ -252,14 +261,15 @@ describe("③ 红旗（每道闸一红）", () => {
         h,
       );
 
-      const report = await integrityCheck({ handle: h });
+      const report = await integrityCheck({ handle: h, assetsDir: 真资产目录 });
       const c2 = pick(report, "C2");
       expect(c2.ok).toBe(false);
       expect(c2.level).toBe("red");
       expect(c2.stats?.kp_alias).toBe(1);
       expect(c2.details.join("\n")).toContain("merged");
-      // 造数据走了 core ⇒ 审计覆盖闭合，C1 不该被连累
-      expect(pick(report, "C1").ok).toBe(true);
+      // 造数据走了 core ⇒ 审计覆盖闭合，C1 不该被连累（它可以 warn，但绝不能 red）
+      expect(pick(report, "C1").level).not.toBe("red");
+      expect(pick(report, "C1").stats?.a_无审计覆盖行).toBe(0);
       expect(reds(report)).toEqual(["C2"]);
     } finally {
       h.close();
@@ -277,7 +287,11 @@ describe("③ 红旗（每道闸一红）", () => {
         "utf8",
       );
 
-      const report = await integrityCheck({ handle: h, snapshotPath: 假快照 });
+      const report = await integrityCheck({
+        handle: h,
+        snapshotPath: 假快照,
+        assetsDir: 真资产目录,
+      });
       const c4 = pick(report, "C4");
       expect(c4.ok).toBe(false);
       expect(c4.level).toBe("red");

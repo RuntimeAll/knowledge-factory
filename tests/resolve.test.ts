@@ -44,6 +44,12 @@ import {
 import { errCodeMap, errorCause, examModel, kpEdge } from "~/server/db/schema";
 
 const 真库路径 = join(process.cwd(), "data", "资料库.db");
+/**
+ * 🔴 副本的资产仓指回**真库的** data/assets：VACUUM INTO 只搬库不搬图，
+ *    不指过去的话 C1(c)「有登记行找不到文件」会当场假红（003-E 起真库有资产行了）。
+ *    这里只读目录清单，不写一个字节。
+ */
+const 真资产目录 = join(process.cwd(), "data", "assets");
 const 副本清单: string[] = [];
 const 句柄清单: CoreDbHandle[] = [];
 
@@ -255,7 +261,9 @@ describe("② 编造 kp_id：带得出候选就带，带不出也要指路", () 
   });
 
   it("找不到人也不许悄悄开工单（兜底那一查 enqueue:false）", async () => {
-    expect(await 计数(h, "review_queue")).toBe(0);
+    // 🔴 只数本组关心的那一类：003-E 之后真库里本来就有别的类别的工单（图审等），
+    //    副本自然也带着它们 —— 数总数会把别人的工单算到本组头上。
+    expect(await 计数(h, "review_queue", "kind = 'kp低置信'")).toBe(0);
   });
 });
 
@@ -290,7 +298,8 @@ describe("③ 低置信 → review_queue，同 query 不重复开", () => {
       reason: string;
     }>(
       h,
-      "SELECT id, kind, state, payload_json, reason FROM review_queue ORDER BY id",
+      // 🔴 只取本组这一类（副本里带着真库既有的其它工单）
+      "SELECT id, kind, state, payload_json, reason FROM review_queue WHERE kind = 'kp低置信' ORDER BY id",
     );
     expect(rows.length).toBe(1);
     expect(rows[0]!.kind).toBe("kp低置信");
@@ -304,20 +313,24 @@ describe("③ 低置信 → review_queue，同 query 不重复开", () => {
   it("🔴 再查同一个词 → 不重复入队（未决工单去重）", async () => {
     const r = await resolveKp(词表外, { handle: h });
     expect(r.queued?.created).toBe(false);
-    expect(await 计数(h, "review_queue")).toBe(1);
+    expect(await 计数(h, "review_queue", "kind = 'kp低置信'")).toBe(1);
   });
 
   it("换个词 → 另开一张（去重只按 query，不是一刀切）", async () => {
     const r = await resolveKp("十字相乘", { handle: h });
     expect(r.queued?.created).toBe(true);
-    expect(await 计数(h, "review_queue")).toBe(2);
+    expect(await 计数(h, "review_queue", "kind = 'kp低置信'")).toBe(2);
   });
 
   it("入队列那笔走的是 core 写路径：闸静息 + 审计链接得上 + C1 覆盖不漏", async () => {
     expect(await readWriteGate(h)).toBe(0);
     const chain = await verifyAuditChain(h);
     expect(chain.ok, chain.reason).toBe(true);
-    const report = await integrityCheck({ handle: h, metric: false });
+    const report = await integrityCheck({
+      handle: h,
+      metric: false,
+      assetsDir: 真资产目录,
+    });
     const c1 = report.checks.find((c) => c.id === "C1")!;
     expect(c1.stats?.a_无审计覆盖行, c1.details.join("\n")).toBe(0);
   });
@@ -483,7 +496,11 @@ describe("⑥ 对账 C2 扩面：err_code_map / kp_edge / exam_model 指向 merg
       h,
     );
 
-    const report = await integrityCheck({ handle: h, metric: false });
+    const report = await integrityCheck({
+      handle: h,
+      metric: false,
+      assetsDir: 真资产目录,
+    });
     const c2 = report.checks.find((c) => c.id === "C2")!;
     expect(c2.ok).toBe(false);
     expect(c2.level).toBe("red");
@@ -519,9 +536,9 @@ describe("⑥ 对账 C2 扩面：err_code_map / kp_edge / exam_model 指向 merg
       h,
     );
 
-    const c2 = (await integrityCheck({ handle: h, metric: false })).checks.find(
-      (c) => c.id === "C2",
-    )!;
+    const c2 = (
+      await integrityCheck({ handle: h, metric: false, assetsDir: 真资产目录 })
+    ).checks.find((c) => c.id === "C2")!;
     expect(c2.ok).toBe(false);
     expect(c2.level).toBe("red");
     expect(c2.stats?.exam_model).toBe(1);

@@ -51,6 +51,12 @@ import {
 import { errCodeMap, errorCause, kpError } from "~/server/db/schema";
 
 const 真库路径 = join(process.cwd(), "data", "资料库.db");
+/**
+ * 🔴 副本的资产仓指回**真库的** data/assets：VACUUM INTO 只搬库不搬图，
+ *    不指过去的话 C1(c)「有登记行找不到文件」会当场假红（003-E 起真库有资产行了）。
+ *    这里只读目录清单，不写一个字节。
+ */
+const 真资产目录 = join(process.cwd(), "data", "assets");
 const 副本清单: string[] = [];
 const 句柄清单: CoreDbHandle[] = [];
 
@@ -616,7 +622,11 @@ describe("B3 · 造重复 → merge_kp → 检索/别名/错因候选全跟走�
   });
 
   it("对账：C2 悬挂引用绿、C1a 审计覆盖不漏、无红旗、闸静息、链接得上", async () => {
-    const report = await integrityCheck({ handle: h, metric: false });
+    const report = await integrityCheck({
+      handle: h,
+      metric: false,
+      assetsDir: 真资产目录,
+    });
     const c2 = report.checks.find((c) => c.id === "C2")!;
     expect(c2.ok, c2.details.join("\n")).toBe(true);
     expect(c2.stats?.合计).toBe(0);
