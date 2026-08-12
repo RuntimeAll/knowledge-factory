@@ -77,11 +77,7 @@ export interface ToolErr {
 export type ToolPayload<T> = ToolOk<T> | ToolErr;
 
 export type ToolName =
-  | "health"
-  | "integrity_check"
-  | "backup_now"
-  | "resolve_kp"
-  | "kp_context";
+  "health" | "integrity_check" | "backup_now" | "resolve_kp" | "kp_context";
 
 export const TOOL_NAMES: readonly ToolName[] = [
   "health",

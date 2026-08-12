@@ -750,20 +750,14 @@ async function 查无此考点(
     );
   }
 
-  // 🔴 enqueue:false：这是「帮你找补」的顺手一查，不是 agent 的正经检索，
-  //    没把握也不该往人的待办队列里塞工单。
-  const { candidates } = await resolveKp(可读, {
-    handle: h,
-    limit: 5,
-    enqueue: false,
-  });
+  const { used, candidates } = await 逐步截短探候选(h, 可读);
 
   if (candidates.length === 0) {
     return new KpNotFoundError(
       id,
       [],
       头 +
-        `从 id 里读出的是「${可读}」，但按这个词也查不到任何考点——` +
+        `从 id 里读出的是「${可读}」，但按这个词（以及它的各级前缀）都查不到任何考点——` +
         "要么换个说法调 resolve_kp，要么这个考点确实还没建（建了才谈得上挂载）。",
     );
   }
@@ -771,13 +765,46 @@ async function 查无此考点(
   const 列表 = candidates
     .map((c) => `${c.kpId}「${c.name}」(${c.confidence})`)
     .join("、");
+  const 按 = used === 可读 ? "" : `（按前缀「${used}」找的）`;
   return new KpNotFoundError(
     id,
     candidates,
     头 +
-      `从 id 里读出的是「${可读}」，最近似的候选：${列表}——` +
+      `从 id 里读出的是「${可读}」，最近似的候选${按}：${列表}——` +
       "挑一个真 kpId 再调 kp_context；都不对就调 resolve_kp 换个说法。",
   );
+}
+
+/** 探候选时前缀最短截到几个字（再短就是纯噪音了） */
+const PROBE_MIN_CHARS = 2;
+
+/**
+ * 从 id 里读出的那串文本**逐级截短**去探候选，直到探到为止。
+ *
+ * 🔴 为什么要截：词表是 trigram **子串**匹配，方向是「query ⊂ 词条」。
+ *    agent 编 id 时爱写得比考点名更具体（`kp_绝对值压轴` vs 真名「绝对值」），
+ *    整串拿去查一定空手而归 —— 但「绝对值」三个字是查得到的。
+ * 🔴 为什么这条模糊只放在**错误路**、不动 resolveKp 的口径：
+ *    resolve_kp 的分数是 agent 的判断依据，掺进「我替你截了几个字」这种
+ *    隐式改写，分数就不再可解释了。这里是「已经错了，帮你找补」，可以放宽。
+ */
+async function 逐步截短探候选(
+  h: CoreDbHandle,
+  text: string,
+): Promise<{ used: string; candidates: KpCandidate[] }> {
+  const 字 = Array.from(text);
+  for (let n = 字.length; n >= PROBE_MIN_CHARS; n--) {
+    const probe = 字.slice(0, n).join("");
+    // 🔴 enqueue:false：这是「帮你找补」的顺手一查，不是 agent 的正经检索，
+    //    没把握也不该往人的待办队列里塞工单（何况一探就是好几发）。
+    const { candidates } = await resolveKp(probe, {
+      handle: h,
+      limit: 5,
+      enqueue: false,
+    });
+    if (candidates.length > 0) return { used: probe, candidates };
+  }
+  return { used: text, candidates: [] };
 }
 
 /** ULID 本体形状（Crockford Base32，26 位） */
