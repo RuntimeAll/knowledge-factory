@@ -20,6 +20,7 @@
  *   gates/     闸骨架（真闸从 AI:PRD-003 起长）
  *   backup.ts  VACUUM INTO 快照（+异地副本）
  *   grading.ts 🔴 圣域 审核.db **只读**连接（三道锁，见文件头）
+ *   integrity.ts 对账六项 C1~C6
  */
 
 export {
@@ -103,6 +104,21 @@ export {
   type GradingSchemaSnapshot,
   type GradingTableDdl,
 } from "./grading";
+
+export {
+  AUDITED_TABLES,
+  GRADING_SNAPSHOT_FILE,
+  ROW_KEY_SEP,
+  assetsDirFor,
+  integrityCheck,
+  normalizeAssetPath,
+  rowRefId,
+  type CheckId,
+  type CheckLevel,
+  type CheckResult,
+  type IntegrityOptions,
+  type IntegrityReport,
+} from "./integrity";
 
 export {
   PASS,
