@@ -72,14 +72,23 @@ export interface QueueItem {
 
 /**
  * 稳定错误码（页面/MCP 照它翻人话，改文案别顺手改码）：
- *   INVALID_INPUT          入参没过 zod
- *   QUEUE_NOT_FOUND        工单不存在
- *   QUEUE_ALREADY_DECIDED  工单已终态（passed/rejected），不重复裁
+ *   INVALID_INPUT              入参没过 zod
+ *   QUEUE_NOT_FOUND            工单不存在
+ *   QUEUE_ALREADY_DECIDED      工单已终态（passed/rejected），不重复裁
+ *   🆕 AI:PRD-003 · 003-D（队列处置三链，实现在 core/review.ts）
+ *   QUEUE_KIND_MISMATCH        拿处置 A 类的原语去处置 B 类工单
+ *   QUEUE_PAYLOAD_BAD          工单的 payload/ref 缺了处置必需的东西
+ *   QUARANTINE_NOT_FOUND       隔离行不存在
+ *   QUARANTINE_ALREADY_RESOLVED 隔离行已结（resolved_at 有值），不重复处置
  */
 export const QUEUE_ERROR_CODES = [
   "INVALID_INPUT",
   "QUEUE_NOT_FOUND",
   "QUEUE_ALREADY_DECIDED",
+  "QUEUE_KIND_MISMATCH",
+  "QUEUE_PAYLOAD_BAD",
+  "QUARANTINE_NOT_FOUND",
+  "QUARANTINE_ALREADY_RESOLVED",
 ] as const;
 
 export type QueueErrorCode = (typeof QUEUE_ERROR_CODES)[number];

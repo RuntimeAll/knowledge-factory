@@ -131,43 +131,70 @@ export const punchPosSchema = z.object({
   seq: z.number().int().positive(),
 });
 
-export const ingestItemSchema = z
-  .object({
-    /** 批内序号（1 起，批内唯一）。红灯定位、quarantine 回溯全靠它 */
-    seq: z.number().int().positive(),
-    stem: 非空串("stem（题面）"),
-    answer: 可空文本,
-    analysis: 可空文本,
-    qtype: z.enum(QTYPES).optional(),
-    difficulty: z.number().int().min(1).max(5).optional(),
-    kps: z.array(kpRefSchema).min(1, "每题至少挂一个考点（禁孤题）"),
-    tags: z.array(非空串("tags[]")).optional(),
-    figures: z.array(figureSchema).optional(),
-    prov: provSchema,
-    /** Q12 显式版本适用（如「浙教」）；不填 = 版本通用 */
-    editionScope: z.string().trim().min(1).optional(),
-    punchPos: punchPosSchema.optional(),
-  })
-  .superRefine((item, ctx) => {
-    // 🔴 R3（备料报告）：三路源的答案/解析结构不一 —— 册子与群卷「有 answer 无解析」，
-    //    专项卷「有解析无独立 answer」。两种都合法，**都没有**才是红。
-    if (item.answer === null && item.analysis === null) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["answer"],
-        message:
-          "answer 与 analysis 至少要有一个（都没有 = no_solution，这种题进了库也不能出，先补一个再录）",
-      });
-    }
-    const 主 = item.kps.filter((k) => k.isPrimary === true).length;
-    if (主 > 1) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["kps"],
-        message: `主考点只能有一个，你标了 ${主} 个（其余的去掉 isPrimary 即可；不标则默认第一个为主）`,
-      });
-    }
-  });
+/** 题级字段表（🔴 唯一一份：批量与单题提议两个 schema 都从它长出来，别抄第二遍） */
+const 题级字段 = {
+  /** 批内序号（1 起，批内唯一）。红灯定位、quarantine 回溯全靠它 */
+  seq: z.number().int().positive(),
+  stem: 非空串("stem（题面）"),
+  answer: 可空文本,
+  analysis: 可空文本,
+  qtype: z.enum(QTYPES).optional(),
+  difficulty: z.number().int().min(1).max(5).optional(),
+  kps: z.array(kpRefSchema).min(1, "每题至少挂一个考点（禁孤题）"),
+  tags: z.array(非空串("tags[]")).optional(),
+  figures: z.array(figureSchema).optional(),
+  prov: provSchema,
+  /** Q12 显式版本适用（如「浙教」）；不填 = 版本通用 */
+  editionScope: z.string().trim().min(1).optional(),
+  punchPos: punchPosSchema.optional(),
+};
+
+/** 题级跨字段校验（两个 schema 共用同一份，语义不许各长各的） */
+function 校验单题(
+  item: {
+    answer: string | null;
+    analysis: string | null;
+    kps: { isPrimary?: boolean }[];
+  },
+  ctx: z.RefinementCtx,
+): void {
+  // 🔴 R3（备料报告）：三路源的答案/解析结构不一 —— 册子与群卷「有 answer 无解析」，
+  //    专项卷「有解析无独立 answer」。两种都合法，**都没有**才是红。
+  if (item.answer === null && item.analysis === null) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["answer"],
+      message:
+        "answer 与 analysis 至少要有一个（都没有 = no_solution，这种题进了库也不能出，先补一个再录）",
+    });
+  }
+  const 主 = item.kps.filter((k) => k.isPrimary === true).length;
+  if (主 > 1) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["kps"],
+      message: `主考点只能有一个，你标了 ${主} 个（其余的去掉 isPrimary 即可；不标则默认第一个为主）`,
+    });
+  }
+}
+
+export const ingestItemSchema = z.object(题级字段).superRefine(校验单题);
+
+/**
+ * 单题提议（`propose_question`）的题级变体：**seq 可省**（AI:PRD-003 · 003-D）。
+ *
+ * 🔴 只差这一个字段：零星录题是「一次一道」，逼 agent 写 `seq: 1` 属于仪式。
+ *    单题批在 core 里自动补 1，别的语义（考点必挂、答案解析至少一个、主考点唯一）
+ *    与批量录题**一字不差**（同一个 `校验单题`）—— 提议态不是降级通道，
+ *    只是「先排队等人看」。
+ *
+ * 🔴 为什么从字段表重建而不是 `ingestItemSchema.extend/safeExtend`：zod v4 不许在
+ *    带 refinement 的对象上**覆盖已有键**（extend 直接抛，safeExtend 在类型上退化成
+ *    never）。要改已有键，只能在加 refinement 之前分叉。
+ */
+export const proposeItemSchema = z
+  .object({ ...题级字段, seq: 题级字段.seq.optional() })
+  .superRefine(校验单题);
 
 export const sourceDocSchema = z.object({
   title: 非空串("sourceDoc.title"),
@@ -206,6 +233,7 @@ export const ingestPayloadSchema = z
   });
 
 export type KbIngestItem = z.output<typeof ingestItemSchema>;
+export type KbProposeItem = z.output<typeof proposeItemSchema>;
 export type KbIngestPayload = z.output<typeof ingestPayloadSchema>;
 export type KbIngestSourceDoc = z.output<typeof sourceDocSchema>;
 export type KbIngestKpRef = z.output<typeof kpRefSchema>;

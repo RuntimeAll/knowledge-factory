@@ -721,3 +721,104 @@ export async function runIngestBatch(
     backup,
   };
 }
+
+// ---------------------------------------------------------------------------
+// 读侧：一次批的全账（AI:PRD-003 · 003-D）
+// ---------------------------------------------------------------------------
+
+export interface IngestBatchRecord {
+  id: string;
+  contractVer: string;
+  source: string;
+  payloadHash: string | null;
+  counts: IngestCounts;
+  status: string | null;
+  createdAt: string | null;
+  committedAt: string | null;
+  /**
+   * 逐题逐闸详账（`ingest_batch.gate_report_json` 解析后）。
+   * 🔴 解析不动就给 null，同时把原文放在 gateReportRaw —— 老批/脏行不该让读侧炸。
+   */
+  gateReport: IngestGateReport | null;
+  gateReportRaw: string | null;
+  /** 落库题（按 id 序） */
+  questionIds: string[];
+  /** 这一批的隔离行 */
+  quarantine: {
+    total: number;
+    open: number;
+    resolved: number;
+    /** 未结的隔离行 id（最多 50 条，够定位就行） */
+    openIds: string[];
+  };
+}
+
+/**
+ * 取一次录题批的全账：批行 + gate_report_json 全量 + 关联隔离计数。
+ *
+ * 🔴 只读。给 MCP 的 `get_ingest_batch` 与页面共用一条路 ——
+ *    「网站看到什么，agent 就看到什么」这句话不是口号，是同一个函数。
+ */
+export async function getIngestBatch(
+  batchId: string,
+  opts: { handle?: CoreDbHandle } = {},
+): Promise<IngestBatchRecord | null> {
+  const id = (batchId ?? "").trim();
+  if (!id) return null;
+  const h = opts.handle ?? (await getCoreDb());
+
+  const rows = await h.db
+    .select()
+    .from(ingestBatch)
+    .where(eq(ingestBatch.id, id));
+  const b = rows[0];
+  if (!b) return null;
+
+  let parsed: IngestGateReport | null = null;
+  if (b.gateReportJson) {
+    try {
+      parsed = JSON.parse(b.gateReportJson) as IngestGateReport;
+    } catch {
+      parsed = null; // 脏行：原文照给（gateReportRaw），别让读侧炸
+    }
+  }
+
+  const qs = await h.db
+    .select({ id: question.id })
+    .from(question)
+    .where(eq(question.ingestBatchId, id));
+
+  const qr = await h.db
+    .select({
+      id: quarantine.id,
+      resolvedAt: quarantine.resolvedAt,
+    })
+    .from(quarantine)
+    .where(eq(quarantine.batchId, id));
+  const open = qr.filter((r) => !r.resolvedAt);
+
+  return {
+    id: b.id,
+    contractVer: b.contractVer,
+    source: b.source,
+    payloadHash: b.payloadHash,
+    counts: {
+      total: Number(b.nTotal ?? 0),
+      accepted: Number(b.nAccepted ?? 0),
+      queued: Number(b.nQueued ?? 0),
+      rejected: Number(b.nRejected ?? 0),
+    },
+    status: b.status,
+    createdAt: b.createdAt,
+    committedAt: b.committedAt,
+    gateReport: parsed,
+    gateReportRaw: b.gateReportJson,
+    questionIds: qs.map((q) => q.id).sort(),
+    quarantine: {
+      total: qr.length,
+      open: open.length,
+      resolved: qr.length - open.length,
+      openIds: open.slice(0, 50).map((r) => r.id),
+    },
+  };
+}

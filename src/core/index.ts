@@ -25,6 +25,8 @@
  *   fts.ts     question_fts 写侧投影 + 查询串构造（方案甲 · AI:PRD-003）
  *   ingest-schema.ts kb-ingest/v1 契约的机读正本（zod · AI:PRD-003）
  *   ingest.ts  录题管道 runIngestBatch（两相：零写相 + 单事务相 · AI:PRD-003）
+ *   review.ts  审查队列三条处置链（图片审 / 草稿转正 / 隔离改判 · AI:PRD-003 003-D）
+ *   assets.ts  资产读侧（hash → 登记行 + 落地路径 + Content-Type · AI:PRD-003 003-D）
  *   gates/     闸（骨架来自 001；十道录题闸在 AI:PRD-003 落地，逐闸一文件）
  *   backup.ts  VACUUM INTO 快照（+异地副本）
  *   grading.ts 🔴 圣域 审核.db **只读**连接（三道锁，见文件头）
@@ -296,6 +298,7 @@ export {
   ingestItemSchema,
   ingestPayloadSchema,
   kpRefSchema,
+  proposeItemSchema,
   provSchema,
   punchPosSchema,
   sourceDocSchema,
@@ -306,6 +309,7 @@ export {
   type KbIngestPayload,
   type KbIngestProv,
   type KbIngestSourceDoc,
+  type KbProposeItem,
   type ProvType,
   type QType,
   type SolutionGrade,
@@ -316,14 +320,57 @@ export {
   INGEST_ERROR_CODES,
   ITEM_GATES,
   IngestError,
+  getIngestBatch,
   punchPosTag,
   runIngestBatch,
+  type IngestBatchRecord,
   type IngestCounts,
   type IngestGateReport,
   type IngestItemReport,
   type IngestResult,
   type RunIngestOptions,
 } from "./ingest";
+
+// ── AI:PRD-003 · 003-D 审查队列处置 ─────────────────────────────────────────
+
+export {
+  getDraftCard,
+  getFigureReviewCard,
+  getQuarantineRow,
+  itemReds,
+  listQuarantine,
+  passFigureReview,
+  precheckOf,
+  promoteDraftQuestion,
+  proposeQuestion,
+  rejectFigureReview,
+  resolveQuarantine,
+  type DraftCard,
+  type DraftPayload,
+  type FigureReviewCard,
+  type FigureReviewOptions,
+  type FigureReviewResult,
+  type FigureView,
+  type ListQuarantineOptions,
+  type PrecheckRed,
+  type PrecheckSummary,
+  type PromoteDraftOptions,
+  type PromoteDraftResult,
+  type ProposeQuestionInput,
+  type ProposeQuestionResult,
+  type QuarantineRow,
+  type ResolveQuarantineOptions,
+  type ResolveQuarantineResult,
+} from "./review";
+
+export {
+  ASSET_CONTENT_TYPES,
+  ASSET_FALLBACK_CONTENT_TYPE,
+  assetContentType,
+  getAssetByHash,
+  type AssetReadOptions,
+  type AssetRecord,
+} from "./assets";
 
 /**
  * 十道录题闸的公共面（逐闸一文件，`gates/ingest-*.gate.ts`）。
