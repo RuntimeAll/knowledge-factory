@@ -1,3 +1,13 @@
+# pnpm 11 的仓库级配置。🔴 占位不填会让所有 pnpm run 直接退出码 1（ERR_PNPM_IGNORED_BUILDS）。
 allowBuilds:
   esbuild: true
   sharp: true
+
+# 🔴 修 shadcn CLI 起不来：
+# shadcn@4 声明 zod ^3.24.1，pnpm 把它和 @modelcontextprotocol/sdk@1.30 的 zod 去重到了 3.24.1，
+# 而 sdk 内部 import "zod/v4" —— 3.25 之前没有这个子路径导出，于是 CLI 直接 ERR_PACKAGE_PATH_NOT_EXPORTED。
+# 抬到 3.25.76（v3 API 不变，但内置 zod/v4 子路径）就同时喂饱两边。
+# 只作用于 shadcn CLI 这条链，业务侧的 zod 仍是真 4.4.3，互不影响。
+overrides:
+  shadcn>zod: 3.25.76
+  "@modelcontextprotocol/sdk>zod": 3.25.76
