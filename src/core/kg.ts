@@ -143,6 +143,20 @@ export interface KgOptions {
   note?: string;
   /** 连副本库/别的库时传；不传走 getCoreDb() 单例 */
   handle?: CoreDbHandle;
+  /**
+   * 审计行里记的工具名，默认 = 调用的这个写原语自己的名字。
+   *
+   * 🔴 只给「一次性脚本给自己的批次签名」用（导底脚本传 'load_kg_20260812'，
+   *    日后 `SELECT tool, COUNT(*) FROM audit_log GROUP BY tool` 一眼看得出
+   *    哪几笔是导底、哪几笔是日常写）。**日常调用一律不传**：audit_log.tool 是
+   *    归类依据，随手改名等于把归类搅浑。
+   */
+  tool?: string;
+}
+
+/** 审计工具名：默认写原语自己的名字，一次性脚本可覆写（见 KgOptions.tool） */
+function 工具名(opts: KgOptions, 原语: string): string {
+  return opts.tool ?? 原语;
 }
 
 /** 一次 KG 写的回执 */
@@ -329,7 +343,7 @@ export async function createKp(
   const receipt = await withCoreWrite(
     {
       actor: opts.actor ?? "agent",
-      tool: "createKp",
+      tool: 工具名(opts, "createKp"),
       args: { id, name: v.name, status: v.status, note: opts.note },
     },
     async (tx) => {
@@ -362,7 +376,7 @@ export async function updateKpCard(
   const receipt = await withCoreWrite(
     {
       actor: opts.actor ?? "agent",
-      tool: "updateKpCard",
+      tool: 工具名(opts, "updateKpCard"),
       args: { kpId: id, cardMd, note: opts.note },
     },
     async (tx) => {
@@ -392,7 +406,7 @@ export async function renameKp(
   const receipt = await withCoreWrite(
     {
       actor: opts.actor ?? "agent",
-      tool: "renameKp",
+      tool: 工具名(opts, "renameKp"),
       args: { kpId: id, name, note: opts.note },
     },
     async (tx) => {
@@ -432,7 +446,7 @@ export async function retireKp(
   const receipt = await withCoreWrite(
     {
       actor: opts.actor ?? "agent",
-      tool: "retireKp",
+      tool: 工具名(opts, "retireKp"),
       args: { kpId: id, force: opts.force ?? false, note: opts.note },
     },
     async (tx) => {
@@ -500,7 +514,7 @@ export async function addKpAlias(
   const receipt = await withCoreWrite(
     {
       actor: opts.actor ?? "agent",
-      tool: "addKpAlias",
+      tool: 工具名(opts, "addKpAlias"),
       args: { kpId: id, alias: word, note: opts.note },
     },
     async (tx) => {
@@ -534,7 +548,7 @@ export async function removeKpAlias(
   const receipt = await withCoreWrite(
     {
       actor: opts.actor ?? "agent",
-      tool: "removeKpAlias",
+      tool: 工具名(opts, "removeKpAlias"),
       args: { kpId: id, alias: word, note: opts.note },
     },
     async (tx) => {
@@ -607,7 +621,7 @@ export async function createEditionTree(
   const receipt = await withCoreWrite(
     {
       actor: opts.actor ?? "agent",
-      tool: "createEditionTree",
+      tool: 工具名(opts, "createEditionTree"),
       args: {
         id,
         subject: v.subject,
@@ -677,7 +691,7 @@ export async function setTreeStatus(
   const receipt = await withCoreWrite(
     {
       actor: opts.actor ?? "agent",
-      tool: "setTreeStatus",
+      tool: 工具名(opts, "setTreeStatus"),
       args: { treeId: id, status: st, note: opts.note },
     },
     async (tx) => {
@@ -763,7 +777,7 @@ export async function addEditionNode(
   const receipt = await withCoreWrite(
     {
       actor: opts.actor ?? "agent",
-      tool: "addEditionNode",
+      tool: 工具名(opts, "addEditionNode"),
       args: { id, treeId: v.treeId, name: v.name, note: opts.note },
     },
     async (tx) => {
@@ -839,7 +853,7 @@ export async function mapNodeKp(
   const receipt = await withCoreWrite(
     {
       actor: opts.actor ?? "agent",
-      tool: "mapNodeKp",
+      tool: 工具名(opts, "mapNodeKp"),
       args: { nodeId: n, kpId: k, note: opts.note },
     },
     async (tx) => {
@@ -880,7 +894,7 @@ export async function unmapNodeKp(
   const receipt = await withCoreWrite(
     {
       actor: opts.actor ?? "agent",
-      tool: "unmapNodeKp",
+      tool: 工具名(opts, "unmapNodeKp"),
       args: { nodeId: n, kpId: k, note: opts.note },
     },
     async (tx) => {
@@ -1142,7 +1156,7 @@ export async function mergeKp(
   const receipt = await withCoreWrite(
     {
       actor: opts.actor ?? "agent",
-      tool: "mergeKp",
+      tool: 工具名(opts, "mergeKp"),
       args: { from, to, note: opts.note },
     },
     async (tx) => {
@@ -1591,7 +1605,7 @@ export async function importKgBatch(
   const receipt = await withCoreWrite(
     {
       actor: opts.actor ?? "agent",
-      tool: "importKgBatch",
+      tool: 工具名(opts, "importKgBatch"),
       args: {
         kps: v.kps.length,
         aliases: v.aliases.length,
