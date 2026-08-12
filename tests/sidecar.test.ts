@@ -5,6 +5,8 @@
  *   ① segment：LaTeX 符号一个都不许进词串，中文真的被切开（不然 unicode61 白搭）；
  *   ② calc_verify 三态各一例 —— 尤其 **cannot_verify 是如实报**，
  *      应用题绝不许被"看着像对的"判成 verified；
+ *      外加**符号恒等档**（kb-sidecar/3）一红一绿 + 一条边界：
+ *      方程/枚举/纯数值题都不归它管（数值档零回归的机器证据）；
  *   ③ mismatch 要给得出实算值（人拿着它就能直接判是答案错还是题面录错）；
  *   ④ 环境没装 = CONFIG_MISSING + 一句能照着修的人话，不是一坨 ENOENT；
  *   ⑤ line_verify 一红一绿：中间行断了必须报出**是哪一行、算成了多少**；
@@ -79,6 +81,50 @@ describe("② calc_verify 三态", () => {
     //    但侧车没有"建模"能力，猜对了也是猜，一律 cannot_verify。
     expect(by.get("应用题")?.verdict).toBe("cannot_verify");
     expect(by.get("应用题")?.detail.reason).toContain("中文");
+  });
+
+  it("🔴 符号恒等档：合并同类项判得死（绿），差一个系数就红（带反证）", async () => {
+    // kb-sidecar/3 补的那一档：题面与答案都是纯代数式时，判的是**恒等**不是数值。
+    // 当初收窄到纯数值，把「化简/合并同类项」整类题白白丢给了人工。
+    const rs = await calcVerify([
+      { id: "绿", stem: "3x+2x", answer: "5x" },
+      { id: "红", stem: "3x+2x", answer: "6x" },
+    ]);
+    const by = new Map(rs.map((r) => [r.id, r]));
+
+    expect(by.get("绿")?.verdict).toBe("verified");
+    expect(by.get("绿")?.detail.reason).toContain("符号恒等");
+    expect(by.get("绿")?.detail.computed).toBe("5*x");
+
+    // 🔴 红必须给得出实算式**和反证**——「化不开」不算不等，只有找得到
+    //    一组取值让两式不等才判红（假红拦下真题的代价比漏判大）。
+    expect(by.get("红")?.verdict).toBe("mismatch");
+    expect(by.get("红")?.detail.computed).toBe("5*x");
+    expect(by.get("红")?.detail.expected).toBe("6*x");
+    expect(by.get("红")?.detail.reason).toContain("反证点");
+  });
+
+  it("🔴 符号档不外扩：方程/枚举/纯数值题一律不归它管", async () => {
+    const rs = await calcVerify([
+      // 含等号 = 方程，判它要比**解集**，不是比恒等
+      { id: "方程", stem: "2x+1=7", answer: "x=3" },
+      // 中文枚举句：符号档同样读不成式子，原因仍由数值档那句说了算
+      {
+        id: "枚举",
+        stem: "请找出所有符合条件的整数 x，使得 |x-4|+|x+2|=6。",
+        answer: "整数 x 为 -2，-1，0，1，2，3，4，共 7 个。",
+      },
+      // 🔴 纯数值式两侧都没有未知量 ⇒ 归数值档，绝不许从符号档溜进来改结论
+      { id: "数值", stem: "计算：3+5×2", answer: "13" },
+    ]);
+    const by = new Map(rs.map((r) => [r.id, r]));
+
+    expect(by.get("方程")?.verdict).toBe("cannot_verify");
+    expect(by.get("枚举")?.verdict).toBe("cannot_verify");
+    expect(by.get("枚举")?.detail.reason).toContain("中文");
+    // 数值档的口径一个字没变：reason 还是那句「实算与答案等值」
+    expect(by.get("数值")?.verdict).toBe("verified");
+    expect(by.get("数值")?.detail.reason).toBe("实算与答案等值");
   });
 });
 

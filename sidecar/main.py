@@ -37,8 +37,14 @@ sidecar/main.py —— Python 侧车（AI:PRD-003 · 003-B / 003-E）
     verdict: verified（算出来且与答案等值）
            | mismatch（算出来但对不上 —— 🔴 这是要人看的红旗）
            | cannot_verify（解析不成可计算表达式 / 答案读不出数）
-    🔴 cannot_verify 是**如实报**，绝不猜：应用题、含未知量的化简、单位换算…
-       一律 cannot_verify，把判档权交回上游，不许"看着像对的"就给 verified。
+    两档（kb-sidecar/3 起）：
+      数值档  两侧都是纯数值式 → simplify(题面 - 答案) == 0
+      符号档  两侧都是纯代数式且至少一侧含未知量（合并同类项/化简这类题）
+              → simplify(expand(题面) - expand(答案)) == 0，reason 注明「符号恒等」
+    🔴 符号档只在数值档已经 cannot_verify 时才走，**数值档行为一个字不改**。
+    🔴 cannot_verify 是**如实报**，绝不猜：应用题、含未知量的方程/多解枚举、
+       单位换算…一律 cannot_verify，把判档权交回上游，
+       不许"看着像对的"就给 verified。
 
   {"op":"line_verify","items":[{"id":"q1","analysis":"原式 = -8-(-3-54)\\n= -8+3-54\\n= 49"}]}
   {"op":"line_verify","items":[{"id":"q1","lines":["-2**3-(-3+(-3)**2/(-1/6))","-8-(-3-54)"]}]}
@@ -76,7 +82,7 @@ for _s in (sys.stdin, sys.stdout, sys.stderr):
     except Exception:  # pragma: no cover - 老 Python / 非 TextIO 时忽略
         pass
 
-SIDECAR_VERSION = "kb-sidecar/2"
+SIDECAR_VERSION = "kb-sidecar/3"
 
 # ---------------------------------------------------------------------------
 # 去 LaTeX（segment 与 calc_verify 共用的前处理）
@@ -146,7 +152,7 @@ def op_segment(req: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# op: calc_verify
+# op: calc_verify · 共用解析层（剥指令词 / 去 LaTeX / 数值档解析）
 # ---------------------------------------------------------------------------
 
 # 题号：1. / (2) / 【3】 / 4、
@@ -347,10 +353,270 @@ def _equal(a, b) -> bool:
     return abs(v) < 1e-9
 
 
-def op_calc_verify(req: dict) -> dict:
+# ---------------------------------------------------------------------------
+# 符号恒等档（003-E2）
+#
+# 数值档判不了的那一堆里，有一块是**判得死**的：题面与答案都是纯代数式
+# （`-21x+19y+21x-27y` vs `-8y`）—— 合并同类项、去括号化简这类题全在这块。
+# 它们不需要"建模"，只需要判两个式子恒不恒等，而这正是符号计算的本行。
+# 当初把 calc_verify 收窄到纯数值，是宁可漏判也不误判；这一档把漏的那块捡回来，
+# 边界照样收得死：
+#
+#   ① **只在数值档已经 cannot_verify 时才走** —— 数值档的 verified/mismatch
+#      一个字都碰不到（零回归的物理保证，不是靠"小心点"）。
+#   ② **两侧至少一侧含未知量**。纯数值式仍归数值档，不许从这条路溜进来 ——
+#      否则「隐式乘法」这类更宽的解析口径会悄悄改掉数值档的收案范围。
+#   ③ **含中文 / 等号 / 比较号 / 多字符标识符 一律不收**：
+#      `|x-4|+|x+2|=6` 是方程不是式子（判它要比**解集**，那是另一类闸），
+#      「整数 x 为 -2，-1，0…」是枚举不是式子。如实退回 cannot_verify。
+#   ④ **判 mismatch 必须拿得出反证**（找得到一组取值让两式不等）。
+#      光凭 simplify 没化到 0 就判红 = 假红 —— 这条与 line_verify 同口径：
+#      红灯闸假红拦下真题的代价，比漏判一条大得多。
+#
+# 隐式乘法（`21x` / `6ab` / `2(a+b)`）不用 sympy 的 implicit_multiplication：
+# 那条路会把不在词典里的多字母名按 sympy 自己的规则切（希腊字母名还不切），
+# 口径不在我们手里。这里**自己机械地插 `*`**，插完每个标识符都是单字母或白名单，
+# 再全部显式绑成 Symbol —— sympy 全局命名空间里的 `beta`/`N`/`E` 一个都溜不进来。
+# ---------------------------------------------------------------------------
+
+# 未知量：单个拉丁字母（x/y/a/b/c/m/n…）。带下标、多字符名一律不收
+_ONE_LETTER = re.compile(r"^[A-Za-z]$")
+# 字母连写 = 连乘（`ab` → `a*b`）；再长就不像题面了，拒
+_MAX_VAR_RUN = 4
+# 自由符号上限（反证取样要一符号一个取值，也防病态输入）
+_MAX_SYMBOLS = 8
+# 符号档的乘方护栏：多项式天然带好几个乘方，比数值档松；真正的炸点是**指数大小**
+_MAX_POW_SYM = 8
+_MAX_EXPONENT = 12
+_EXPONENT = re.compile(r"\*\*\s*\(?\s*-?\s*(\d+)")
+# 比较号（判断句不是式子）。与 line_verify 的 _COMPARE 同源，各自留一份便于单独改
+_COMPARE_SYM = re.compile(r"[<>≤≥≠]|&lt;|&gt;")
+
+# 反证取样：两轮定值（**不随机**，同一道题任何时候都得出同一个结论）。
+# 一轮全正整数，一轮带负数与分数 —— 差式若真不恒等，两轮 16 个点上全为 0 的
+# 概率低到可以不谈；真碰上了也不判红，如实说判不了（见纪律④）。
+_SAMPLE_ROUNDS = ((2, 3, 5, 7, 11, 13, 17, 19), (-1, 4, -5, 6, -9, 8, -3, 10))
+
+
+def _split_implicit_mul(s: str) -> str:
+    """机械地把隐式乘法补成显式 `*`；顺便把多字母连写拆成单字母连乘。"""
+
+    def 拆标识符(m: "re.Match[str]") -> str:
+        run = m.group(0)
+        if run in _ALLOWED_NAMES:
+            return run
+        if not run.isalpha():
+            raise _CannotVerify(f"标识符 {run} 不是纯字母（下标/带数字的名一律不收）")
+        if len(run) > _MAX_VAR_RUN:
+            raise _CannotVerify(
+                f"含 {len(run)} 个字母连写的标识符 {run}（未知量只收单字母，"
+                f"连乘最多 {_MAX_VAR_RUN} 个）"
+            )
+        return "*".join(run)
+
+    s = _NAME_RE.sub(拆标识符, s)
+    # 非白名单标识符后面跟括号 = 连乘（`a(b+c)` → `a*(b+c)`）；白名单是函数调用
+    s = re.sub(
+        r"([A-Za-z_][A-Za-z0-9_]*)\s*\(",
+        lambda m: m.group(1) + ("(" if m.group(1) in _ALLOWED_NAMES else "*("),
+        s,
+    )
+    # 数字/右括号 后面跟 字母或左括号（`21x` `2(a+b)` `(a+b)(c+d)`）
+    s = re.sub(r"(?<=[0-9)])\s*(?=[A-Za-z(])", "*", s)
+    # 右括号 后面跟 数字（`(a+b)2`）
+    s = re.sub(r"(?<=\))\s*(?=[0-9])", "*", s)
+    return s
+
+
+def _parse_symbolic_expr(raw: str):
+    """表达式串 → sympy 代数式；不是"纯代数式"就抛 _CannotVerify。返回 (expr, 归一串)。"""
+    from sympy import Abs, Expr, Symbol, pi, root, sqrt
+    from sympy.parsing.sympy_parser import parse_expr, standard_transformations
+
+    s = _latex_to_expr(raw)
+    if not s:
+        raise _CannotVerify("空表达式")
+    if _CJK.search(s):
+        raise _CannotVerify("含中文，不是纯代数式")
+    if "=" in s:
+        raise _CannotVerify("含等号，是方程/枚举不是代数式（判它要比解集，不是比恒等）")
+    if _COMPARE_SYM.search(s):
+        raise _CannotVerify("含比较号，是判断句不是代数式")
+    if len(s) > _MAX_EXPR_LEN:
+        raise _CannotVerify(f"表达式过长（>{_MAX_EXPR_LEN} 字符）")
+    if s.count("**") > _MAX_POW_SYM:
+        raise _CannotVerify(f"乘方过多（>{_MAX_POW_SYM} 处），拒算")
+    if any(int(e) > _MAX_EXPONENT for e in _EXPONENT.findall(s)):
+        raise _CannotVerify(f"指数大于 {_MAX_EXPONENT}，拒算（展开会把进程拖死）")
+    if _HUGE_INT.search(s):
+        raise _CannotVerify("含 16 位以上整数，拒算")
+
+    s = _split_implicit_mul(s)
+
+    local: dict = {"sqrt": sqrt, "root": root, "Abs": Abs, "pi": pi}
+    for name in set(_NAME_RE.findall(s)):
+        if name in _ALLOWED_NAMES:
+            continue
+        if not _ONE_LETTER.match(name):  # 走过 _split_implicit_mul 后不该还有，兜底
+            raise _CannotVerify(f"含多字符标识符 {name}")
+        local[name] = Symbol(name)  # 🔴 显式绑定：sympy 全局命名空间一个名都别想溜进来
+    if len(local) - 4 > _MAX_SYMBOLS:
+        raise _CannotVerify(f"未知量超过 {_MAX_SYMBOLS} 个，拒算")
+    if not _PURE_MATH.match(_NAME_RE.sub(" ", s)):
+        bad = "".join(sorted(set(re.sub(r"[0-9+\-*/().,\s]", "", _NAME_RE.sub(" ", s)))))
+        raise _CannotVerify(f"含不认识的符号：{bad}")
+
+    try:
+        expr = parse_expr(
+            s,
+            local_dict=local,
+            transformations=standard_transformations,
+            evaluate=True,
+        )
+    except Exception as e:
+        raise _CannotVerify(f"表达式解析失败：{type(e).__name__}") from e
+
+    if not isinstance(expr, Expr):
+        raise _CannotVerify("解析出来的不是一个式子（元组/关系式？）")
+    return expr, s
+
+
+def _counterexample(diff):
+    """找一组取值让 diff != 0 —— 找到就是**不恒等的反证**。返回 (取值串, 值) 或 (None, None)。"""
+    from sympy import N
+
+    syms = sorted(diff.free_symbols, key=lambda x: str(x))
+    if len(syms) > _MAX_SYMBOLS:
+        return None, None
+    for 取值 in _SAMPLE_ROUNDS:
+        mapping = {s: 取值[i] for i, s in enumerate(syms)}
+        try:
+            v = complex(N(diff.subs(mapping)))
+        except Exception:
+            continue
+        if v != v or abs(v) == float("inf"):  # nan / zoo：这一轮踩到奇点，换下一轮
+            continue
+        if abs(v) > 1e-9:
+            点 = "，".join(f"{s}={mapping[s]}" for s in syms)
+            return 点, v
+    return None, None
+
+
+def _symbolic_calc(stem: str, answer: str):
+    """符号恒等档 → (verdict, detail)；**不属于本档**（读不成代数式/两侧全是数）返回 None。"""
+    from sympy import expand, simplify
+    from sympy.printing import sstr
+
+    ans_raw = _strip_answer_prefix(answer)
+    if not ans_raw:
+        return None  # 答案为空：数值档已经说清楚了，这里不重复
+    try:
+        expr, exprs = _parse_symbolic_expr(_strip_instructions(stem))
+        ans, anss = _parse_symbolic_expr(ans_raw)
+    except _CannotVerify:
+        return None  # 不是纯代数式 —— 保留数值档那句更贴切的原因
+    except Exception:
+        return None
+
+    # 🔴 两侧都没有未知量 ⇒ 这是纯数值题，归数值档，不许从符号档溜进来改结论
+    if not (expr.free_symbols or ans.free_symbols):
+        return None
+
+    detail: dict = {"reason": "", "expr": exprs, "computed": None, "expected": None}
+    try:
+        detail["computed"] = sstr(expand(expr))
+        detail["expected"] = sstr(expand(ans))
+    except Exception:
+        detail["computed"] = sstr(expr)
+        detail["expected"] = sstr(ans)
+
+    diff = None
+    try:
+        diff = expand(expr - ans)
+        if diff == 0:
+            detail["reason"] = f"符号恒等：题面式与答案式展开后完全相同（{detail['computed']}）"
+            return "verified", detail
+    except Exception:
+        diff = None
+    try:
+        if simplify(expr - ans) == 0:
+            detail["reason"] = f"符号恒等：simplify(题面 - 答案) = 0（{detail['computed']}）"
+            return "verified", detail
+    except Exception:
+        pass
+
+    if diff is None:
+        detail["reason"] = "符号档：两式相减算不动（如实报，不猜）"
+        return "cannot_verify", detail
+
+    点, 值 = _counterexample(diff)
+    if 点 is not None:
+        detail["reason"] = (
+            f"符号恒等不成立：题面式化为 {detail['computed']}，"
+            f"答案式化为 {detail['expected']}（反证点 {点} 处两式相差 {值.real:g}）"
+        )
+        return "mismatch", detail
+
+    # 🔴 化不到 0，也拿不出反证 ⇒ 判不了。不许拿"化不开"当红灯（假红比漏判贵）
+    detail["reason"] = "符号档：既化不到 0 也找不到反证点，判不了（如实报，不猜）"
+    return "cannot_verify", detail
+
+
+# ---------------------------------------------------------------------------
+# op: calc_verify（两档：数值档 → 符号档）
+# ---------------------------------------------------------------------------
+
+
+def _strip_answer_prefix(answer: str) -> str:
+    """答案侧的壳：`答案：` / `解：` / 开头的等号。数值档与符号档共用同一口径。"""
+    s = re.sub(r"^\s*(答案|答|解)\s*[:：]?\s*", "", (answer or "").strip())
+    return re.sub(r"^[=＝]\s*", "", s).strip()
+
+
+def _numeric_calc(stem: str, answer: str) -> tuple:
+    """数值档（kb-sidecar/1 起的原口径，一个字没改）→ (verdict, detail)。"""
     from sympy import nsimplify
     from sympy.printing import sstr
 
+    detail: dict = {"reason": "", "expr": None, "computed": None, "expected": None}
+    try:
+        expr, exprs = _parse_number_expr(_strip_instructions(stem))
+    except _CannotVerify as e:
+        detail["reason"] = f"题面读不成算式：{e}"
+        return "cannot_verify", detail
+    except Exception as e:  # sympy 深处的意外，也如实报 cannot_verify
+        detail["reason"] = f"题面解析异常：{type(e).__name__}: {e}"
+        return "cannot_verify", detail
+
+    detail["expr"] = exprs
+    try:
+        detail["computed"] = sstr(nsimplify(expr) if expr.is_Float else expr)
+    except Exception:
+        detail["computed"] = sstr(expr)
+
+    # 答案侧：剥掉"答案/解/=", 再走同一条解析路
+    ans_raw = _strip_answer_prefix(answer)
+    if not ans_raw:
+        detail["reason"] = "答案为空，无从比对"
+        return "cannot_verify", detail
+    try:
+        ans, anss = _parse_number_expr(ans_raw)
+    except _CannotVerify as e:
+        detail["reason"] = f"答案读不成数：{e}"
+        return "cannot_verify", detail
+    except Exception as e:
+        detail["reason"] = f"答案解析异常：{type(e).__name__}: {e}"
+        return "cannot_verify", detail
+
+    detail["expected"] = anss
+    if _equal(expr, ans):
+        detail["reason"] = "实算与答案等值"
+        return "verified", detail
+    detail["reason"] = f"实算得 {detail['computed']}，答案是 {sstr(ans)}"
+    return "mismatch", detail
+
+
+def op_calc_verify(req: dict) -> dict:
     items = req.get("items")
     if not isinstance(items, list):
         raise _BadRequest("calc_verify 需要 items 数组：[{id, stem, answer, analysis?}]")
@@ -363,49 +629,14 @@ def op_calc_verify(req: dict) -> dict:
         stem = str(item.get("stem") or "")
         answer = str(item.get("answer") or "")
 
-        detail: dict = {"reason": "", "expr": None, "computed": None, "expected": None}
-        try:
-            expr, exprs = _parse_number_expr(_strip_instructions(stem))
-        except _CannotVerify as e:
-            detail["reason"] = f"题面读不成算式：{e}"
-            results.append({"id": rid, "verdict": "cannot_verify", "detail": detail})
-            continue
-        except Exception as e:  # sympy 深处的意外，也如实报 cannot_verify
-            detail["reason"] = f"题面解析异常：{type(e).__name__}: {e}"
-            results.append({"id": rid, "verdict": "cannot_verify", "detail": detail})
-            continue
+        verdict, detail = _numeric_calc(stem, answer)
+        # 🔴 符号档只接数值档判不了的那一批；数值档给了结论就到此为止（零回归）
+        if verdict == "cannot_verify":
+            sym = _symbolic_calc(stem, answer)
+            if sym is not None:
+                verdict, detail = sym
 
-        detail["expr"] = exprs
-        try:
-            detail["computed"] = sstr(nsimplify(expr) if expr.is_Float else expr)
-        except Exception:
-            detail["computed"] = sstr(expr)
-
-        # 答案侧：剥掉"答案/解/=", 再走同一条解析路
-        ans_raw = re.sub(r"^\s*(答案|答|解)\s*[:：]?\s*", "", answer.strip())
-        ans_raw = re.sub(r"^[=＝]\s*", "", ans_raw).strip()
-        if not ans_raw:
-            detail["reason"] = "答案为空，无从比对"
-            results.append({"id": rid, "verdict": "cannot_verify", "detail": detail})
-            continue
-        try:
-            ans, anss = _parse_number_expr(ans_raw)
-        except _CannotVerify as e:
-            detail["reason"] = f"答案读不成数：{e}"
-            results.append({"id": rid, "verdict": "cannot_verify", "detail": detail})
-            continue
-        except Exception as e:
-            detail["reason"] = f"答案解析异常：{type(e).__name__}: {e}"
-            results.append({"id": rid, "verdict": "cannot_verify", "detail": detail})
-            continue
-
-        detail["expected"] = anss
-        if _equal(expr, ans):
-            detail["reason"] = "实算与答案等值"
-            results.append({"id": rid, "verdict": "verified", "detail": detail})
-        else:
-            detail["reason"] = f"实算得 {detail['computed']}，答案是 {sstr(ans)}"
-            results.append({"id": rid, "verdict": "mismatch", "detail": detail})
+        results.append({"id": rid, "verdict": verdict, "detail": detail})
 
     return {"ok": True, "op": "calc_verify", "results": results}
 
