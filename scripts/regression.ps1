@@ -16,7 +16,7 @@
     REG-A3b  依赖规则活性探针 往 src/app 塞一个违规 import，lint **必须红**
     REG-A1   对账六项        integrity-check.ts 退出码=red 数，须 0
     REG-A2   审计链校验      audit-verify.ts 从创世行起整链重算
-    REG-TEST 单测全量        vitest（102 例基线）
+    REG-TEST 单测全量        vitest（105 例基线）
     REG-A4   备份快照有效    backup-verify.ts 出新快照 + 独立只读复算
 
   🔴 每月一次的「真库全恢复演练」(restore-drill --yes) **不在本脚本里**，
@@ -146,7 +146,7 @@ $gates = @(
 
   [pscustomobject]@{
     Id     = 'REG-TEST'
-    Name   = '单测全量（vitest，102 例基线）'
+    Name   = '单测全量（vitest，105 例基线）'
     Action = {
       & pnpm test | Write-Host
       if ($LASTEXITCODE -ne 0) { return "vitest 退出码 $LASTEXITCODE（有用例挂了）" }
