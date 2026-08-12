@@ -51,6 +51,28 @@ export const ID_PREFIXES = [
 
 export type IdPrefix = (typeof ID_PREFIXES)[number];
 
+/**
+ * 前缀 ↔ 归属表（上表的机读版；WP4 对账 C1d 靠它把 review_queue 的多态 ref 路由到表）。
+ * 🔴 Record<IdPrefix, string> 是编译期闸：加了前缀不补归属表，tsc 直接红。
+ */
+export const ID_PREFIX_TABLE: Record<IdPrefix, string> = {
+  kp: "kp",
+  q: "question",
+  em: "exam_model",
+  ec: "error_cause",
+  sku: "sku",
+  asset: "asset",
+  doc: "source_doc",
+  page: "source_page",
+  node: "edition_node",
+  tree: "edition_tree",
+  batch: "ingest_batch",
+  qr: "quarantine",
+  rq: "review_queue",
+  ledger: "ledger",
+  fig: "question_figure",
+};
+
 /** Crockford Base32：0-9 + A-Z 去掉 I / L / O / U（防手抄歧义） */
 const ULID_BODY = "[0-9A-HJKMNP-TV-Z]{26}";
 
