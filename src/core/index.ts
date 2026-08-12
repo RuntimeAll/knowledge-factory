@@ -19,6 +19,8 @@
  *   metrics.ts metric_event 打点
  *   kg.ts      KG 写原语（考点/别名/版本树/映射/merge_kp/批量导底 · AI:PRD-002）
  *   resolve.ts 考点解析读侧（resolve_kp 打分 + kp_context 卡片包 · AI:PRD-002）
+ *   kgview.ts  KG 治理页读侧（总览统计 / 树全貌 / 引用计数 · AI:PRD-002）
+ *   queue.ts   审查队列（列工单 / 裁决 / 补别名结案 · AI:PRD-002）
  *   gates/     闸骨架（真闸从 AI:PRD-003 起长）
  *   backup.ts  VACUUM INTO 快照（+异地副本）
  *   grading.ts 🔴 圣域 审核.db **只读**连接（三道锁，见文件头）
@@ -193,6 +195,40 @@ export {
   type ResolveKpOptions,
   type ResolveKpResult,
 } from "./resolve";
+
+export {
+  kgOverview,
+  kpRefCounts,
+  listEditionTrees,
+  treeOutline,
+  type KgOverview,
+  type KgViewOptions,
+  type TreeNodeView,
+  type TreeOutline,
+  type TreeSummary,
+} from "./kgview";
+
+export {
+  QUEUE_ERROR_CODES,
+  QUEUE_KINDS,
+  QUEUE_STATES,
+  QueueError,
+  countOpenQueueByKind,
+  getQueueItem,
+  listQueueItems,
+  passQueueWithAlias,
+  verdictQueueItem,
+  type ListQueueOptions,
+  type PassWithAliasInput,
+  type PassWithAliasResult,
+  type QueueErrorCode,
+  type QueueItem,
+  type QueueKind,
+  type QueueState,
+  type QueueVerdict,
+  type QueueVerdictResult,
+  type VerdictOptions,
+} from "./queue";
 
 export {
   PASS,
