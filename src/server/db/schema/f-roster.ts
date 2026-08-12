@@ -25,5 +25,7 @@ export const roster = sqliteTable(
     joinedAt: text("joined_at"),
     note: text("note"),
   },
-  () => [check("roster_status_ck", sql`status IN ('active','paused','closed')`)],
+  () => [
+    check("roster_status_ck", sql`status IN ('active','paused','closed')`),
+  ],
 );

@@ -17,7 +17,17 @@ import * as schema from "../src/server/db/schema/index";
 
 /** 只为可读性存在的域内排序；成员必须与 barrel 完全一致（下面对账） */
 const ORDER: Array<[string, string[]]> = [
-  ["A 域 · KG 双层", ["kp", "kp_alias", "kp_edge", "edition_tree", "edition_node", "node_kp_map"]],
+  [
+    "A 域 · KG 双层",
+    [
+      "kp",
+      "kp_alias",
+      "kp_edge",
+      "edition_tree",
+      "edition_node",
+      "node_kp_map",
+    ],
+  ],
   [
     "B 域 · 题目",
     [
@@ -46,17 +56,23 @@ const ORDER: Array<[string, string[]]> = [
     ],
   ],
   ["F 域 · 学情连接", ["roster"]],
-  ["G 域 · 系统", ["review_queue", "ledger", "ledger_ref", "audit_log", "metric_event"]],
+  [
+    "G 域 · 系统",
+    ["review_queue", "ledger", "ledger_ref", "audit_log", "metric_event"],
+  ],
 ];
 
 /** 审计链绝对 append-only：无条件 RAISE，core 也不许改 */
 const APPEND_ONLY = new Set(["audit_log"]);
 
 function tablesFromSchema(): string[] {
-  return Object.values(schema)
-    .filter((v): v is SQLiteTable => is(v, SQLiteTable))
-    .map((t) => getTableName(t))
-    .sort();
+  const names: string[] = [];
+  for (const v of Object.values(schema)) {
+    // 不用 filter+类型谓词：barrel 里每张表都是各自的字面量类型，
+    // `v is SQLiteTable` 会被判成不可赋值。这里逐个 narrow 就没这问题。
+    if (is(v, SQLiteTable)) names.push(getTableName(v));
+  }
+  return names.sort();
 }
 
 function reconcile(): string[][] {

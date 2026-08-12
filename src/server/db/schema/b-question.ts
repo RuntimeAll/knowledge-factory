@@ -75,13 +75,19 @@ export const question = sqliteTable(
       "question_prov_scan_ck",
       sql`prov_type != 'scan'     OR (source_doc_id IS NOT NULL AND source_page_no IS NOT NULL)`,
     ),
-    check("question_prov_model_ck", sql`prov_type != 'model'    OR model_id IS NOT NULL`),
+    check(
+      "question_prov_model_ck",
+      sql`prov_type != 'model'    OR model_id IS NOT NULL`,
+    ),
     check(
       "question_prov_pipeline_ck",
       sql`prov_type != 'pipeline' OR pipeline_ref IS NOT NULL`,
     ),
     // manual 不当无条件逃逸阀
-    check("question_prov_manual_ck", sql`prov_type != 'manual'   OR created_by IS NOT NULL`),
+    check(
+      "question_prov_manual_ck",
+      sql`prov_type != 'manual'   OR created_by IS NOT NULL`,
+    ),
     // §5 检索主力（SQL 硬过滤轴）
     index("idx_q_status_diff").on(t.status, t.difficulty),
     uniqueIndex("idx_q_matchkey")
@@ -106,7 +112,9 @@ export const questionKp = sqliteTable(
     primaryKey({ columns: [t.questionId, t.kpId] }),
     index("idx_qkp_kp").on(t.kpId, t.questionId),
     // 主考点至多一个
-    uniqueIndex("idx_qkp_primary").on(t.questionId).where(sql`is_primary=1`),
+    uniqueIndex("idx_qkp_primary")
+      .on(t.questionId)
+      .where(sql`is_primary=1`),
   ],
 );
 

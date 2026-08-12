@@ -39,7 +39,9 @@ export const reviewQueue = sqliteTable(
       sql`kind IN ('kp低置信','图片','KG提议','模型转正','新题草稿','隔离','抽查','其他')`,
     ),
     check("review_queue_state_ck", sql`state IN ('open','passed','rejected')`),
-    index("idx_queue_open").on(t.state, t.kind).where(sql`state='open'`),
+    index("idx_queue_open")
+      .on(t.state, t.kind)
+      .where(sql`state='open'`),
   ],
 );
 
@@ -100,7 +102,10 @@ export const auditLog = sqliteTable(
     hmac: text("hmac"),
   },
   () => [
-    check("audit_log_actor_ck", sql`actor IN ('agent','human','proxy','system')`),
+    check(
+      "audit_log_actor_ck",
+      sql`actor IN ('agent','human','proxy','system')`,
+    ),
   ],
 );
 

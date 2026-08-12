@@ -102,7 +102,10 @@ export const skuOutput = sqliteTable(
     createdAt: text("created_at"),
   },
   () => [
-    check("sku_output_kind_ck", sql`kind IN ('pdf_q','pdf_a','png','物料','其他')`),
+    check(
+      "sku_output_kind_ck",
+      sql`kind IN ('pdf_q','pdf_a','png','物料','其他')`,
+    ),
   ],
 );
 

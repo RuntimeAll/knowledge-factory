@@ -32,8 +32,12 @@ async function main(): Promise<void> {
   const L: string[] = [];
   L.push("# AI:PRD-001 建库证据 · sqlite_master 全量快照");
   L.push("");
-  L.push(`> 库：\`knowledge-factory/data/资料库.db\`（DATABASE_URL=\`${DB_URL}\`）`);
-  L.push("> 生成命令：`pnpm exec tsx scripts/dump-sqlite-master.ts <本文件路径>`（cwd=knowledge-factory）");
+  L.push(
+    `> 库：\`knowledge-factory/data/资料库.db\`（DATABASE_URL=\`${DB_URL}\`）`,
+  );
+  L.push(
+    "> 生成命令：`pnpm exec tsx scripts/dump-sqlite-master.ts <本文件路径>`（cwd=knowledge-factory）",
+  );
   L.push(`> 生成时间：${stamp}`);
   L.push("> 🔴 本文件是**机器导出**，不要手改；结构变了重跑脚本覆盖。");
   L.push("");
@@ -41,14 +45,18 @@ async function main(): Promise<void> {
   L.push("");
   L.push("| type | 条数 |");
   L.push("|---|---|");
-  for (const t of [...counts.keys()].sort()) L.push(`| ${t} | ${counts.get(t)!} |`);
+  for (const t of [...counts.keys()].sort())
+    L.push(`| ${t} | ${counts.get(t)!} |`);
   L.push("");
 
   L.push("## 1. `SELECT name, type FROM sqlite_master ORDER BY type, name`");
   L.push("");
   L.push("```");
   L.push("name|type");
-  for (const r of inventory.rows as unknown as Array<{ name: string; type: string }>) {
+  for (const r of inventory.rows as unknown as Array<{
+    name: string;
+    type: string;
+  }>) {
     L.push(`${r.name}|${r.type}`);
   }
   L.push("```");
@@ -59,15 +67,24 @@ async function main(): Promise<void> {
     L.push("");
     L.push("```sql");
     for (const r of rows.filter(pred)) {
-      L.push(`-- [${r.type}] ${r.name}${r.tbl_name !== r.name ? ` (on ${r.tbl_name})` : ""}`);
-      L.push(r.sql === null ? "-- (sql = NULL：SQLite 自建对象，如 UNIQUE/PK 的隐式索引、FTS5 影子表)" : `${r.sql};`);
+      L.push(
+        `-- [${r.type}] ${r.name}${r.tbl_name !== r.name ? ` (on ${r.tbl_name})` : ""}`,
+      );
+      L.push(
+        r.sql === null
+          ? "-- (sql = NULL：SQLite 自建对象，如 UNIQUE/PK 的隐式索引、FTS5 影子表)"
+          : `${r.sql};`,
+      );
       L.push("");
     }
     L.push("```");
     L.push("");
   };
 
-  section("2. 表 DDL（`SELECT sql FROM sqlite_master WHERE type='table'`）", (r) => r.type === "table");
+  section(
+    "2. 表 DDL（`SELECT sql FROM sqlite_master WHERE type='table'`）",
+    (r) => r.type === "table",
+  );
   section("3. 索引 DDL", (r) => r.type === "index");
   section("4. 触发器 DDL", (r) => r.type === "trigger");
 
