@@ -31,10 +31,14 @@ import {
   backupNowInput,
   healthInput,
   integrityCheckInput,
+  kpContextInput,
   payloadToText,
+  resolveKpInput,
   runBackupNow,
   runHealth,
   runIntegrityCheck,
+  runKpContext,
+  runResolveKp,
   type ToolPayload,
 } from "./tools";
 
@@ -104,6 +108,36 @@ const handler = createMcpHandler(
         inputSchema: backupNowInput,
       },
       async (args) => toResult(await runBackupNow(args)),
+    );
+
+    server.registerTool(
+      "resolve_kp",
+      {
+        title: "查考点（考点唯一入口）",
+        description:
+          "🔴 **出题 / 录题 / 挂载考点之前先调它**——kp_id 一律 resolve 出来，禁凭印象编。" +
+          "给一句人话（'绝对值' / '一元一次方程'），回候选考点列表；" +
+          "支持子串模糊（'绝对值'命中'绝对值的化简'）与别名，query 短于 3 字自动退前缀/包含路。" +
+          "返回 { ok, data:{ query, candidates:[{kpId,name,status,confidence(0~1),matchedVia(exact-name|exact-alias|prefix|trigram),aliasHit?,resolvedFrom?}], lowConfidence, queued, warnings } }。" +
+          "🔴 lowConfidence=true（没候选或最高分<0.6）表示**别硬挑一个**：系统已自动开一张待裁工单，" +
+          "该换个说法再查，或如实告诉人「这个考点词表里还没有」。",
+        inputSchema: resolveKpInput,
+      },
+      async (args) => toResult(await runResolveKp(args)),
+    );
+
+    server.registerTool(
+      "kp_context",
+      {
+        title: "考点卡片包",
+        description:
+          "取一个考点的全貌：口径卡片(cardMd) / 别名 / 它在各版本教材的章节落点 / 身上挂了多少题·考察模型·错因。" +
+          "入参 kp_id 必须来自 resolve_kp。传 merged 壳会自动追链到活跃考点并在 resolvedThrough 标明。" +
+          "返回 { ok, data:{ kp:{id,name,status,gradeBand,domain,topic,cardMd}, aliases[], mergedFrom?, placements:[{subject,edition,gradeSem,path:['章','节']}], counts:{questions,examModels,errorCauses}, resolvedThrough? } }。" +
+          "🔴 编造的 kp_id 会回 ok:false / code=KP_NOT_FOUND，**错误体里带 candidates**（能从 id 里读出文本时）——照着改成真 id 再调。",
+        inputSchema: kpContextInput,
+      },
+      async (args) => toResult(await runKpContext(args)),
     );
   },
   {

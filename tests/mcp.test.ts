@@ -91,7 +91,7 @@ interface ListedTool {
 }
 
 describe("MCP 壳 · 注册表", () => {
-  it("route 导出 GET/POST（同一个 handler），tools/list 回三个系统工具", async () => {
+  it("route 导出 GET/POST（同一个 handler），tools/list 回五个工具", async () => {
     expect(typeof route.GET).toBe("function");
     expect(typeof route.POST).toBe("function");
     expect(route.GET).toBe(route.POST); // 2.x 一个 handler 通吃，不再分 SSE/message 两条路
@@ -104,10 +104,13 @@ describe("MCP 壳 · 注册表", () => {
     })) as { result?: { tools?: ListedTool[] } };
     const tools = r.result?.tools ?? [];
 
+    // 🔴 基线随卡增长：001 三个系统工具 + 002-C 两个考点工具
     expect(tools.map((t) => t.name)).toEqual([
       "health",
       "integrity_check",
       "backup_now",
+      "resolve_kp",
+      "kp_context",
     ]);
     // 描述是给 agent 看的，不许空
     for (const t of tools) expect(t.description ?? "").not.toBe("");

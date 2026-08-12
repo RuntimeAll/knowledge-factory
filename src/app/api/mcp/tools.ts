@@ -1,5 +1,7 @@
 /**
- * app/api/mcp/tools.ts —— 三个系统工具的实现层（AI:PRD-001 · WP5）
+ * app/api/mcp/tools.ts —— MCP 工具实现层
+ *   · 三个系统工具 health / integrity_check / backup_now（AI:PRD-001 · WP5）
+ *   · 两个考点工具 resolve_kp / kp_context（AI:PRD-002 · 002-C）
  *
  * 为什么和 route.ts 分家：route.ts 是「注册表」，只负责把工具挂到 mcp-handler 上；
  * 真正的入参 schema、错误分类、返回外壳全在这儿 —— 这样单测能直接调函数，
@@ -25,12 +27,19 @@
 import { z } from "zod";
 
 import {
+  KgError,
+  KpNotFoundError,
   backupNow,
   health,
   integrityCheck,
+  kpContext,
+  resolveKp,
   type BackupResult,
   type HealthReport,
   type IntegrityReport,
+  type KpCandidate,
+  type KpContextCard,
+  type ResolveKpResult,
 } from "~/core";
 
 // ---------------------------------------------------------------------------
@@ -47,8 +56,10 @@ export interface ToolOk<T> {
 /**
  * 调用没跑通（REG-G2 错误契约的最小集：code / message / recoverable）。
  *
- * 本层不产生 candidates/nextTool —— 那是业务闸（AI:PRD-003 起）的事，
- * 系统工具的失败只有「环境不对」一类，没有「你参数写错了、猜猜你想找啥」。
+ * 🔴 candidates 是 KP_NOT_FOUND 专用的**自愈料**（AI:PRD-002 · 002-C）：
+ *    agent 编了个 kp_id，光说「不存在」等于让它干瞪眼；把最近似的真考点
+ *    塞进错误体里，它下一步就能自己改对（REG-B4 / 验收 2-2 的正主）。
+ *    系统三工具仍然不产生它 —— 它们的失败只有「环境不对」一类。
  */
 export interface ToolErr {
   ok: false;
@@ -59,16 +70,25 @@ export interface ToolErr {
   message: string;
   /** 能不能原样重试一次就过；false = 停下来改环境/叫人 */
   recoverable: boolean;
+  /** 只在 KP_NOT_FOUND 时带：最近似的真考点（可能为空数组，见 message） */
+  candidates?: KpCandidate[];
 }
 
 export type ToolPayload<T> = ToolOk<T> | ToolErr;
 
-export type ToolName = "health" | "integrity_check" | "backup_now";
+export type ToolName =
+  | "health"
+  | "integrity_check"
+  | "backup_now"
+  | "resolve_kp"
+  | "kp_context";
 
 export const TOOL_NAMES: readonly ToolName[] = [
   "health",
   "integrity_check",
   "backup_now",
+  "resolve_kp",
+  "kp_context",
 ];
 
 /**
@@ -77,6 +97,8 @@ export const TOOL_NAMES: readonly ToolName[] = [
  *   DB_UNREACHABLE  库文件打不开（路径不对 / 文件不在 / 权限）——不是重试能好的
  *   DB_BUSY         库被别人锁着（SQLITE_BUSY）——过一会儿重试有戏
  *   IO_ERROR        磁盘侧失败（备份目录写不进、异地目录不可达）
+ *   KP_NOT_FOUND    🆕 考点 id 库里没有（多半是编的）——错误体里带 candidates
+ *   INVALID_INPUT   🆕 入参没过校验（空查询串之类）——改参数再来
  *   INTERNAL        没归到上面任何一类的意外
  */
 export const TOOL_ERROR_CODES = [
@@ -84,6 +106,8 @@ export const TOOL_ERROR_CODES = [
   "DB_UNREACHABLE",
   "DB_BUSY",
   "IO_ERROR",
+  "KP_NOT_FOUND",
+  "INVALID_INPUT",
   "INTERNAL",
 ] as const;
 
@@ -118,9 +142,35 @@ export const backupNowInput = z.object({
     ),
 });
 
+export const resolveKpInput = z.object({
+  query: z
+    .string()
+    .describe(
+      "要找的考点，一句人话就行：'绝对值' / '一元一次方程' / '有理数加减'。" +
+        "支持子串模糊（查'绝对值'能命中'绝对值的化简'），也支持别名。",
+    ),
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(50)
+    .optional()
+    .describe("返回几条候选，默认 8。"),
+});
+
+export const kpContextInput = z.object({
+  kp_id: z
+    .string()
+    .describe(
+      "考点 id（形如 kp_01J…）。🔴 必须是 resolve_kp 给的真 id，不许自己编。",
+    ),
+});
+
 export type HealthArgs = z.infer<typeof healthInput>;
 export type IntegrityCheckArgs = z.infer<typeof integrityCheckInput>;
 export type BackupNowArgs = z.infer<typeof backupNowInput>;
+export type ResolveKpArgs = z.infer<typeof resolveKpInput>;
+export type KpContextArgs = z.infer<typeof kpContextInput>;
 
 // ---------------------------------------------------------------------------
 // 错误分类
@@ -149,6 +199,36 @@ function textOf(e: unknown): string {
  * 但 message 一定带上原文，不吞。
  */
 export function classifyToolError(tool: ToolName, e: unknown): ToolErr {
+  // 🔴 先认业务异常：它们自带稳定 code，别让下面的文本匹配去猜。
+  if (e instanceof KpNotFoundError) {
+    return {
+      ok: false,
+      tool,
+      code: "KP_NOT_FOUND",
+      message: e.message,
+      // 可重试 = 「换个 id 再调一次就有戏」，候选就在下面
+      recoverable: true,
+      candidates: e.candidates,
+    };
+  }
+  if (e instanceof KgError) {
+    const code: ToolErrorCode =
+      e.code === "KP_NOT_FOUND"
+        ? "KP_NOT_FOUND"
+        : e.code === "INVALID_INPUT"
+          ? "INVALID_INPUT"
+          : "INTERNAL";
+    return {
+      ok: false,
+      tool,
+      code,
+      // KgError 的 code 一律带进 message：翻不成工具码的那些（MERGE_* / TREE_* …）
+      // 落 INTERNAL，但读的人得知道 core 到底判了什么
+      message: `${tool} 失败[${e.code}]：${e.message}`,
+      recoverable: code !== "INTERNAL",
+    };
+  }
+
   const raw = textOf(e);
   const lower = raw.toLowerCase();
 
@@ -237,6 +317,22 @@ export function runBackupNow(
   return run("backup_now", () =>
     backupNow({ reason: args.reason ?? "manual" }),
   );
+}
+
+/** 一句人话 → 候选考点（考点的唯一入口）。 */
+export function runResolveKp(
+  args: ResolveKpArgs,
+): Promise<ToolPayload<ResolveKpResult>> {
+  return run("resolve_kp", () =>
+    resolveKp(args.query, { limit: args.limit, actor: "agent" }),
+  );
+}
+
+/** 一个考点 → 卡片包（口径 / 别名 / 教材落点 / 挂载计数）。 */
+export function runKpContext(
+  args: KpContextArgs,
+): Promise<ToolPayload<KpContextCard>> {
+  return run("kp_context", () => kpContext(args.kp_id));
 }
 
 // ---------------------------------------------------------------------------
