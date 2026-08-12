@@ -125,7 +125,8 @@ describe("① backupNow", () => {
 
       expect(existsSync(r.path)).toBe(true);
       expect(r.bytes).toBeGreaterThan(0);
-      expect(r.tables).toBe(41); // WP2 基线：32 普通 + 6 FTS 家族 + 3 机制
+      // 基线：32 普通 + 6 question_fts 家族 + 6 kp_fts 家族（002-C 加）+ 3 机制
+      expect(r.tables).toBe(47);
       expect(r.snapshotRowCounts.kp).toBe(Number(row.kp));
       expect(r.snapshotRowCounts.audit_log).toBe(Number(row.al));
       // 没配异地就如实说跳过，不假装

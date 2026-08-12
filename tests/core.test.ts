@@ -204,7 +204,8 @@ describe("① withCoreWrite 正常路", () => {
     expect(h.ok).toBe(true);
     expect(h.gateResting).toBe(true);
     expect(h.writeGate).toBe(0);
-    expect(h.tableCount).toBe(41); // WP2 基线：32 普通 + 6 FTS 家族 + 3 机制
+    // 基线：32 普通 + 6 question_fts 家族 + 6 kp_fts 家族（002-C 加）+ 3 机制
+    expect(h.tableCount).toBe(47);
     expect(h.auditHeadSeq).toBe(await 计数(主副本, "audit_log"));
     expect(h.foreignKeys).toBe(true);
     expect(h.busyTimeoutMs).toBe(5000);

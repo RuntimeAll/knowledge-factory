@@ -23,13 +23,15 @@ import { createClient } from "@libsql/client";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import * as route from "~/app/api/mcp/route";
-import { closeCoreDb } from "~/core";
+import { closeCoreDb, createKp } from "~/core";
 import {
   classifyToolError,
   payloadToText,
   runBackupNow,
   runHealth,
   runIntegrityCheck,
+  runKpContext,
+  runResolveKp,
   type ToolPayload,
 } from "~/app/api/mcp/tools";
 
@@ -163,6 +165,40 @@ describe("MCP 壳 · 三工具", () => {
     );
     // 没配 BACKUP_REMOTE_DIR 时必须如实说跳过，不许静默
     expect(r.data.remote).toMatch(/^skipped\(/);
+  });
+});
+
+describe("MCP 壳 · 考点两工具（AI:PRD-002 · 002-C）", () => {
+  it("resolve_kp：精确命中 1.0，外壳裹着 core 的原始结果", async () => {
+    await createKp({ name: "绝对值" });
+    const r = await runResolveKp({ query: "绝对值" });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.tool).toBe("resolve_kp");
+    expect(r.data.candidates[0]?.confidence).toBe(1);
+    expect(r.data.candidates[0]?.matchedVia).toBe("exact-name");
+    expect(r.data.lowConfidence).toBe(false);
+  });
+
+  it("🔴 REG-B4：编造 kp_id → ok:false / KP_NOT_FOUND / recoverable / 错误体带 candidates", async () => {
+    const r = await runKpContext({ kp_id: "kp_绝对值" });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.code).toBe("KP_NOT_FOUND");
+    expect(r.recoverable).toBe(true);
+    expect(r.candidates?.length).toBeGreaterThan(0);
+    // 🔴 候选要能原样穿过 JSON 序列化到 agent 手里（BigInt/循环引用之类别在这翻车）
+    const parsed = JSON.parse(payloadToText(r)) as {
+      candidates: { kpId: string }[];
+    };
+    expect(parsed.candidates[0]!.kpId).toBe(r.candidates![0]!.kpId);
+  });
+
+  it("resolve_kp 空查询串 → INVALID_INPUT（KgError 翻得成工具码）", async () => {
+    const r = await runResolveKp({ query: "   " });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.code).toBe("INVALID_INPUT");
   });
 });
 

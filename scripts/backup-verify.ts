@@ -34,7 +34,7 @@
  *   （反过来说：ingest_batch 有行而 kp/question 是空的 = 录进来的东西没落地，
  *     正是本关该抓的事故。）
  *
- *   audit_log > 0 与表数=41 **任何时候都是硬断言**：空库也必须有审计行
+ *   audit_log > 0 与表数=TABLES_BASELINE **任何时候都是硬断言**：空库也必须有审计行
  *   （建库那几次 core 写就留了痕），表数少一张 = 快照不完整或 schema 被动过。
  * ════════════════════════════════════════════════════════════════════════════
  */
@@ -47,8 +47,11 @@ import {
   type BackupReason,
 } from "../src/core/index";
 
-/** WP2 结构基线：32 普通 + 6 FTS 家族 + 3 机制（schema.test / backup-integrity.test 同一口径） */
-const TABLES_BASELINE = 41;
+/**
+ * 结构基线：32 普通 + 6 question_fts 家族 + 6 kp_fts 家族（002-C 加）+ 3 机制
+ * （schema.test / backup-integrity.test / core.test 同一口径，改一处要一起改）
+ */
+const TABLES_BASELINE = 47;
 
 interface SnapshotCounts {
   tables: number;

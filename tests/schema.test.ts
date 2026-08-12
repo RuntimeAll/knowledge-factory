@@ -224,9 +224,10 @@ describe("① 表清单（G-2 红线：冻结物零建表）", () => {
     const ddl =
       (await master(真库, "table")).find((r) => r.name === "kp_fts")?.sql ?? "";
     expect(ddl).toContain("trigram");
-    expect(ddl, "词表若走 unicode61，查「绝对值」就命中不了「绝对值的化简」").not.toContain(
-      "unicode61",
-    );
+    expect(
+      ddl,
+      "词表若走 unicode61，查「绝对值」就命中不了「绝对值的化简」",
+    ).not.toContain("unicode61");
   });
 
   it("🔴 冻结物（录入台状态机 / 批改写侧 / 被否掉的表）一张都没有", async () => {
