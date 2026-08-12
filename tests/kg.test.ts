@@ -662,6 +662,14 @@ describe("⑤ importKgBatch 全进或全不进", () => {
   });
 
   it("正常一批：考点 + 树 + 父子节点（乱序也排得对）+ 别名 + 映射一次落库", async () => {
+    // 🔴 计数一律「与基线相对」：副本是从真库 VACUUM 出来的，002 导底后它自带
+    //    415 考点 / 108 节点 / 490 映射 —— 写死绝对数的断言在有存量的库上必假红。
+    const 前 = {
+      kp: await 计数(h, "kp"),
+      node: await 计数(h, "edition_node"),
+      map: await 计数(h, "node_kp_map"),
+      alias: await 计数(h, "kp_alias"),
+    };
     const kp1 = newId("kp");
     const kp2 = newId("kp");
     const tree = newId("tree");
@@ -717,10 +725,10 @@ describe("⑤ importKgBatch 全进或全不进", () => {
       nodes: 2,
       maps: 2,
     });
-    expect(await 计数(h, "kp")).toBe(2);
-    expect(await 计数(h, "edition_node")).toBe(2);
-    expect(await 计数(h, "node_kp_map")).toBe(2);
-    expect(await 计数(h, "kp_alias")).toBe(2);
+    expect(await 计数(h, "kp")).toBe(前.kp + 2);
+    expect(await 计数(h, "edition_node")).toBe(前.node + 2);
+    expect(await 计数(h, "node_kp_map")).toBe(前.map + 2);
+    expect(await 计数(h, "kp_alias")).toBe(前.alias + 2);
 
     // 一批 = 一条审计行，rowRefs 全量（7 行业务 = 2 kp + 1 tree + 2 node + 2 alias… + 2 map）
     expect(r.rowRefs).toHaveLength(9);

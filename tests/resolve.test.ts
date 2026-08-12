@@ -138,7 +138,9 @@ describe("① 四路命中：exact-name / exact-alias / prefix / trigram", () =>
   });
 
   it("exact-name = 1.0 且排第一；同一 query 的模糊命中排在后面", async () => {
-    const r = await resolveKp("绝对值", { handle: h });
+    // 🔴 limit 放大：002 导底后真库里带「绝对值」的考点有十几个，默认 8 条会把本例
+    //    新建的长考点挤出候选。本例钉的是**排序口径**（精确压模糊），不是「前 8 名有谁」。
+    const r = await resolveKp("绝对值", { handle: h, limit: 100 });
     expect(r.query).toBe("绝对值");
     expect(r.lowConfidence).toBe(false);
 
@@ -269,8 +271,13 @@ describe("③ 低置信 → review_queue，同 query 不重复开", () => {
     await createKp({ name: "有理数加减法则" }, { handle: h });
   });
 
+  // 🔴 挑「初中数学 KG 里绝不可能有」的高数词做查询：002 导底后真库有 415 个考点，
+  //    原来用的「完全平方公式」已经能模糊命中（`通过对完全平方公式变形求值` conf=0.665），
+  //    本组要造的是**零候选**那一路，词得选在词表覆盖面之外。
+  const 词表外 = "洛必达法则";
+
   it("查一个词表里没有的说法 → 开一张 kp低置信 工单", async () => {
-    const r = await resolveKp("完全平方公式", { handle: h });
+    const r = await resolveKp(词表外, { handle: h });
     expect(r.candidates).toEqual([]);
     expect(r.lowConfidence).toBe(true);
     expect(r.queued?.created).toBe(true);
@@ -290,12 +297,12 @@ describe("③ 低置信 → review_queue，同 query 不重复开", () => {
     expect(rows[0]!.state).toBe("open");
     expect(rows[0]!.id).toBe(r.queued!.id);
     const payload = JSON.parse(rows[0]!.payload_json) as { query: string };
-    expect(payload.query).toBe("完全平方公式");
-    expect(rows[0]!.reason).toContain("完全平方公式");
+    expect(payload.query).toBe(词表外);
+    expect(rows[0]!.reason).toContain(词表外);
   });
 
   it("🔴 再查同一个词 → 不重复入队（未决工单去重）", async () => {
-    const r = await resolveKp("完全平方公式", { handle: h });
+    const r = await resolveKp(词表外, { handle: h });
     expect(r.queued?.created).toBe(false);
     expect(await 计数(h, "review_queue")).toBe(1);
   });
