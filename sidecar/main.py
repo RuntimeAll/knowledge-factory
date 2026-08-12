@@ -1,11 +1,16 @@
 """
-sidecar/main.py —— Python 侧车（AI:PRD-003 · 003-B）
+sidecar/main.py —— Python 侧车（AI:PRD-003 · 003-B / 003-E）
 
-做两件 JS 生态里没有像样替代物的事：
+做三件 JS 生态里没有像样替代物的事：
   ① segment      中文分词（jieba）——question_fts 是 unicode61 分词器，
                  中文必须由写侧**预分词成空格串**才检索得动（001 疑问一·方案甲）；
   ② calc_verify  数值实算（sympy）——「可实算即实算」闸的算力来源，
-                 结论喂 question.solution_grade 判档（calc_verified / …）。
+                 结论喂 question.solution_grade 判档（calc_verified / …）；
+  ③ line_verify  逐行恒等（sympy）——解析里**每一行**都要与原式恒等，
+                 补的正是 calc_verify 验不出的那一类：「答案对、过程错」
+                 （2026-07-30 有理数打卡第二天第 9 题事故：去括号漏变号，
+                 最后一行又锚回正确答案）。思路照 `举一反三产物/解题模型库/
+                 _验算/逐行恒等校验.py`（只读，未改动）。
 
 ════════════════════════════════════════════════════════════════════════════
 调用契约（一次进程一次请求；批量在请求内部做，别在外面起 N 个进程）
@@ -35,6 +40,20 @@ sidecar/main.py —— Python 侧车（AI:PRD-003 · 003-B）
     🔴 cannot_verify 是**如实报**，绝不猜：应用题、含未知量的化简、单位换算…
        一律 cannot_verify，把判档权交回上游，不许"看着像对的"就给 verified。
 
+  {"op":"line_verify","items":[{"id":"q1","analysis":"原式 = -8-(-3-54)\\n= -8+3-54\\n= 49"}]}
+  {"op":"line_verify","items":[{"id":"q1","lines":["-2**3-(-3+(-3)**2/(-1/6))","-8-(-3-54)"]}]}
+    → {"ok":true,"op":"line_verify","results":[
+         {"id":"q1","verdict":"line_mismatch","checked":2,"chains":1,
+          "reason":"...","badLines":[{"line":3,"text":"= -8+3-54",
+            "left":"-8-(-3-54)","right":"-8+3-54","computed":"-59","expected":"49"}]}]}
+    verdict: all_identical      （做过比对，且每一段都与本链首段恒等）
+           | line_mismatch      （🔴 有一段与首段不等 —— 中间行断裂）
+           | no_checkable_lines （一次比对都没做成：全是文字/含未知量/读不成算式）
+    🔴 **只判数值链**：含未知量的变形链（解方程、字母化简）一律 no_checkable_lines。
+       判它们要比**解集**（逐行恒等校验.py 的 eq 模式），拿恒等去判 `x=1` 这种行
+       会当场判出假红；本闸是红灯闸，假红的代价比漏判高得多，所以宁可如实说
+       「这条我判不了」。
+
   出错（请求本身坏了 / 内部异常）：
     → {"ok":false,"op":"...","error":{"code":"BAD_REQUEST","message":"人话"}}
     code: BAD_REQUEST | UNKNOWN_OP | INTERNAL
@@ -57,7 +76,7 @@ for _s in (sys.stdin, sys.stdout, sys.stderr):
     except Exception:  # pragma: no cover - 老 Python / 非 TextIO 时忽略
         pass
 
-SIDECAR_VERSION = "kb-sidecar/1"
+SIDECAR_VERSION = "kb-sidecar/2"
 
 # ---------------------------------------------------------------------------
 # 去 LaTeX（segment 与 calc_verify 共用的前处理）
@@ -240,6 +259,10 @@ def _strip_instructions(stem: str) -> str:
 def _latex_to_expr(s: str) -> str:
     """LaTeX / 中文运算符 → sympy 能读的表达式串（只做机械翻译，不做猜测）。"""
     s = s.replace("$", " ")
+    # 行内/行间数学定界符 \( \) \[ \]（群卷题面就是这个形态：`\(23-\left(-5\right)-14\)`）。
+    # 🔴 必须先于 \\left|\\right 与命令名剥离处理：留着它，后面的白名单会因为一个裸
+    #    反斜杠把整条式子判成「含不认识的符号」，一道算得动的题就白白降级成 cannot_verify。
+    s = re.sub(r"\\[()\[\]]", " ", s)
     s = re.sub(r"\\left|\\right", " ", s)
     s = s.replace("\\times", "*").replace("\\cdot", "*").replace("\\div", "/")
 
@@ -388,6 +411,155 @@ def op_calc_verify(req: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# op: line_verify（逐行恒等）
+# ---------------------------------------------------------------------------
+
+# 等号（含全角）。⩵/≡ 之类不收：那是"恒等号"，写法罕见，收进来只会多一条猜测。
+_EQ_SPLIT = re.compile(r"[=＝]")
+# 「这一行是上一行的续行」：整行以等号开头（`= -8+3-54` 这种解析常见写法）
+_CONT_LINE = re.compile(r"^[\s　]*[=＝]")
+# 一行里出现比较号/不等号 ⇒ 不是恒等链（`a+c>0`、`27 < 50 < 64` 是判断句）
+_COMPARE = re.compile(r"[<>≤≥≠]|&lt;|&gt;")
+# 防炸：一道题最多看这么多行、做这么多次比对
+_MAX_LINES = 200
+_MAX_CHECKS = 120
+
+
+def _chain_segments(line: str) -> list:
+    """一行 → 等号切出来的片段（去空白后的非空片段）。"""
+    return [seg.strip() for seg in _EQ_SPLIT.split(line) if seg.strip()]
+
+
+def _numeric_value(seg: str):
+    """片段 → sympy 数值；读不成纯数值表达式就返回 None（如实跳过，不猜）。"""
+    try:
+        expr, _norm = _parse_number_expr(seg)
+    except Exception:
+        # _CannotVerify（含未知量/含中文/触护栏）与 sympy 深处的意外，一律当"这段判不了"
+        return None
+    return expr
+
+
+def _verify_one(lines: list) -> dict:
+    """逐行恒等的核心（纯函数，无 IO）。
+
+    链的语义（与 逐行恒等校验.py 的 expr 模式同源）：
+      · 一条链的**首个可读片段**是基准（原式）；
+      · 同一条链上此后的每个可读片段都必须与基准恒等；
+      · 「以等号开头的行」= 上一行的续行，接着同一条链算；
+        其余行另起一条链（多小问的解析里，(1)(2)(3) 各是各的链）。
+    """
+    from sympy import simplify
+    from sympy.printing import sstr
+
+    bad = []
+    checked = 0
+    chains = 0
+    ref = None
+    ref_text = ""
+
+    for i, raw in enumerate(lines[:_MAX_LINES], 1):
+        line = (raw or "").strip()
+        if not line:
+            continue
+        # 判断句不是恒等链（`27 < 50 < 64`）—— 拿它去判恒等必出假红
+        if _COMPARE.search(line):
+            ref = None
+            continue
+
+        segs = _chain_segments(line)
+        if not segs:
+            continue
+
+        if not _CONT_LINE.match(raw or ""):
+            # 新起一条链：基准清空，由本行第一个可读片段重新定
+            ref = None
+            ref_text = ""
+
+        for seg in segs:
+            if checked >= _MAX_CHECKS:
+                break
+            v = _numeric_value(seg)
+            if v is None:
+                continue  # 文字/含未知量/读不成算式 —— 如实跳过
+            if ref is None:
+                ref, ref_text = v, seg
+                chains += 1
+                continue
+            checked += 1
+            try:
+                same = simplify(ref - v) == 0
+            except Exception:
+                same = False
+            if not same:
+                bad.append(
+                    {
+                        "line": i,
+                        "text": line,
+                        "left": ref_text,
+                        "right": seg,
+                        "computed": sstr(v),
+                        "expected": sstr(ref),
+                    }
+                )
+
+    if bad:
+        first = bad[0]
+        return {
+            "verdict": "line_mismatch",
+            "checked": checked,
+            "chains": chains,
+            "badLines": bad,
+            "reason": (
+                f"第 {first['line']} 行断裂：「{first['right']}」算出 {first['computed']}，"
+                f"而本链原式「{first['left']}」= {first['expected']}"
+            ),
+        }
+    if checked == 0:
+        return {
+            "verdict": "no_checkable_lines",
+            "checked": 0,
+            "chains": chains,
+            "badLines": [],
+            "reason": "没有可机读的数值等式链（全是文字、含未知量或读不成算式）——如实报，不猜",
+        }
+    return {
+        "verdict": "all_identical",
+        "checked": checked,
+        "chains": chains,
+        "badLines": [],
+        "reason": f"{chains} 条链共 {checked} 处比对全部恒等",
+    }
+
+
+def op_line_verify(req: dict) -> dict:
+    items = req.get("items")
+    if not isinstance(items, list):
+        raise _BadRequest("line_verify 需要 items 数组：[{id, lines?|analysis?}]")
+
+    results = []
+    for i, item in enumerate(items):
+        if not isinstance(item, dict) or "id" not in item:
+            raise _BadRequest(f"items[{i}] 缺 id")
+        raw_lines = item.get("lines")
+        if isinstance(raw_lines, list):
+            # 显式给链：整条当**一条链**（首行 = 原式），与 逐行恒等校验.py expr 模式一致。
+            # 实现上把首行之后的行都当续行，续行判据就是行首等号 —— 这里替调用方补上。
+            lines = [str(x) for x in raw_lines]
+            lines = [lines[0]] + [
+                x if _CONT_LINE.match(x) else f"= {x}" for x in lines[1:]
+            ]
+        else:
+            text = str(item.get("analysis") or item.get("text") or "")
+            lines = text.splitlines()
+        out = _verify_one(lines)
+        out["id"] = item["id"]
+        results.append(out)
+
+    return {"ok": True, "op": "line_verify", "results": results}
+
+
+# ---------------------------------------------------------------------------
 # op: ping（探活 + 版本自报；node 侧诊断与 README 冒烟都用它）
 # ---------------------------------------------------------------------------
 
@@ -415,7 +587,12 @@ class _CannotVerify(Exception):
     pass
 
 
-_OPS = {"segment": op_segment, "calc_verify": op_calc_verify, "ping": op_ping}
+_OPS = {
+    "segment": op_segment,
+    "calc_verify": op_calc_verify,
+    "line_verify": op_line_verify,
+    "ping": op_ping,
+}
 
 
 def handle(raw: str) -> dict:

@@ -241,6 +241,7 @@ export {
   SIDECAR_TIMEOUT_MS,
   SidecarError,
   calcVerify,
+  lineVerify,
   pingSidecar,
   segmentText,
   segmentTexts,
@@ -251,6 +252,10 @@ export {
   type CalcVerifyDetail,
   type CalcVerifyItem,
   type CalcVerifyResult,
+  type LineVerifyBadLine,
+  type LineVerifyItem,
+  type LineVerifyResult,
+  type LineVerifyVerdict,
   type SegmentInput,
   type SegmentMode,
   type SegmentOptions,
@@ -411,6 +416,7 @@ export {
 export {
   CALC_CODES,
   isCalcCandidate,
+  isLineVerifyCandidate,
   looksLikePureExpression,
 } from "./gates/ingest-calc.gate";
 export {

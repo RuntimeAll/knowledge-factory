@@ -128,7 +128,7 @@
 | 2 | 无题级图 | ＋`figures` + 内容寻址入 asset + 题干图必审 |
 | 3 | 考点是裸字符串，不校验 | resolve_kp 精确命中真叶子，主考点唯一，禁编造 |
 | 4 | 来源是自由文本 | provenance 四型 + 建表 CHECK + 逐型硬闸 |
-| 5 | `实算` 产线自报 | 管道内 sympy 实算三态，verified 才给 `calc_verified` |
+| 5 | `实算` 产线自报 | 管道内 sympy 实算三态，verified 才给 `calc_verified`；**外加逐行恒等**（003-E）：`qtype='计算'` 且有解析的题，解析里每一行都要与原式恒等，断了红灯 `CALC_LINE_MISMATCH` —— 这是产线那个「实算:绿」结构性验不出的一类（答案对、过程错） |
 | 6 | 查重只算 hash 不拦 | `match_key` 部分唯一索引 ＋ 撞库/撞批双向红灯（带撞的是哪一行） |
 | 7 | 题面纯净零校验 | 指令词闸 ＋ 前缀清洗闸（含机器复核）＋ 占位红旗闸 |
 | 8 | 契约不认识就跳过 | 结构错 = 整批拒，带 `z.prettifyError` 的逐字段人话 |
@@ -148,7 +148,7 @@
 | ⑤ | 前缀清洗（含残留机器复核） | `STEM_PREFIX_RESIDUE` / `STEM_EMPTY_AFTER_CLEAN` |
 | ⑥ | 占位红旗 | `STEM_EMPTY` / `STEM_PLACEHOLDER` / `FIGURE_DECLARED_BUT_MISSING` |
 | ⑦ | 查重 match_key | `DUPLICATE` / `DUPLICATE_IN_BATCH` |
-| ⑧ | 可实算即实算 | `CALC_MISMATCH` |
+| ⑧ | 可实算即实算（**两个判据**：最终答案 + 过程逐行恒等） | `CALC_MISMATCH` / `CALC_LINE_MISMATCH` |
 | ⑨ | 判档 solution_grade | `NO_SOLUTION`（防御） |
 | ⑩ | 配图分级 | `FIGURE_FILE_MISSING` / `FIGURE_UNREADABLE` / `FIGURE_NOT_A_FILE` |
 
@@ -159,7 +159,7 @@
 
 | 档 | 条件 | 语义 |
 |---|---|---|
-| `calc_verified` | 闸⑧ 实算 verified | 机器算过且与答案等值（⚠️ 只验最终答案，验不出「答案对过程错」） |
+| `calc_verified` | 闸⑧ 实算 verified | 机器算过且与答案等值（⚠️ 判档只看最终答案；「过程对不对」由同一道闸的第二判据 `CALC_LINE_MISMATCH` 拦，不进判档） |
 | `analysis_only` | 有 analysis **或** 有 answer | 人核得动。`qtype='计算'` 却算不动又没解析 ⇒ 落这一档并在账上记 warn |
 | `no_solution` | 两样都没有 | 🔴 Q11 排除出出题检索；契约层已拦，闸⑨ 是防御 |
 

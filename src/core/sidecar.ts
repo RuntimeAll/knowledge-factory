@@ -88,7 +88,7 @@ export interface CalcVerifyItem {
   id: string;
   stem: string;
   answer: string;
-  /** 目前不参与判定，留着给后续「逐行恒等」用 */
+  /** 🔴 不参与 calc_verify 判定（那是最终答案级）；解析的逐行校验走 `lineVerify` */
   analysis?: string;
 }
 
@@ -107,6 +107,51 @@ export interface CalcVerifyResult {
   id: string;
   verdict: CalcVerdict;
   detail: CalcVerifyDetail;
+}
+
+// ── 逐行恒等（003-E）──────────────────────────────────────────────────────────
+
+/**
+ * 逐行恒等三态。
+ * 🔴 `no_checkable_lines` 是**如实报**：含未知量的变形链（解方程/字母化简）本闸判不了
+ *    （判它们要比解集，那是另一类闸），绝不为了"有结论"而猜。
+ */
+export type LineVerifyVerdict =
+  "all_identical" | "line_mismatch" | "no_checkable_lines";
+
+export interface LineVerifyItem {
+  id: string;
+  /** 解析原文（按行切；以等号开头的行 = 上一行的续行） */
+  analysis?: string;
+  /** 或者直接给转写好的链（首行 = 原式），与 逐行恒等校验.py 的 expr 模式同源 */
+  lines?: readonly string[];
+}
+
+/** 断裂的那一行（人拿着它就能直接去核卷面） */
+export interface LineVerifyBadLine {
+  /** 行号（1 起，按解析原文/lines 的顺序） */
+  line: number;
+  /** 该行原文 */
+  text: string;
+  /** 本链的原式片段 */
+  left: string;
+  /** 对不上的那个片段 */
+  right: string;
+  /** right 的实算值 */
+  computed: string;
+  /** left（原式）的实算值 */
+  expected: string;
+}
+
+export interface LineVerifyResult {
+  id: string;
+  verdict: LineVerifyVerdict;
+  /** 做成了多少次比对（0 = no_checkable_lines） */
+  checked: number;
+  /** 识别出几条链（多小问的解析会有多条） */
+  chains: number;
+  reason: string;
+  badLines: LineVerifyBadLine[];
 }
 
 export interface SidecarPing {
@@ -153,6 +198,29 @@ const 实算响应 = z.object({
         computed: z.string().nullable(),
         expected: z.string().nullable(),
       }),
+    }),
+  ),
+});
+
+const 逐行响应 = z.object({
+  ok: z.literal(true),
+  results: z.array(
+    z.object({
+      id: z.string(),
+      verdict: z.enum(["all_identical", "line_mismatch", "no_checkable_lines"]),
+      checked: z.number(),
+      chains: z.number(),
+      reason: z.string(),
+      badLines: z.array(
+        z.object({
+          line: z.number(),
+          text: z.string(),
+          left: z.string(),
+          right: z.string(),
+          computed: z.string(),
+          expected: z.string(),
+        }),
+      ),
     }),
   ),
 });
@@ -399,6 +467,22 @@ export async function calcVerify(
   if (items.length === 0) return [];
   const parsed = await 调侧车({ op: "calc_verify", items }, options);
   return 校验(实算响应, parsed, "calc_verify").results;
+}
+
+/**
+ * 批量逐行恒等校验（003-E）。
+ *
+ * 🔴 与 {@link calcVerify} 是**两件事**，不能互相替代：
+ *    calcVerify 验最终答案（答案抄错），lineVerify 验过程每一行（答案对、过程错）。
+ *    后者正是 2026-07-30 那次事故里唯一能抓住问题的判据。
+ */
+export async function lineVerify(
+  items: readonly LineVerifyItem[],
+  options: SidecarOptions = {},
+): Promise<LineVerifyResult[]> {
+  if (items.length === 0) return [];
+  const parsed = await 调侧车({ op: "line_verify", items }, options);
+  return 校验(逐行响应, parsed, "line_verify").results;
 }
 
 /** 探活：装没装、装的是哪几个版本 */
