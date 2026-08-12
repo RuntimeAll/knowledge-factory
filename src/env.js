@@ -7,7 +7,10 @@ export const env = createEnv({
    * isn't built with invalid env vars.
    */
   server: {
-    DATABASE_URL: z.string().url(),
+    // 本地 SQLite：形如 file:./data/资料库.db
+    // 🔴 不用 z.url()：libsql 的 file: 相对路径经 WHATWG URL 归一化会丢掉 "./"，
+    //    语义和 libsql 自己的 parseUri 不一致，校验通过反而误导。这里只保证非空。
+    DATABASE_URL: z.string().min(1),
     NODE_ENV: z
       .enum(["development", "test", "production"])
       .default("development"),
