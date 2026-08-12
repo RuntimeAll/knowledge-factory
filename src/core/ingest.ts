@@ -70,7 +70,11 @@ import {
   INGEST_CONTRACT_CODE,
   ingestContractGate,
 } from "./gates/ingest-contract.gate";
-import { ingestCalcGate, isCalcCandidate } from "./gates/ingest-calc.gate";
+import {
+  ingestCalcGate,
+  isCalcCandidate,
+  isLineVerifyCandidate,
+} from "./gates/ingest-calc.gate";
 import {
   emptyDerived,
   type IngestBatchCtx,
@@ -95,7 +99,12 @@ import {
   type KbIngestItem,
   type KbIngestPayload,
 } from "./ingest-schema";
-import { calcVerify, segmentTexts, type SidecarOptions } from "./sidecar";
+import {
+  calcVerify,
+  lineVerify,
+  segmentTexts,
+  type SidecarOptions,
+} from "./sidecar";
 import { nowLocalISO } from "./time";
 import { withCoreWrite, type RowRef } from "./write";
 
@@ -140,6 +149,8 @@ export interface IngestItemReport {
   solutionGrade: string | null;
   /** 实算三态（没送去算 = null） */
   calcVerdict: string | null;
+  /** 逐行恒等三态（没送去校 = null；003-E） */
+  lineVerdict: string | null;
   kpIds: string[];
   primaryKpId: string | null;
   /** 需人审（有题干图） */
@@ -284,6 +295,30 @@ async function 实算(
   });
 }
 
+/**
+ * 侧车逐行恒等：一次进程吃整批（只送 qtype='计算' 且有解析的题）。
+ *
+ * 🔴 单独一趟进程，不并进 实算()：两者的入参与判据完全不同（一个吃 stem+answer
+ *    验最终值，一个吃 analysis 验每一行），合成一个 op 只会让两边的口径互相牵连。
+ *    代价是多起一个 python 进程（~0.3s）——一批一次，不是一题一次。
+ */
+async function 逐行(
+  payload: KbIngestPayload,
+  derived: ItemDerived[],
+  opts: SidecarOptions,
+): Promise<void> {
+  const items: { id: string; analysis: string }[] = [];
+  payload.items.forEach((item, i) => {
+    if (!isLineVerifyCandidate(item)) return;
+    items.push({ id: String(i), analysis: item.analysis ?? "" });
+  });
+  const out = await lineVerify(items, opts);
+  const byId = new Map(out.map((r) => [r.id, r]));
+  payload.items.forEach((_item, i) => {
+    derived[i]!.lineVerify = byId.get(String(i)) ?? null;
+  });
+}
+
 function 逐题报告(
   item: KbIngestItem,
   d: ItemDerived,
@@ -302,6 +337,7 @@ function 逐题报告(
     matchKey: d.matchKey,
     solutionGrade: d.solutionGrade,
     calcVerdict: d.calc?.verdict ?? null,
+    lineVerdict: d.lineVerify?.verdict ?? null,
     kpIds: d.kps.map((k) => k.kpId),
     primaryKpId: d.kps.find((k) => k.isPrimary)?.kpId ?? null,
     reviewRequired: d.reviewRequired,
@@ -447,6 +483,7 @@ export async function runIngestBatch(
 
   await 分词(payload, derived, options.sidecar ?? {});
   await 实算(payload, derived, options.sidecar ?? {});
+  await 逐行(payload, derived, options.sidecar ?? {});
 
   const batchCtx: IngestBatchCtx = {
     handle: h,

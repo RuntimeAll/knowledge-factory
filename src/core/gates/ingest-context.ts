@@ -19,7 +19,7 @@
  *    管道相二照着它落库。这是刻意的 —— 闸的产出不只是红绿，还有「该怎么落」。
  * ════════════════════════════════════════════════════════════════════════════
  */
-import { type CalcVerifyResult } from "../sidecar";
+import { type CalcVerifyResult, type LineVerifyResult } from "../sidecar";
 import {
   type FigureRole,
   type KbIngestItem,
@@ -73,6 +73,11 @@ export interface ItemDerived {
   analysisSeg: string;
   /** 实算结论；非计算题 = null（不是「算过了没结论」，是「压根没送去算」） */
   calc: CalcVerifyResult | null;
+  /**
+   * 逐行恒等结论；没送去校（非计算题 / 没解析）= null。
+   * 🔴 与 calc 是两个判据：calc 验最终答案，这个验过程的每一行（答案对过程错）。
+   */
+  lineVerify: LineVerifyResult | null;
   /** 考点绑定（kp 闸填） */
   kps: KpBinding[];
   /** 判档（solution-grade 闸填） */
@@ -118,6 +123,7 @@ export function emptyDerived(): ItemDerived {
     answerSeg: "",
     analysisSeg: "",
     calc: null,
+    lineVerify: null,
     kps: [],
     solutionGrade: null,
     figures: [],

@@ -458,6 +458,11 @@ export default async function QueuePage({
                             实算 {草.draft.precheck.calcVerdict}
                           </Chip>
                         ) : null}
+                        {草.draft.precheck.lineVerdict ? (
+                          <Chip tone="n">
+                            逐行 {草.draft.precheck.lineVerdict}
+                          </Chip>
+                        ) : null}
                         {草.draft.precheck.solutionGrade ? (
                           <Chip tone="n">
                             {草.draft.precheck.solutionGrade}

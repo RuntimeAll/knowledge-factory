@@ -172,6 +172,8 @@ export interface PrecheckSummary {
   matchKey: string;
   solutionGrade: string | null;
   calcVerdict: string | null;
+  /** 逐行恒等三态（003-E；没送去校 = null） */
+  lineVerdict: string | null;
   kpIds: string[];
   primaryKpId: string | null;
   /** 有题干图 ⇒ 入库即必审 */
@@ -212,6 +214,7 @@ export function precheckOf(report: IngestGateReport): PrecheckSummary {
       matchKey: "",
       solutionGrade: null,
       calcVerdict: null,
+      lineVerdict: null,
       kpIds: [],
       primaryKpId: null,
       reviewRequired: false,
@@ -226,6 +229,7 @@ export function precheckOf(report: IngestGateReport): PrecheckSummary {
     matchKey: it.matchKey,
     solutionGrade: it.solutionGrade,
     calcVerdict: it.calcVerdict,
+    lineVerdict: it.lineVerdict,
     kpIds: it.kpIds,
     primaryKpId: it.primaryKpId,
     reviewRequired: it.reviewRequired,

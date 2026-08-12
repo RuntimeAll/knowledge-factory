@@ -179,7 +179,7 @@ const handler = createMcpHandler(
           "🔴 预检红了照样开工单（红灯原样附在工单里，让人看着改）；只有 payload 结构错才当场退回给你。" +
           "整本书/整张卷请走 kb_ingest，别一道一道提议。" +
           "返回 { ok, data:{ queueId, seq, precheck:{ ok, verdict, reds:[{gate,code,message}], stripped, notes, " +
-          "matchKey, solutionGrade, calcVerdict, kpIds, primaryKpId, reviewRequired } } }。",
+          "matchKey, solutionGrade, calcVerdict, lineVerdict, kpIds, primaryKpId, reviewRequired } } }。",
         inputSchema: proposeQuestionInput,
       },
       async (args) => toResult(await runProposeQuestion(args)),
