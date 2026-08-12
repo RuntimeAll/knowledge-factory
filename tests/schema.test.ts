@@ -105,10 +105,15 @@ const 索引期望: Record<string, string | null> = {
   idx_edtree_active: "status='active'",
 };
 
-/** FTS 同步触发器：question 三只 + 🆕 kp 词表六只（kp 三 + kp_alias 三） */
+/**
+ * FTS 同步触发器：question **一只** + kp 词表六只（kp 三 + kp_alias 三）。
+ *
+ * 🔴 question 侧只剩 DELETE 兜底（0004 · 方案甲，AI:PRD-003）：unicode61 不分中文，
+ *    FTS 要吃 jieba 预分词串，而触发器体内跑不了 jieba ⇒ INSERT/UPDATE 的 FTS 写
+ *    改由 core 写题事务负责（core/fts.ts writeQuestionFts）。
+ *    kp_fts 那边 6 只全留：词表走 trigram，触发器原样拷贝就够，不需要分词。
+ */
 const FTS触发器 = [
-  "trg_question_fts_ai",
-  "trg_question_fts_au",
   "trg_question_fts_ad",
   "trg_kp_fts_ai",
   "trg_kp_fts_au",
@@ -274,7 +279,7 @@ describe("② 索引（M1 §5 九条）", () => {
   });
 });
 
-describe("③ 触发器（64 只防裸写 + 9 只 FTS 同步）", () => {
+describe("③ 触发器（64 只防裸写 + 7 只 FTS 同步）", () => {
   it("32 张表 × 2 只防裸写触发器全在，且集合全等", async () => {
     const 实有 = (await master(真库, "trigger")).map((r) => r.name).sort();
     const 期望 = [
@@ -285,7 +290,23 @@ describe("③ 触发器（64 只防裸写 + 9 只 FTS 同步）", () => {
       ...FTS触发器,
     ].sort();
     expect(实有).toEqual(期望);
-    expect(实有.length).toBe(73); // 64 + 3(question_fts) + 6(kp_fts)
+    expect(实有.length).toBe(71); // 64 + 1(question_fts 兜底) + 6(kp_fts)
+  });
+
+  it("🔴 方案甲：question 的 FTS INSERT/UPDATE 触发器已撤，DELETE 兜底还在", async () => {
+    const byName = new Map(
+      (await master(真库, "trigger")).map((r) => [r.name, r.sql ?? ""]),
+    );
+    // 撤了：触发器拷贝的是未分词原文，unicode61 下等于建了个查不全的索引
+    expect(
+      byName.has("trg_question_fts_ai"),
+      "INSERT 触发器还在——它会写进未分词的整段中文，把 core 写的预分词串顶掉",
+    ).toBe(false);
+    expect(byName.has("trg_question_fts_au")).toBe(false);
+    // 留着：删题不需要分词，而它是防孤儿索引行的最后一道
+    expect(byName.get("trg_question_fts_ad") ?? "").toContain(
+      "DELETE FROM question_fts",
+    );
   });
 
   it("audit_log 的两只是无条件 RAISE（没有 WHEN 令牌条件）", async () => {
@@ -416,56 +437,64 @@ describe("④ 防裸写闸的真实行为", () => {
   });
 });
 
-describe("⑤ FTS5 同步触发器的真实行为", () => {
+/**
+ * 🔴 本组的期望在 0004（方案甲，AI:PRD-003）**整体翻了个面**：
+ *   老口径：INSERT/UPDATE question → 触发器自动同步 FTS。
+ *   新口径：触发器只剩 DELETE 兜底，INSERT/UPDATE 的 FTS 写由 core 写题事务负责
+ *          （core/fts.ts writeQuestionFts，值 = jieba 预分词串）。
+ *   为什么翻：unicode61 不切中文，触发器拷过去的整段原文 `MATCH '方程'` 一条也命中不了，
+ *   而触发器体内跑不了 jieba —— 这条路物理上到头了（裁决全文见 PRD-001 疑问.md 疑问一）。
+ * 这组守的是**库层的实态**；写侧那半边（幂等/命中/对照反证）在 tests/fts.test.ts。
+ */
+describe("⑤ FTS5 触发器的真实行为（0004 方案甲后）", () => {
   const qid = "q_TESTULID0000000000000001";
 
-  it("INSERT question → question_fts 自动落一行", async () => {
+  it("🔴 INSERT question → question_fts **不再**自动落行（写侧的活）", async () => {
     await 副本.execute({
       sql: `INSERT INTO question(id, stem, stem_plain, answer, analysis, status, solution_grade, prov_type, created_by)
             VALUES (?, '计算 $1+1$', '计算 1 + 1', '2', '凑十法', 'active', 'calc_verified', 'manual', 'test')`,
       args: [qid],
     });
     const r = await 副本.execute({
-      sql: "SELECT stem_plain, answer, analysis FROM question_fts WHERE question_id = ?",
+      sql: "SELECT COUNT(*) c FROM question_fts WHERE question_id = ?",
       args: [qid],
     });
-    expect(r.rows.length).toBe(1);
-    const row = r.rows[0] as unknown as {
-      stem_plain: string;
-      answer: string;
-      analysis: string;
-    };
-    expect(row.stem_plain).toBe("计算 1 + 1");
-    expect(row.answer).toBe("2");
-    expect(row.analysis).toBe("凑十法");
+    expect(
+      Number((r.rows[0] as unknown as { c: number }).c),
+      "AI/AU 触发器还活着——它会拿未分词原文顶掉 core 写的预分词串",
+    ).toBe(0);
   });
 
-  it("MATCH 查得到（自含式 FTS 的意义就在这）", async () => {
+  it("core 写侧灌进去的预分词串 MATCH 查得到（自含式 FTS 的意义就在这）", async () => {
+    // 这里手写 INSERT 模拟 writeQuestionFts 干的事（本文件只连裸客户端，不引 core）
+    await 副本.execute({
+      sql: `INSERT INTO question_fts(question_id, stem_plain, answer, analysis)
+            VALUES (?, '计算 1 + 1', '2', '凑 十法')`,
+      args: [qid],
+    });
     const r = await 副本.execute({
       sql: "SELECT question_id FROM question_fts WHERE question_fts MATCH ?",
-      args: ["凑十法"],
+      args: ['"十法"'],
     });
     expect(
       r.rows.map((x) => (x as unknown as { question_id: string }).question_id),
     ).toContain(qid);
   });
 
-  it("UPDATE 三列 → FTS 跟着改；DELETE → FTS 跟着删（都要先开闸）", async () => {
+  it("UPDATE 正表三列 → FTS **不跟着变**（这就是写侧必须重调 writeQuestionFts 的原因）；DELETE → FTS 跟着删", async () => {
     await 开闸(副本, true);
     await 副本.execute({
       sql: "UPDATE question SET stem_plain = ?, analysis = ? WHERE id = ?",
       args: ["计算 2 + 3", "分解法", qid],
     });
     const u = await 副本.execute({
-      sql: "SELECT stem_plain, analysis FROM question_fts WHERE question_id = ?",
+      sql: "SELECT stem_plain FROM question_fts WHERE question_id = ?",
       args: [qid],
     });
     expect(u.rows.length).toBe(1);
+    // 🔴 索引还是旧值：改题不重写投影 = 索引与正表悄悄错开（003-C 管道必须挡住这条路）
     expect((u.rows[0] as unknown as { stem_plain: string }).stem_plain).toBe(
-      "计算 2 + 3",
-    );
-    expect((u.rows[0] as unknown as { analysis: string }).analysis).toBe(
-      "分解法",
+      "计算 1 + 1",
     );
 
     await 副本.execute({
@@ -476,6 +505,7 @@ describe("⑤ FTS5 同步触发器的真实行为", () => {
       sql: "SELECT COUNT(*) c FROM question_fts WHERE question_id = ?",
       args: [qid],
     });
+    // 兜底触发器：删题不需要分词，所以这一只留着，防孤儿索引行
     expect(Number((d.rows[0] as unknown as { c: number }).c)).toBe(0);
     await 开闸(副本, false);
   });
