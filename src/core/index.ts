@@ -18,6 +18,7 @@
  *   health.ts  本地体检
  *   metrics.ts metric_event 打点
  *   gates/     闸骨架（真闸从 AI:PRD-003 起长）
+ *   grading.ts 🔴 圣域 审核.db **只读**连接（三道锁，见文件头）
  */
 
 export {
@@ -32,6 +33,7 @@ export {
 } from "./db";
 
 export {
+  ID_PREFIX_TABLE,
   ID_PREFIXES,
   ID_RE,
   isId,
@@ -73,6 +75,23 @@ export {
 export { health, type HealthOptions, type HealthReport } from "./health";
 
 export { logMetric, type MetricReceipt } from "./metrics";
+
+export {
+  GRADING_HASH_RECIPE,
+  GRADING_RO_MARKER,
+  assertGradingUrl,
+  assertReadOnlyStatement,
+  closeGradingDb,
+  describeDbPath,
+  fileUrlToPath,
+  getGradingDb,
+  gradingSchemaHash,
+  gradingSchemaSnapshot,
+  normalizeDdl,
+  type GradingDbHandle,
+  type GradingSchemaSnapshot,
+  type GradingTableDdl,
+} from "./grading";
 
 export {
   PASS,
