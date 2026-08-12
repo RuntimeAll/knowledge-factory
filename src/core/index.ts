@@ -23,7 +23,9 @@
  *   queue.ts   审查队列（列工单 / 裁决 / 补别名结案 · AI:PRD-002）
  *   sidecar.ts Python 侧车封装（jieba 分词 / sympy 实算 · AI:PRD-003）
  *   fts.ts     question_fts 写侧投影 + 查询串构造（方案甲 · AI:PRD-003）
- *   gates/     闸骨架（真闸从 AI:PRD-003 起长）
+ *   ingest-schema.ts kb-ingest/v1 契约的机读正本（zod · AI:PRD-003）
+ *   ingest.ts  录题管道 runIngestBatch（两相：零写相 + 单事务相 · AI:PRD-003）
+ *   gates/     闸（骨架来自 001；十道录题闸在 AI:PRD-003 落地，逐闸一文件）
  *   backup.ts  VACUUM INTO 快照（+异地副本）
  *   grading.ts 🔴 圣域 审核.db **只读**连接（三道锁，见文件头）
  *   integrity.ts 对账六项 C1~C6
@@ -280,3 +282,104 @@ export {
   type GateResult,
   type RunGatesOptions,
 } from "./gates";
+
+// ── AI:PRD-003 · 录题 ───────────────────────────────────────────────────────
+
+export {
+  FIGURE_ROLES,
+  KB_INGEST_CONTRACT,
+  PROV_TYPES,
+  QTYPES,
+  SOLUTION_GRADES,
+  SOURCE_DOC_KINDS,
+  figureSchema,
+  ingestItemSchema,
+  ingestPayloadSchema,
+  kpRefSchema,
+  provSchema,
+  punchPosSchema,
+  sourceDocSchema,
+  type FigureRole,
+  type KbIngestFigure,
+  type KbIngestItem,
+  type KbIngestKpRef,
+  type KbIngestPayload,
+  type KbIngestProv,
+  type KbIngestSourceDoc,
+  type ProvType,
+  type QType,
+  type SolutionGrade,
+  type SourceDocKind,
+} from "./ingest-schema";
+
+export {
+  INGEST_ERROR_CODES,
+  ITEM_GATES,
+  IngestError,
+  punchPosTag,
+  runIngestBatch,
+  type IngestCounts,
+  type IngestGateReport,
+  type IngestItemReport,
+  type IngestResult,
+  type RunIngestOptions,
+} from "./ingest";
+
+/**
+ * 十道录题闸的公共面（逐闸一文件，`gates/ingest-*.gate.ts`）。
+ * 🔴 这里只导出**纯函数与错误码**：闸对象本身由管道串（ITEM_GATES），
+ *    外面不该自己挑几道闸跑一遍就说「过闸了」。
+ */
+export {
+  INGEST_CONTRACT_CODE,
+  checkContract,
+  type ContractCheck,
+} from "./gates/ingest-contract.gate";
+export { PROV_CODES } from "./gates/ingest-provenance.gate";
+export { EXACT_CONFIDENCE, KP_CODES } from "./gates/ingest-kp.gate";
+export {
+  BARE_INSTRUCTIONS,
+  INSTRUCTION_CODES,
+  META_WORDS,
+  findMetaWords,
+  stripLeadInstruction,
+  type StripResult,
+} from "./gates/ingest-instruction.gate";
+export {
+  PREFIX_CODES,
+  cleanStemPrefix,
+  prefixResidue,
+  type CleanResult,
+} from "./gates/ingest-prefix.gate";
+export {
+  PLACEHOLDER_CODES,
+  declaresFigure,
+  isPurePlaceholder,
+} from "./gates/ingest-placeholder.gate";
+export {
+  DEDUP_CODES,
+  matchKeyOf,
+  normalizeStem,
+} from "./gates/ingest-dedup.gate";
+export {
+  CALC_CODES,
+  isCalcCandidate,
+  looksLikePureExpression,
+} from "./gates/ingest-calc.gate";
+export {
+  GRADE_CODES,
+  decideSolutionGrade,
+} from "./gates/ingest-solution-grade.gate";
+export {
+  FIGURE_CODES,
+  assetFileName,
+  planFigure,
+} from "./gates/ingest-figure.gate";
+export {
+  emptyDerived,
+  type FigurePlan,
+  type IngestBatchCtx,
+  type IngestItemCtx,
+  type ItemDerived,
+  type KpBinding,
+} from "./gates/ingest-context";

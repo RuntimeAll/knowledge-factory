@@ -6,6 +6,7 @@
  *
  *   C1 审计覆盖与登记对齐  (a)行↔审计覆盖 (b)question↔question_vec (c)asset↔文件系统
  *                          (d)review_queue.ref 存在性 (e)🆕 静息闸必须=0
+ *                          (f)🆕 FTS 投影对齐（AI:PRD-003 方案甲：写侧投影漏了没人报错）
  *   C2 悬挂引用            引用表不得指向 merged/retired 的 kp（merge 原语漏挂即红旗）
  *                          🆕 2026-08-12 扩面：+ err_code_map / kp_edge / exam_model
  *                          （见 KP_REF_TABLES）
@@ -398,9 +399,64 @@ async function checkC1(
     );
   }
 
+  // --- (f) 🆕 FTS 投影对齐（AI:PRD-003 · 方案甲的机器闸）----------------------
+  //     0004 migration 撤掉了 question 的 INSERT/UPDATE 同步触发器，同步职责搬到写侧
+  //     （core/fts.ts 的 writeQuestionFts）。搬走之后，「写题时忘了写投影」就成了
+  //     一种**没有任何报错**的故障：SQL 轴查得到、向量轴查得到、FTS 轴永远查不到。
+  //     这一项就是它的机器判据 —— 可检索题的 id 集必须与索引的 id 集**逐个相等**。
+  const 无投影 = await count(
+    h,
+    `SELECT COUNT(*) AS c FROM question q
+      WHERE q.status IN ('pending','active')
+        AND NOT EXISTS (SELECT 1 FROM question_fts f WHERE f.question_id = q.id)`,
+  );
+  const 多投影 = await count(
+    h,
+    `SELECT COUNT(*) AS c FROM question_fts f
+      WHERE NOT EXISTS (
+        SELECT 1 FROM question q WHERE q.id = f.question_id AND q.status IN ('pending','active'))`,
+  );
+  stats["f_有题无投影"] = 无投影;
+  stats["f_有投影无题"] = 多投影;
+  if (无投影 > 0) {
+    red = true;
+    const ids = (
+      await q<{ id: string }>(
+        h,
+        `SELECT q.id AS id FROM question q
+          WHERE q.status IN ('pending','active')
+            AND NOT EXISTS (SELECT 1 FROM question_fts f WHERE f.question_id = q.id)
+          LIMIT ${SAMPLE}`,
+      )
+    ).map((r) => r.id);
+    details.push(
+      sampleLine("(f) 有题无 FTS 投影【red】", ids, 无投影) +
+        "（写侧漏调 writeQuestionFts：这些题此后 FTS 一条都查不到，而且不报错。" +
+        "处置：把它们的 stem_plain/answer/analysis 重新分词后补投影，" +
+        "并回去查是哪条写路径漏了 —— 🔴 改 stem/answer/analysis 的每一条路径都必须同事务写投影）",
+    );
+  }
+  if (多投影 > 0) {
+    red = true;
+    const ids = (
+      await q<{ id: string }>(
+        h,
+        `SELECT f.question_id AS id FROM question_fts f
+          WHERE NOT EXISTS (
+            SELECT 1 FROM question q WHERE q.id = f.question_id AND q.status IN ('pending','active'))
+          LIMIT ${SAMPLE}`,
+      )
+    ).map((r) => r.id);
+    details.push(
+      sampleLine("(f) 有 FTS 投影无可检索题【red】", ids, 多投影) +
+        "（题被退役/隔离了，投影还留着 ⇒ 检索会把不该出的题捞出来。" +
+        "处置：status 迁出 pending/active 时同事务删掉该题的 FTS 行）",
+    );
+  }
+
   return {
     id: "C1",
-    name: "审计覆盖与登记对齐（行↔审计 / 题↔向量 / 资产↔文件 / 队列ref / 静息闸）",
+    name: "审计覆盖与登记对齐（行↔审计 / 题↔向量 / 资产↔文件 / 队列ref / 静息闸 / FTS投影）",
     ok: !red && !warn,
     level: red ? "red" : "warn",
     details,
