@@ -190,7 +190,10 @@ export async function countOpenQueueByKind(
     .from(reviewQueue)
     .where(eq(reviewQueue.state, "open"))
     .groupBy(reviewQueue.kind);
-  return rows.map((r) => ({ kind: r.kind ?? "（未分类）", count: Number(r.c) }));
+  return rows.map((r) => ({
+    kind: r.kind ?? "（未分类）",
+    count: Number(r.c),
+  }));
 }
 
 type QueueRow = typeof reviewQueue.$inferSelect;

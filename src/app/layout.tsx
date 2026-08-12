@@ -4,8 +4,8 @@
  * 版式正本 = prd/PRD-026/前端设计稿.html v2「学术风·精准简约」：
  * 纸感底色 + 浅色侧栏（🔴 禁深色侧栏）+ 宋体系标题 + 学术绿 + 2~3px 圆角 + 发丝线。
  *
- * 🔴 本卡范围只有「壳 + 红旗条 + 首页状态卡」。导航里除首页外全是占位（disabled），
- *    功能页各自属于后面的卡，这里一个都不做 —— 提前搭半成品页比没有页更贵。
+ * 🔴 导航项跟着卡一张张点亮，没开工的一律占位（disabled）——
+ *    提前搭半成品页比没有页更贵。001 点亮「首页」，002-D 点亮「知识图谱」。
  *
  * 🔴 force-dynamic：本壳每次渲染都读真库（红旗条）。不标的话 Next 会在 build 期
  *    预渲染 / 与 /_not-found，那时库未必在位，构建会因为「读不到库」失败 ——
@@ -14,8 +14,8 @@
 import "~/styles/globals.css";
 
 import { type Metadata } from "next";
-import Link from "next/link";
 
+import { NavLink } from "~/components/nav-link";
 import { RedFlagBar } from "~/components/red-flag-bar";
 
 export const dynamic = "force-dynamic";
@@ -26,7 +26,7 @@ export const metadata: Metadata = {
   icons: [{ rel: "icon", url: "/favicon.ico" }],
 };
 
-/** 🔴 除首页外全是占位：卡没开工，页就别装作有 */
+/** 🔴 没开工的卡一律占位：卡没开工，页就别装作有 */
 const NAV: ReadonlyArray<{
   label: string;
   href?: string;
@@ -34,7 +34,8 @@ const NAV: ReadonlyArray<{
   card: string;
 }> = [
   { label: "首页", href: "/", card: "001" },
-  { label: "知识图谱", card: "002" },
+  { label: "知识图谱", href: "/kg", card: "002" },
+  // 🔴 审查队列的 KG 提议/低置信两类已在 /kg/queue 上；003 卡长的是全域队列，届时再点亮
   { label: "审查队列", card: "003" },
   { label: "题库检索", card: "004" },
   { label: "生产登记", card: "005" },
@@ -61,13 +62,9 @@ export default function RootLayout({
             <nav className="mt-4">
               {NAV.map((item) =>
                 item.href ? (
-                  <Link
-                    key={item.label}
-                    href={item.href}
-                    className="text-acc-deep bg-sel border-acc relative flex items-baseline border-l-[3px] px-[19px] py-[7px] font-bold"
-                  >
+                  <NavLink key={item.label} href={item.href}>
                     {item.label}
-                  </Link>
+                  </NavLink>
                 ) : (
                   <span
                     key={item.label}

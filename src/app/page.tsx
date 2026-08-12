@@ -8,6 +8,7 @@
  * 也不做缓存（缓存过的「健康」是最没用的健康）。
  * force-dynamic 的理由见 layout.tsx 文件头。
  */
+import { Chip, Panel, Row } from "~/components/kit";
 import {
   getLatestIntegritySummary,
   health,
@@ -20,59 +21,8 @@ import {
 export const dynamic = "force-dynamic";
 
 // ---------------------------------------------------------------------------
-// 版式小件（设计稿 .panel / .st / .kpi 的 React 版，只在本页用）
+// 版式小件在 ~/components/kit（本页原地长出来的那三件，002-D 提出去共用了）
 // ---------------------------------------------------------------------------
-
-function Panel({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="border-hair bg-sheet rounded-[3px] border px-[18px] py-[15px]">
-      <h3 className="panel-title text-mut mb-2.5 text-[12px] font-semibold tracking-[1.5px]">
-        {title}
-      </h3>
-      {children}
-    </section>
-  );
-}
-
-const CHIP = {
-  g: "text-acc-deep bg-acc-soft border-acc/30",
-  a: "text-amber bg-amber-soft border-amber/30",
-  r: "text-pen bg-pen-soft border-pen/30",
-  n: "text-mut bg-code border-hair",
-} as const;
-
-function Chip({
-  tone = "n",
-  children,
-}: {
-  tone?: keyof typeof CHIP;
-  children: React.ReactNode;
-}) {
-  return (
-    <span
-      className={`mr-1.5 inline-block rounded-[2px] border px-[7px] text-[11px] leading-[1.6] ${CHIP[tone]}`}
-    >
-      {children}
-    </span>
-  );
-}
-
-function Row({ k, v }: { k: string; v: React.ReactNode }) {
-  return (
-    <div className="border-hair flex items-baseline gap-3 border-b py-[5px] last:border-b-0">
-      <span className="text-mut w-[92px] shrink-0 text-[11.5px] tracking-[0.5px]">
-        {k}
-      </span>
-      <span className="min-w-0 flex-1 break-all">{v}</span>
-    </div>
-  );
-}
 
 function bytesText(n: number): string {
   if (n < 1024) return `${n} B`;
