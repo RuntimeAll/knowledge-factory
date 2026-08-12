@@ -22,6 +22,13 @@
       "when": 1786516652082,
       "tag": "0002_write_gate",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1786538561123,
+      "tag": "0003_fts5_kp",
+      "breakpoints": true
     }
   ]
 }

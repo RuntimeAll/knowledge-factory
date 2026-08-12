@@ -75,6 +75,16 @@ const FTS家族 = [
   "question_fts_idx",
 ] as const;
 
+/** 🆕 AI:PRD-002 · 002-C：考点词表 kp_fts（trigram）+ 它的 5 张影子表 */
+const KP_FTS家族 = [
+  "kp_fts",
+  "kp_fts_config",
+  "kp_fts_content",
+  "kp_fts_data",
+  "kp_fts_docsize",
+  "kp_fts_idx",
+] as const;
+
 /** 机制表：写令牌 / drizzle 迁移账 / AUTOINCREMENT 序列（audit_log.seq + metric_event.id 触发 SQLite 自建） */
 const 机制表 = [
   "_write_gate",
@@ -95,11 +105,17 @@ const 索引期望: Record<string, string | null> = {
   idx_edtree_active: "status='active'",
 };
 
-/** FTS 同步触发器三只 */
+/** FTS 同步触发器：question 三只 + 🆕 kp 词表六只（kp 三 + kp_alias 三） */
 const FTS触发器 = [
   "trg_question_fts_ai",
   "trg_question_fts_au",
   "trg_question_fts_ad",
+  "trg_kp_fts_ai",
+  "trg_kp_fts_au",
+  "trg_kp_fts_ad",
+  "trg_kp_alias_fts_ai",
+  "trg_kp_alias_fts_au",
+  "trg_kp_alias_fts_ad",
 ] as const;
 
 /**
@@ -125,7 +141,7 @@ const 冻结物黑名单 = [
   "knowledge-factory_post",
 ] as const;
 
-const 全部期望表 = [...普通表, ...FTS家族, ...机制表].sort();
+const 全部期望表 = [...普通表, ...FTS家族, ...KP_FTS家族, ...机制表].sort();
 
 // ---------------------------------------------------------------------------
 // 连接
@@ -192,16 +208,25 @@ describe("① 表清单（G-2 红线：冻结物零建表）", () => {
     expect(普通表.length).toBe(32);
   });
 
-  it("question_fts + 影子表 + _write_gate 都在", async () => {
+  it("question_fts / kp_fts + 影子表 + _write_gate 都在", async () => {
     const 实有 = new Set((await master(真库, "table")).map((r) => r.name));
-    for (const t of [...FTS家族, "_write_gate"])
+    for (const t of [...FTS家族, ...KP_FTS家族, "_write_gate"])
       expect(实有.has(t), `缺：${t}`).toBe(true);
   });
 
   it("🔴 表集合【全等】期望清单——多一张都红", async () => {
     const 实有 = (await master(真库, "table")).map((r) => r.name).sort();
     expect(实有).toEqual(全部期望表);
-    expect(实有.length).toBe(41); // 32 普通 + 6 FTS 家族 + 3 机制
+    expect(实有.length).toBe(47); // 32 普通 + 6 question_fts 家族 + 6 kp_fts 家族 + 3 机制
+  });
+
+  it("🔴 kp_fts 用的是 trigram（词表要子串模糊命中，不是分词）", async () => {
+    const ddl =
+      (await master(真库, "table")).find((r) => r.name === "kp_fts")?.sql ?? "";
+    expect(ddl).toContain("trigram");
+    expect(ddl, "词表若走 unicode61，查「绝对值」就命中不了「绝对值的化简」").not.toContain(
+      "unicode61",
+    );
   });
 
   it("🔴 冻结物（录入台状态机 / 批改写侧 / 被否掉的表）一张都没有", async () => {
@@ -248,7 +273,7 @@ describe("② 索引（M1 §5 九条）", () => {
   });
 });
 
-describe("③ 触发器（64 只防裸写 + 3 只 FTS 同步）", () => {
+describe("③ 触发器（64 只防裸写 + 9 只 FTS 同步）", () => {
   it("32 张表 × 2 只防裸写触发器全在，且集合全等", async () => {
     const 实有 = (await master(真库, "trigger")).map((r) => r.name).sort();
     const 期望 = [
@@ -259,7 +284,7 @@ describe("③ 触发器（64 只防裸写 + 3 只 FTS 同步）", () => {
       ...FTS触发器,
     ].sort();
     expect(实有).toEqual(期望);
-    expect(实有.length).toBe(67); // 64 + 3
+    expect(实有.length).toBe(73); // 64 + 3(question_fts) + 6(kp_fts)
   });
 
   it("audit_log 的两只是无条件 RAISE（没有 WHEN 令牌条件）", async () => {
