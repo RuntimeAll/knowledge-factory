@@ -5,11 +5,78 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme {
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif,
-    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  /* 🔴 系统字体栈，不拉 webfont：本地工具页，断网/首屏都不该等字体
+     （原 create-t3 的 next/font Geist 已撤）。正文无衬线 + 标题宋体系 = 设计稿 v2 的骨架。 */
+  --font-sans:
+    "Microsoft YaHei UI", "Microsoft YaHei", system-ui, -apple-system,
+    "Segoe UI", sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  --font-serif:
+    "Source Han Serif SC", "Noto Serif SC", "SimSun", Georgia, serif;
+  /* 数字用衬线 + 等宽数位：表格里的数对得齐（设计稿 .num） */
+  --font-num: Georgia, "Times New Roman", serif;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   学术风 · 精准简约（正本 = prd/PRD-026/前端设计稿.html v2）
+   🔴 页面样式一律用这组 token，别现调颜色；禁深色侧栏（侧栏与正文同为纸色）。
+   ═══════════════════════════════════════════════════════════════════════════ */
+:root {
+  --paper: #f5f4ef; /* 纸感底色（页面 + 侧栏） */
+  --sheet: #fdfcf9; /* 面板/卡片纸 */
+  --ink: #1d251f;
+  --mut: #71786f;
+  --hair: #e2e0d6; /* 细分隔线 */
+  --hair2: #d5d3c6; /* 稍重的线（装订线/表头） */
+  --acc: #0e6b4f; /* 学术绿 */
+  --acc-deep: #0a5a42;
+  --acc-soft: #ecf3ee;
+  --amber: #93661c;
+  --amber-soft: #f7f0dc;
+  --pen: #a83a32; /* 朱批红：只给红旗与红态用 */
+  --pen-soft: #f9ebe8;
+  --code: #f0efe8;
+  --sel: #e7efe9;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #131614;
+    --sheet: #1a1e1b;
+    --ink: #e6e9e4;
+    --mut: #8f978e;
+    --hair: #2b302b;
+    --hair2: #363c36;
+    --acc: #4cbd97;
+    --acc-deep: #5acca4;
+    --acc-soft: #1d2b24;
+    --amber: #d9a75a;
+    --amber-soft: #2b2417;
+    --pen: #d97b71;
+    --pen-soft: #2d1d1b;
+    --code: #21251f;
+    --sel: #20281f;
+  }
 }
 
 @theme inline {
+  /* 设计稿 token → Tailwind 工具类（bg-paper / text-ink / border-hair / text-acc …）。
+     inline = 工具类直接引用上面的 CSS 变量，所以跟着 prefers-color-scheme 自动切换。 */
+  --color-paper: var(--paper);
+  --color-sheet: var(--sheet);
+  --color-ink: var(--ink);
+  --color-mut: var(--mut);
+  --color-hair: var(--hair);
+  --color-hair2: var(--hair2);
+  --color-acc: var(--acc);
+  --color-acc-deep: var(--acc-deep);
+  --color-acc-soft: var(--acc-soft);
+  --color-amber: var(--amber);
+  --color-amber-soft: var(--amber-soft);
+  --color-pen: var(--pen);
+  --color-pen-soft: var(--pen-soft);
+  --color-code: var(--code);
+  --color-sel: var(--sel);
+
   --font-heading: var(--font-sans);
   --font-sans: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
@@ -126,9 +193,30 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    /* 🔴 纸色打底（不是 shadcn 的纯白 --background）：整站的底就是纸。
+       13.5px/1.7 = 设计稿正文密度；html 字号保持 16px，免得 rem 间距跟着缩。 */
+    @apply bg-paper text-ink font-sans;
+    font-size: 13.5px;
+    line-height: 1.7;
   }
   html {
     @apply font-sans;
+  }
+}
+
+@layer components {
+  /* 章节双细线 = 卷面装订线母题（设计稿 .rule / .top 底边） */
+  .rule-double {
+    border-bottom: 3px double var(--hair2);
+  }
+  /* 面板小标题前的绿色书名号（设计稿 .panel h3::before） */
+  .panel-title::before {
+    content: "▍";
+    color: var(--acc);
+    margin-right: 5px;
+  }
+  .num {
+    font-family: var(--font-num);
+    font-variant-numeric: tabular-nums;
   }
 }
