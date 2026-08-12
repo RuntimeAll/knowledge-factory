@@ -18,6 +18,7 @@
  *   health.ts  本地体检
  *   metrics.ts metric_event 打点
  *   gates/     闸骨架（真闸从 AI:PRD-003 起长）
+ *   backup.ts  VACUUM INTO 快照（+异地副本）
  *   grading.ts 🔴 圣域 审核.db **只读**连接（三道锁，见文件头）
  */
 
@@ -75,6 +76,16 @@ export {
 export { health, type HealthOptions, type HealthReport } from "./health";
 
 export { logMetric, type MetricReceipt } from "./metrics";
+
+export {
+  BACKUP_REASONS,
+  backupDirFor,
+  backupNow,
+  dbUrlToPath,
+  type BackupReason,
+  type BackupResult,
+  type BackupRowCounts,
+} from "./backup";
 
 export {
   GRADING_HASH_RECIPE,
