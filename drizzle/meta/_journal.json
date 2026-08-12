@@ -29,6 +29,13 @@
       "when": 1786538561123,
       "tag": "0003_fts5_kp",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1786546243843,
+      "tag": "0004_fts_plan_a",
+      "breakpoints": true
     }
   ]
 }

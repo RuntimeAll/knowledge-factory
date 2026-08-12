@@ -21,6 +21,8 @@
  *   resolve.ts 考点解析读侧（resolve_kp 打分 + kp_context 卡片包 · AI:PRD-002）
  *   kgview.ts  KG 治理页读侧（总览统计 / 树全貌 / 引用计数 · AI:PRD-002）
  *   queue.ts   审查队列（列工单 / 裁决 / 补别名结案 · AI:PRD-002）
+ *   sidecar.ts Python 侧车封装（jieba 分词 / sympy 实算 · AI:PRD-003）
+ *   fts.ts     question_fts 写侧投影 + 查询串构造（方案甲 · AI:PRD-003）
  *   gates/     闸骨架（真闸从 AI:PRD-003 起长）
  *   backup.ts  VACUUM INTO 快照（+异地副本）
  *   grading.ts 🔴 圣域 审核.db **只读**连接（三道锁，见文件头）
@@ -229,6 +231,38 @@ export {
   type QueueVerdictResult,
   type VerdictOptions,
 } from "./queue";
+
+export {
+  SIDECAR_ERROR_CODES,
+  SIDECAR_TIMEOUT_MS,
+  SidecarError,
+  calcVerify,
+  pingSidecar,
+  segmentText,
+  segmentTexts,
+  sidecarDir,
+  sidecarPythonPath,
+  sidecarStatus,
+  type CalcVerdict,
+  type CalcVerifyDetail,
+  type CalcVerifyItem,
+  type CalcVerifyResult,
+  type SegmentInput,
+  type SegmentMode,
+  type SegmentOptions,
+  type SegmentResult,
+  type SidecarErrorCode,
+  type SidecarOptions,
+  type SidecarPing,
+} from "./sidecar";
+
+export {
+  ftsQuery,
+  writeQuestionFts,
+  type FtsQueryOptions,
+  type FtsQueryPlan,
+  type QuestionFtsInput,
+} from "./fts";
 
 export {
   PASS,
