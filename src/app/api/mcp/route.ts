@@ -43,7 +43,13 @@ export const runtime = "nodejs";
 /** 体检/对账/备份都是「此刻的事实」，任何缓存或构建期预取都是错的。 */
 export const dynamic = "force-dynamic";
 
-export const SERVER_NAME = "knowledge-factory";
+/**
+ * 🔴 不 export：route.ts 是 Next 的**约定文件**，只允许导出 HTTP 方法与
+ *    runtime/dynamic 那几个约定 key。多导出一个常量，`next build` 的路由类型闸
+ *    会直接红（"Property 'SERVER_NAME' is incompatible with index signature"）——
+ *    dev 不查这条，所以这坑只有 build 才炸得出来（WP6 首次 build 抓到）。
+ */
+const SERVER_NAME = "knowledge-factory";
 
 /**
  * ToolPayload → MCP 的 CallToolResult。

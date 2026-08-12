@@ -213,7 +213,9 @@ function IntegrityCard({ s }: { s: IntegritySummary | null | string }) {
               ) : (
                 <Chip tone="a">warn</Chip>
               )}
-              <span className="min-w-0 flex-1">{it.name}</span>
+              {/* 🔴 break-words 少不得：check 名里带 question_kp/node_kp_map/…
+                  这种长 ASCII 串，不给断词点就会整条撑破面板 */}
+              <span className="min-w-0 flex-1 break-words">{it.name}</span>
             </li>
           ))}
         </ul>

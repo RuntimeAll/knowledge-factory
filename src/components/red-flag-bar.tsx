@@ -35,12 +35,13 @@ async function load(): Promise<{
 }
 
 const TONE = {
-  none: "border-hair2 bg-code text-mut",
-  red: "border-pen bg-pen-soft text-pen font-semibold",
-  green: "border-acc bg-acc-soft text-acc-deep",
+  none: "border-l-hair2 bg-code text-mut",
+  red: "border-l-pen bg-pen-soft text-pen font-semibold",
+  green: "border-l-acc bg-acc-soft text-acc-deep",
 } as const;
 
-const LABEL = { none: "未对账", red: "红旗", green: "对账绿" } as const;
+/** 状态灯：红态用旗，其余用圆点（文案已在 headline 里，别在灯旁边重复一遍） */
+const LAMP = { none: "○", red: "⚑", green: "●" } as const;
 
 export async function RedFlagBar() {
   const { view, error } = await load();
@@ -50,16 +51,16 @@ export async function RedFlagBar() {
     <div
       data-red-flag-state={state}
       role={state === "red" ? "alert" : undefined}
-      className={`border-hair border-b border-l-[3px] px-[30px] py-[7px] text-[12.5px] ${TONE[state]}`}
+      className={`border-b-hair border-b border-l-[3px] px-[30px] py-[7px] text-[12.5px] ${TONE[state]}`}
     >
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <span className="tracking-[1px]">
-          {state === "red" ? "⚑ " : ""}
-          {LABEL[state]}
-        </span>
-        <span className="num">{view.headline}</span>
-        {state !== "red" && view.warnCount > 0 ? (
-          <span className="text-amber">warn {view.warnCount} 项</span>
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        <span className="text-[10px]">{LAMP[state]}</span>
+        <span className="num break-words">{view.headline}</span>
+        {/* red 态的 headline 只讲红旗，warn 数在这儿补一句（绿态 headline 已经带了） */}
+        {state === "red" && view.warnCount > 0 ? (
+          <span className="text-amber font-normal">
+            另有 warn {view.warnCount} 项
+          </span>
         ) : null}
       </div>
 
@@ -67,7 +68,7 @@ export async function RedFlagBar() {
       {state === "red" ? (
         <ul className="mt-1 space-y-0.5 font-normal">
           {view.items.map((it) => (
-            <li key={it.id}>
+            <li key={it.id} className="break-words">
               <span className="num mr-2">{it.id}</span>
               {it.name}
             </li>
@@ -83,7 +84,7 @@ export async function RedFlagBar() {
           </summary>
           <ul className="text-mut mt-1 space-y-0.5">
             {view.items.map((it) => (
-              <li key={it.id}>
+              <li key={it.id} className="break-words">
                 <span className="num mr-2">{it.id}</span>
                 {it.name}
               </li>
