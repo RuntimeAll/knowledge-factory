@@ -13,101 +13,101 @@ importers:
   .:
     dependencies:
       '@libsql/client':
-        specifier: ^0.17.4
+        specifier: 0.17.4
         version: 0.17.4
       '@modelcontextprotocol/server':
         specifier: 2.0.0
         version: 2.0.0
       '@t3-oss/env-nextjs':
-        specifier: ^0.13.11
+        specifier: 0.13.11
         version: 0.13.11(typescript@5.9.3)(zod@4.4.3)
       class-variance-authority:
-        specifier: ^0.7.1
+        specifier: 0.7.1
         version: 0.7.1
       clsx:
-        specifier: ^2.1.1
+        specifier: 2.1.1
         version: 2.1.1
       drizzle-orm:
-        specifier: ^0.45.2
+        specifier: 0.45.2
         version: 0.45.2(@libsql/client@0.17.4)
       lucide-react:
-        specifier: ^1.31.0
+        specifier: 1.31.0
         version: 1.31.0(react@19.2.8)
       mcp-handler:
         specifier: 2.1.0
         version: 2.1.0(@modelcontextprotocol/server@2.0.0)(next@15.5.23(@babel/core@7.29.7)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))
       next:
-        specifier: ^15.2.3
+        specifier: 15.5.23
         version: 15.5.23(@babel/core@7.29.7)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       radix-ui:
-        specifier: ^1.6.7
+        specifier: 1.6.7
         version: 1.6.7(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       react:
-        specifier: ^19.0.0
+        specifier: 19.2.8
         version: 19.2.8
       react-dom:
-        specifier: ^19.0.0
+        specifier: 19.2.8
         version: 19.2.8(react@19.2.8)
       tailwind-merge:
-        specifier: ^3.6.0
+        specifier: 3.6.0
         version: 3.6.0
       tw-animate-css:
-        specifier: ^1.4.0
+        specifier: 1.4.0
         version: 1.4.0
       zod:
-        specifier: ^4.4.3
+        specifier: 4.4.3
         version: 4.4.3
     devDependencies:
       '@eslint/eslintrc':
-        specifier: ^3.3.1
+        specifier: 3.3.6
         version: 3.3.6
       '@tailwindcss/postcss':
-        specifier: ^4.0.15
+        specifier: 4.3.3
         version: 4.3.3
       '@types/node':
-        specifier: ^20.14.10
+        specifier: 20.19.43
         version: 20.19.43
       '@types/react':
-        specifier: ^19.0.0
+        specifier: 19.2.18
         version: 19.2.18
       '@types/react-dom':
-        specifier: ^19.0.0
+        specifier: 19.2.4
         version: 19.2.4(@types/react@19.2.18)
       drizzle-kit:
-        specifier: ^0.31.10
+        specifier: 0.31.10
         version: 0.31.10
       eslint:
-        specifier: ^9.23.0
+        specifier: 9.39.5
         version: 9.39.5(jiti@2.7.0)
       eslint-config-next:
-        specifier: ^15.2.3
+        specifier: 15.5.23
         version: 15.5.23(eslint@9.39.5(jiti@2.7.0))(typescript@5.9.3)
       eslint-plugin-drizzle:
-        specifier: ^0.2.3
+        specifier: 0.2.3
         version: 0.2.3(eslint@9.39.5(jiti@2.7.0))
       postcss:
-        specifier: ^8.5.3
+        specifier: 8.5.26
         version: 8.5.26
       prettier:
-        specifier: ^3.5.3
+        specifier: 3.9.6
         version: 3.9.6
       prettier-plugin-tailwindcss:
-        specifier: ^0.6.11
+        specifier: 0.6.11
         version: 0.6.11(prettier@3.9.6)
       shadcn:
         specifier: 4.16.2
         version: 4.16.2(typescript@5.9.3)
       tailwindcss:
-        specifier: ^4.0.15
+        specifier: 4.3.3
         version: 4.3.3
       tsx:
         specifier: 4.23.12
         version: 4.23.12
       typescript:
-        specifier: ^5.9.3
+        specifier: 5.9.3
         version: 5.9.3
       typescript-eslint:
-        specifier: ^8.27.0
+        specifier: 8.67.0
         version: 8.67.0(eslint@9.39.5(jiti@2.7.0))(typescript@5.9.3)
       vitest:
         specifier: 4.1.10
