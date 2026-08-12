@@ -17,6 +17,7 @@
  *   write.ts   withCoreWrite —— 唯一写入口（开闸/业务写/审计/关闸 同一事务）
  *   health.ts  本地体检
  *   metrics.ts metric_event 打点
+ *   kg.ts      KG 写原语（考点/别名/版本树/映射/merge_kp/批量导底 · AI:PRD-002）
  *   gates/     闸骨架（真闸从 AI:PRD-003 起长）
  *   backup.ts  VACUUM INTO 快照（+异地副本）
  *   grading.ts 🔴 圣域 审核.db **只读**连接（三道锁，见文件头）
@@ -133,6 +134,47 @@ export {
   type RedFlagState,
   type RedFlagView,
 } from "./status";
+
+export {
+  KG_ERROR_CODES,
+  KgError,
+  MERGE_CHAIN_MAX_HOPS,
+  addEditionNode,
+  addEditionNodeInput,
+  addKpAlias,
+  createEditionTree,
+  createEditionTreeInput,
+  createKp,
+  createKpInput,
+  importKgBatch,
+  importKgBatchInput,
+  mapNodeKp,
+  mergeKp,
+  removeKpAlias,
+  renameKp,
+  resolveMergedKp,
+  retireKp,
+  setTreeStatus,
+  unmapNodeKp,
+  updateKpCard,
+  type AddEditionNodeInput,
+  type AliasAddResult,
+  type CreateEditionTreeInput,
+  type CreateKpInput,
+  type ImportKgBatchInput,
+  type ImportKgBatchResult,
+  type KgErrorCode,
+  type KgOptions,
+  type KgReceipt,
+  type KpRefCounts,
+  type KpWriteResult,
+  type MapResult,
+  type MergeKpResult,
+  type NodeWriteResult,
+  type ResolvedKp,
+  type RetireKpResult,
+  type TreeWriteResult,
+} from "./kg";
 
 export {
   PASS,
