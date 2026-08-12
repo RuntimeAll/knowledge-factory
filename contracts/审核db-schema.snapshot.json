@@ -1,0 +1,32 @@
+{
+  "takenAt": "2026-08-12T16:57:37+08:00",
+  "dbPath": "订阅特训/_产线/审核.db（相对 ai-bkb 根）",
+  "schemaHash": "d2f590cabaef708b55d50da560ddb5940dfe83019a61e76a0a874c8e37599869",
+  "tables": [
+    {
+      "name": "batches",
+      "sql": "CREATE TABLE batches(\n      id INTEGER PRIMARY KEY AUTOINCREMENT,\n      student TEXT NOT NULL, day INTEGER NOT NULL,\n      status TEXT NOT NULL DEFAULT 'pending',        -- pending / confirmed\n      created_at TEXT, confirmed_at TEXT, round INTEGER DEFAULT 1, exported_at TEXT, task_id INTEGER,\n      UNIQUE(student, day))"
+    },
+    {
+      "name": "feedback",
+      "sql": "CREATE TABLE feedback(\n      id INTEGER PRIMARY KEY AUTOINCREMENT,\n      batch_id INTEGER NOT NULL,\n      round INTEGER NOT NULL,                        -- 针对第几轮批改提的\n      body TEXT NOT NULL,                            -- 运营者写的：哪里不对\n      created_at TEXT, resolved_at TEXT)"
+    },
+    {
+      "name": "items",
+      "sql": "CREATE TABLE items(\n      batch_id INTEGER NOT NULL, qno INTEGER NOT NULL,\n      verdict_pre TEXT,                              -- agent 预判 √ / ○ / ?\n      verdict_final TEXT,                            -- 运营者终审 √ / ○\n      needs_human INTEGER DEFAULT 0, confidence REAL,\n      answer_raw TEXT, ref_ans TEXT, lines TEXT, note TEXT, error_kp TEXT, page INTEGER DEFAULT 1, qtext TEXT,\n      PRIMARY KEY(batch_id, qno))"
+    },
+    {
+      "name": "slots",
+      "sql": "CREATE TABLE slots(\n      id INTEGER PRIMARY KEY AUTOINCREMENT,\n      task_id INTEGER NOT NULL,\n      student TEXT NOT NULL,                         -- 代号（🔴 别用真名全名）\n      state TEXT NOT NULL DEFAULT '占位',\n      note TEXT,\n      joined_at TEXT, submitted_at TEXT, day INTEGER, photos TEXT,\n      UNIQUE(task_id, student))"
+    },
+    {
+      "name": "sqlite_sequence",
+      "sql": "CREATE TABLE sqlite_sequence(name,seq)"
+    },
+    {
+      "name": "tasks",
+      "sql": "CREATE TABLE tasks(\n      id INTEGER PRIMARY KEY AUTOINCREMENT,\n      date TEXT NOT NULL,                            -- 2026-08-11\n      line TEXT NOT NULL,                            -- 线名（对外就叫这个）\n      book TEXT,                                     -- 册子目录名，回溯生产源\n      day  INTEGER NOT NULL,                         -- 这条线的第几天\n      paper TEXT, answer TEXT, sheet TEXT,           -- 挂载：题目卷 / 答案卷 / 题单.json\n      nq INTEGER,                                    -- 题数（有题单才有）\n      status TEXT NOT NULL DEFAULT 'draft',\n      note TEXT,\n      created_at TEXT, published_at TEXT, kind TEXT DEFAULT 'normal',\n      UNIQUE(date, line))"
+    }
+  ],
+  "hashRecipe": "sha256(JSON.stringify(tables.map(t => ({name, sql: t.sql.replace(/\\s+/g,' ').trim()})))) —— tables 按 name 升序；文件里存的 sql 是原样 DDL，规范化只在算 hash 时做（缩进/换行改了不算 schema 变更）"
+}
