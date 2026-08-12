@@ -7,7 +7,8 @@
  *   C1 审计覆盖与登记对齐  (a)行↔审计覆盖 (b)question↔question_vec (c)asset↔文件系统
  *                          (d)review_queue.ref 存在性 (e)🆕 静息闸必须=0
  *   C2 悬挂引用            引用表不得指向 merged/retired 的 kp（merge 原语漏挂即红旗）
- *                          🆕 2026-08-12 扩面：+ err_code_map / kp_edge（见 KP_REF_TABLES）
+ *                          🆕 2026-08-12 扩面：+ err_code_map / kp_edge / exam_model
+ *                          （见 KP_REF_TABLES）
  *   C3 向量版本单一        embed_model_ver 全表 ≤1 种且=当前配置（混版=近邻数学上无意义）
  *   C4 圣域契约            (a)schema hash (b)task_id 存在 (c)tasks.nq = 题单数
  *   C5 挂桥覆盖率          挂不上桥的批次列明细（🔴 warn 不红拦，M1 原文如此）
@@ -159,6 +160,10 @@ export const AUDITED_TABLES: ReadonlyArray<{ table: string; idExpr: string }> =
  *    但库里带 kp 外键的还有 **err_code_map**（D-12 后加）与 **kp_edge**（P2 占位，
  *    而且是**两列**都指 kp）—— mergeKp 会重挂它们（见 core/kg.ts §「四表之外」），
  *    C2 不查就等于「漏挂了也不亮红旗」，合并原语的这半边缺了机器判据。
+ * 🔴 2026-08-12 再补 **exam_model**（002-C 报的裁决已批）：它的 kp_id 也带 kp 外键，
+ *    mergeKp 的第 ④ 步就是把它同事务改指到落点。同理，C2 不查这张表 =
+ *    「解题模型挂在一个已合并的考点上」这种事**不会亮红旗** —— 而它一旦发生，
+ *    按考点召回模型（举一反三/出题的取料口）就悄悄少一片。
  * 🔴 cause_example 没有 kp 列，见下面 checkC2 里的诚实标注。
  */
 const KP_REF_TABLES: ReadonlyArray<{ table: string; cols: string[] }> = [
@@ -168,6 +173,7 @@ const KP_REF_TABLES: ReadonlyArray<{ table: string; cols: string[] }> = [
   { table: "kp_alias", cols: ["kp_id"] },
   { table: "err_code_map", cols: ["kp_id"] },
   { table: "kp_edge", cols: ["from_kp", "to_kp"] },
+  { table: "exam_model", cols: ["kp_id"] },
 ];
 
 // ---------------------------------------------------------------------------
@@ -446,7 +452,7 @@ async function checkC2(h: CoreDbHandle): Promise<CheckResult> {
 
   return {
     id: "C2",
-    name: "悬挂引用（question_kp/node_kp_map/kp_error/kp_alias/err_code_map/kp_edge 不得指向 merged/retired 考点）",
+    name: "悬挂引用（question_kp/node_kp_map/kp_error/kp_alias/err_code_map/kp_edge/exam_model 不得指向 merged/retired 考点）",
     ok: total === 0,
     level: "red",
     details,

@@ -11,7 +11,7 @@
  *   ③ 低置信入队列，同 query 不重复开工单；
  *   ④ 🔴 MATCH 注入：query 里塞 `"` `*` `(` `OR` 不报错、也拼不出语法（不多召回一条）；
  *   ⑤ kp_fts 触发器：加别名 / 改名 / 合并 / 退役后词条同步（merged 壳词条消失）；
- *   ⑥ C2 扩面：err_code_map / kp_edge 指向 merged 考点 → 对账红。
+ *   ⑥ C2 扩面：err_code_map / kp_edge / exam_model 指向 merged 考点 → 对账红。
  */
 import { existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -41,7 +41,7 @@ import {
   type CoreDbHandle,
   type RowRef,
 } from "~/core";
-import { errCodeMap, errorCause, kpEdge } from "~/server/db/schema";
+import { errCodeMap, errorCause, examModel, kpEdge } from "~/server/db/schema";
 
 const 真库路径 = join(process.cwd(), "data", "资料库.db");
 const 副本清单: string[] = [];
@@ -431,7 +431,7 @@ describe("⑤ kp_fts 同步触发器：词表跟着正表走", () => {
 // ⑥ C2 扩面
 // ---------------------------------------------------------------------------
 
-describe("⑥ 对账 C2 扩面：err_code_map / kp_edge 指向 merged 考点要红", () => {
+describe("⑥ 对账 C2 扩面：err_code_map / kp_edge / exam_model 指向 merged 考点要红", () => {
   it("造两条悬挂引用 → C2 红，且 stats 逐表说得出是谁", async () => {
     const h = await 造副本("c2");
     const 壳 = (await createKp({ name: "被合掉的" }, { handle: h })).id;
@@ -487,5 +487,38 @@ describe("⑥ 对账 C2 扩面：err_code_map / kp_edge 指向 merged 考点要�
     // 老四表照旧绿
     expect(c2.stats?.question_kp).toBe(0);
     expect(c2.stats?.kp_alias).toBe(0);
+  });
+
+  it("exam_model 指向 merged 考点 → C2 红（002-B2 补：解题模型挂在合并壳上不许静默）", async () => {
+    const h = await 造副本("c2-em");
+    const 壳 = (await createKp({ name: "被合掉的模型考点" }, { handle: h })).id;
+    const 落点 = (await createKp({ name: "模型合并目标" }, { handle: h })).id;
+    await mergeKp(壳, 落点, { handle: h });
+
+    // 合并之后再往壳上挂模型 —— mergeKp 第 ④ 步（exam_model 改指）漏做时库里的形状
+    const em = newId("em");
+    await withCoreWrite(
+      { actor: "system", tool: "test_seed_dangling_model" },
+      async (tx) => {
+        await tx.insert(examModel).values({
+          id: em,
+          kpId: 壳,
+          name: "绝对值分类讨论·三段式",
+          status: "active",
+          createdAt: nowLocalISO(),
+        });
+        return [{ table: "exam_model", id: em, op: "insert" }];
+      },
+      h,
+    );
+
+    const c2 = (await integrityCheck({ handle: h, metric: false })).checks.find(
+      (c) => c.id === "C2",
+    )!;
+    expect(c2.ok).toBe(false);
+    expect(c2.level).toBe("red");
+    expect(c2.stats?.exam_model).toBe(1);
+    expect(c2.stats?.合计).toBe(1);
+    expect(c2.details.join("\n")).toContain(壳);
   });
 });
