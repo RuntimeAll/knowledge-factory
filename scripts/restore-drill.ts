@@ -19,6 +19,12 @@
  * 🔴 R-SYS-0 的验收口径 = 「恢复后 integrity_check 全绿才算数」，所以第 ⑦ 步
  *    不是走个过场：链断了、对账红了，这次演练就是 FAIL，别粉饰。
  * 🔴 本卡不在真库上跑 --yes（实现 + 副本自测为止），真库演练由总指挥亲自跑。
+ *
+ * ⚠️ 环境坑（2026-08-12 实测，给后来的 agent）：在 **Claude Code 的沙箱 bash** 里跑
+ *    --yes 会**静默死在第 5 步**（无任何输出、退出码 127）——沙箱会拦/改写带中文的
+ *    绝对路径 unlink：rmSync 不抛错但文件还在，existsSync 还会给出错误答案。
+ *    这是沙箱的锅，不是脚本的锅：换 ASCII 文件名的副本（--db file:./data/_drill/kf-drill.db）
+ *    立刻八步全过。真人在普通 PowerShell 里跑真库不受影响。
  */
 import { copyFileSync, existsSync, rmSync } from "node:fs";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -60,20 +66,27 @@ function argValue(flag: string): string | undefined {
   return a.includes("=") ? a.slice(a.indexOf("=") + 1) : argv[i + 1];
 }
 
-/** Windows 上 close() 之后句柄释放晚一拍，删不掉就等一下再试 */
+/**
+ * Windows 上 close() 之后句柄释放晚一拍，删不掉就等一下再试。
+ * 🔴 rmSync 不抛 ≠ 删掉了（某些沙箱/同步盘会静默吞掉 unlink）——一律以 existsSync 复核为准。
+ */
 async function removeWithRetry(path: string): Promise<void> {
+  let lastErr = "";
   for (let i = 0; i < 20; i++) {
-    if (!existsSync(path)) return;
+    if (!existsSync(path)) {
+      if (i > 0) say(`  ${path} 已删除（第 ${i + 1} 次尝试）`);
+      return;
+    }
     try {
       rmSync(path, { force: true });
-      if (!existsSync(path)) return;
-    } catch {
-      /* 句柄还没放，等 */
+    } catch (e) {
+      lastErr = (e as NodeJS.ErrnoException).code ?? String(e);
     }
     await sleep(100);
   }
   throw new Error(
-    `删不掉 ${path}（文件被占用？先关掉 Next dev / DB 客户端再来）`,
+    `删不掉 ${path}（最后一次错误：${lastErr || "rmSync 没报错但文件还在"}）——` +
+      "文件被占用？先关掉 Next dev / DB 客户端再来",
   );
 }
 

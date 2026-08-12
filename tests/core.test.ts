@@ -104,6 +104,13 @@ async function 计数(handle: CoreDbHandle, table: string): Promise<number> {
 
 // ---------------------------------------------------------------------------
 
+/**
+ * 🔴 本文件所有断言一律「与基线相对」，不假设真库是空的：
+ *    库是活的——WP4 起，跑一次备份/对账就会留下 metric + 审计行，
+ *    副本自然带着它们。写死 seq=1 / count=1 的断言会被自己的产品行为打红。
+ */
+let 首笔审计seq = 0;
+
 describe("① withCoreWrite 正常路", () => {
   it("业务行 + 审计行同事务落地，闸自己关回 0", async () => {
     const before = await 计数(主副本, "audit_log");
@@ -124,11 +131,21 @@ describe("① withCoreWrite 正常路", () => {
     expect(await 计数(主副本, "audit_log")).toBe(before + 1);
     // 🔴 静息态永远 0
     expect(await readWriteGate(主副本)).toBe(0);
+    首笔审计seq = receipt.seq;
   });
 
-  it("第一行审计的 prev_hash = 创世哈希，且 args/rowRefs 如实落库", async () => {
+  it("链首 prev_hash = 创世哈希；本次写的那行 args/rowRefs 如实落库", async () => {
+    // 链首那行永远该带创世哈希（不管它是不是本次写的）
+    const head = await 主副本.client.execute(
+      "SELECT prev_hash FROM audit_log ORDER BY seq LIMIT 1",
+    );
+    expect((head.rows[0] as unknown as { prev_hash: string }).prev_hash).toBe(
+      AUDIT_GENESIS_HASH,
+    );
+
+    // 本次写的那行按 seq 精确取（不假设它就是 seq=1）
     const r = await 主副本.client.execute(
-      "SELECT seq, actor, tool, args_digest, row_refs_json, gate_results_json, prev_hash, hmac FROM audit_log ORDER BY seq LIMIT 1",
+      `SELECT seq, actor, tool, args_digest, row_refs_json, gate_results_json, prev_hash, hmac FROM audit_log WHERE seq=${首笔审计seq}`,
     );
     const row = r.rows[0] as unknown as {
       seq: number;
@@ -140,10 +157,9 @@ describe("① withCoreWrite 正常路", () => {
       prev_hash: string;
       hmac: string | null;
     };
-    expect(Number(row.seq)).toBe(1);
+    expect(Number(row.seq)).toBe(首笔审计seq);
     expect(row.actor).toBe("agent");
     expect(row.tool).toBe("test_upsert_roster");
-    expect(row.prev_hash).toBe(AUDIT_GENESIS_HASH);
     expect(row.args_digest).toBe(digestArgs({ code: "stu_a" }));
     expect(JSON.parse(row.row_refs_json)).toEqual([
       { table: "roster", id: "stu_a", op: "insert" },
@@ -175,9 +191,10 @@ describe("① withCoreWrite 正常路", () => {
 
   it("logMetric 也走同一条写路：metric_event +1 且必留审计行", async () => {
     const beforeAudit = await 计数(主副本, "audit_log");
+    const beforeMetric = await 计数(主副本, "metric_event");
     const m = await logMetric("gate_pass", "stu_a", { n: 1 }, 主副本);
     expect(m.id).toBeGreaterThan(0);
-    expect(await 计数(主副本, "metric_event")).toBe(1);
+    expect(await 计数(主副本, "metric_event")).toBe(beforeMetric + 1);
     expect(await 计数(主副本, "audit_log")).toBe(beforeAudit + 1);
     expect(await readWriteGate(主副本)).toBe(0);
   });
@@ -280,7 +297,8 @@ describe("③ 审计链口径与防篡改", () => {
     // 所以「插一行接不上的」是唯一可行的攻击面 —— 而它正是哈希链要抓的东西。
     const forge = await 造副本("forge");
     try {
-      await withCoreWrite(
+      const 基线 = await 计数(forge, "audit_log");
+      const 种子 = await withCoreWrite(
         { actor: "agent", tool: "test_seed" },
         async (tx) => {
           await tx
@@ -299,10 +317,11 @@ describe("③ 审计链口径与防篡改", () => {
 
       const chain = await verifyAuditChain(forge);
       expect(chain.ok).toBe(false);
-      expect(chain.brokenAtSeq).toBe(2);
+      // 伪造的那行紧跟在种子行后面
+      expect(chain.brokenAtSeq).toBe(种子.seq + 1);
       expect(chain.reason).toContain("prev_hash");
-      // 断链之前的行仍然是校验过的
-      expect(chain.checkedRows).toBe(1);
+      // 断链之前的行仍然是校验过的（基线那些 + 种子这一条）
+      expect(chain.checkedRows).toBe(基线 + 1);
     } finally {
       forge.close();
     }

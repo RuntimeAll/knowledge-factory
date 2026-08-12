@@ -369,19 +369,23 @@ describe("④ 防裸写闸的真实行为", () => {
   });
 
   it("🔴 audit_log：开着闸也改不动、删不掉（append-only）", async () => {
-    await 副本.execute(
-      "INSERT INTO audit_log(ts, actor, tool, prev_hash) VALUES ('2026-08-12T00:00:00','system','test','GENESIS')",
+    // 🔴 不假设「真库是空的」：库是活的，跑过备份/对账就有审计行了（WP4 起）。
+    //    自己插一行、拿回它的 seq 再针对那一行验，才是与基线无关的断言。
+    const ins = await 副本.execute(
+      "INSERT INTO audit_log(ts, actor, tool, prev_hash) VALUES ('2026-08-12T00:00:00','system','test','GENESIS') RETURNING seq",
     );
+    const seq = Number((ins.rows[0] as unknown as { seq: number }).seq);
+
     await 开闸(副本, true);
     await expect(
-      副本.execute("UPDATE audit_log SET tool='篡改' WHERE seq=1"),
+      副本.execute(`UPDATE audit_log SET tool='篡改' WHERE seq=${seq}`),
     ).rejects.toThrow(/append-only/);
     await expect(
-      副本.execute("DELETE FROM audit_log WHERE seq=1"),
+      副本.execute(`DELETE FROM audit_log WHERE seq=${seq}`),
     ).rejects.toThrow(/append-only/);
     await 开闸(副本, false);
 
-    const r = await 副本.execute("SELECT tool FROM audit_log WHERE seq=1");
+    const r = await 副本.execute(`SELECT tool FROM audit_log WHERE seq=${seq}`);
     expect((r.rows[0] as unknown as { tool: string }).tool).toBe("test");
   });
 });
