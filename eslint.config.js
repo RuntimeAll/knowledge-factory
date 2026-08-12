@@ -9,8 +9,10 @@ const compat = new FlatCompat({
 
 export default tseslint.config(
   {
-		ignores: ['.next']
-	},
+    // next-env.d.ts 是 Next 生成的，里面的 triple-slash 引用改不得；
+    // data/ 是本地 SQLite 库，drizzle/ 是生成的迁移 SQL。
+    ignores: [".next", "next-env.d.ts", "data", "drizzle"],
+  },
   ...compat.extends("next/core-web-vitals"),
   {
     files: ['**/*.ts', '**/*.tsx'],
