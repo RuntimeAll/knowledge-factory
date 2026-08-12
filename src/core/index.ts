@@ -18,6 +18,7 @@
  *   health.ts  本地体检
  *   metrics.ts metric_event 打点
  *   kg.ts      KG 写原语（考点/别名/版本树/映射/merge_kp/批量导底 · AI:PRD-002）
+ *   resolve.ts 考点解析读侧（resolve_kp 打分 + kp_context 卡片包 · AI:PRD-002）
  *   gates/     闸骨架（真闸从 AI:PRD-003 起长）
  *   backup.ts  VACUUM INTO 快照（+异地副本）
  *   grading.ts 🔴 圣域 审核.db **只读**连接（三道锁，见文件头）
@@ -175,6 +176,23 @@ export {
   type RetireKpResult,
   type TreeWriteResult,
 } from "./kg";
+
+export {
+  LOW_CONFIDENCE_AT,
+  LOW_CONFIDENCE_KIND,
+  TRIGRAM_MIN_CHARS,
+  KpNotFoundError,
+  ftsStringLiteral,
+  kpContext,
+  resolveKp,
+  type KpCandidate,
+  type KpContextCard,
+  type KpContextOptions,
+  type KpPlacement,
+  type MatchedVia,
+  type ResolveKpOptions,
+  type ResolveKpResult,
+} from "./resolve";
 
 export {
   PASS,
