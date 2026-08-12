@@ -7,6 +7,7 @@
  *   C1 审计覆盖与登记对齐  (a)行↔审计覆盖 (b)question↔question_vec (c)asset↔文件系统
  *                          (d)review_queue.ref 存在性 (e)🆕 静息闸必须=0
  *   C2 悬挂引用            引用表不得指向 merged/retired 的 kp（merge 原语漏挂即红旗）
+ *                          🆕 2026-08-12 扩面：+ err_code_map / kp_edge（见 KP_REF_TABLES）
  *   C3 向量版本单一        embed_model_ver 全表 ≤1 种且=当前配置（混版=近邻数学上无意义）
  *   C4 圣域契约            (a)schema hash (b)task_id 存在 (c)tasks.nq = 题单数
  *   C5 挂桥覆盖率          挂不上桥的批次列明细（🔴 warn 不红拦，M1 原文如此）
@@ -151,13 +152,23 @@ export const AUDITED_TABLES: ReadonlyArray<{ table: string; idExpr: string }> =
     },
   ];
 
-/** C2 要查的引用表（🔴 cause_example 没有 kp_id 列，见 C2 实现处的诚实标注） */
-const KP_REF_TABLES = [
-  "question_kp",
-  "node_kp_map",
-  "kp_error",
-  "kp_alias",
-] as const;
+/**
+ * C2 要查的引用表 + 各自「指向 kp 的列」。
+ *
+ * 🔴 2026-08-12 扩面（002-A 裁决的落地）：原本只有 M1 §5② 明文列的四张。
+ *    但库里带 kp 外键的还有 **err_code_map**（D-12 后加）与 **kp_edge**（P2 占位，
+ *    而且是**两列**都指 kp）—— mergeKp 会重挂它们（见 core/kg.ts §「四表之外」），
+ *    C2 不查就等于「漏挂了也不亮红旗」，合并原语的这半边缺了机器判据。
+ * 🔴 cause_example 没有 kp 列，见下面 checkC2 里的诚实标注。
+ */
+const KP_REF_TABLES: ReadonlyArray<{ table: string; cols: string[] }> = [
+  { table: "question_kp", cols: ["kp_id"] },
+  { table: "node_kp_map", cols: ["kp_id"] },
+  { table: "kp_error", cols: ["kp_id"] },
+  { table: "kp_alias", cols: ["kp_id"] },
+  { table: "err_code_map", cols: ["kp_id"] },
+  { table: "kp_edge", cols: ["from_kp", "to_kp"] },
+];
 
 // ---------------------------------------------------------------------------
 // 小工具
@@ -400,17 +411,20 @@ async function checkC2(h: CoreDbHandle): Promise<CheckResult> {
   const stats: Record<string, number | string> = {};
   let total = 0;
 
-  for (const table of KP_REF_TABLES) {
+  for (const { table, cols } of KP_REF_TABLES) {
+    // 🔴 逐【行】计数而不是逐引用：kp_edge 两端可能都指着坏 kp，
+    //    那也只是一条坏边。IN (x.col…) 单列时等价于原来的 JOIN 写法。
+    const 坏 = `k.id IN (${cols.map((c) => `x.${c}`).join(", ")}) AND k.status IN ('merged','retired')`;
     const n = await count(
       h,
-      `SELECT COUNT(*) AS c FROM ${table} x JOIN kp k ON k.id = x.kp_id WHERE k.status IN ('merged','retired')`,
+      `SELECT COUNT(*) AS c FROM ${table} x WHERE EXISTS (SELECT 1 FROM kp k WHERE ${坏})`,
     );
     stats[table] = n;
     if (n > 0) {
       total += n;
       const rows = await q<{ kp_id: string; status: string }>(
         h,
-        `SELECT DISTINCT x.kp_id AS kp_id, k.status AS status FROM ${table} x JOIN kp k ON k.id = x.kp_id WHERE k.status IN ('merged','retired') LIMIT ${SAMPLE}`,
+        `SELECT DISTINCT k.id AS kp_id, k.status AS status FROM ${table} x JOIN kp k ON ${坏} LIMIT ${SAMPLE}`,
       );
       details.push(
         sampleLine(
@@ -422,18 +436,17 @@ async function checkC2(h: CoreDbHandle): Promise<CheckResult> {
     }
   }
 
-  // 🔴 诚实标注：M1 §5② 把 cause_example 也列进了这组，但 §3.D 的 DDL 里
-  //    cause_example(cause_id, question_id) 根本没有 kp_id 列——它对考点是间接引用
-  //    （经 question 的主考点）。这里不编一条查不出东西的假 SQL 冒充查过，
-  //    如实标注，等正本澄清（挂 WP4 报告的偏差清单）。
+  // 🔴 诚实标注（2026-08-12 执行裁决，原「待澄清」结案）：M1 §5② 把 cause_example
+  //    也列进了这组，但 §3.D 的 DDL 里 cause_example(cause_id, question_id) 根本没有
+  //    kp 列——它对考点是**经 question 的间接引用**，不在本项。不编一条查不出东西的
+  //    假 SQL 冒充查过。
   details.push(
-    "说明：cause_example 没有 kp_id 列（§3.D DDL），对 kp 是经 question 的间接引用，本项不查——" +
-      "正本 §5② 把它列进悬挂引用组，与 §3.D 表结构不一致，待澄清。",
+    "说明：cause_example 无 kp 列，经 question 间接引用，不在本项（执行裁决 2026-08-12）。",
   );
 
   return {
     id: "C2",
-    name: "悬挂引用（question_kp/node_kp_map/kp_error/kp_alias 不得指向 merged/retired 考点）",
+    name: "悬挂引用（question_kp/node_kp_map/kp_error/kp_alias/err_code_map/kp_edge 不得指向 merged/retired 考点）",
     ok: total === 0,
     level: "red",
     details,
