@@ -89,11 +89,14 @@ async function rpc(body: unknown): Promise<Record<string, unknown>> {
 interface ListedTool {
   name: string;
   description?: string;
-  inputSchema?: { properties?: Record<string, { enum?: string[] }> };
+  inputSchema?: {
+    properties?: Record<string, { enum?: string[] }>;
+    required?: string[];
+  };
 }
 
 describe("MCP 壳 · 注册表", () => {
-  it("route 导出 GET/POST（同一个 handler），tools/list 回五个工具", async () => {
+  it("route 导出 GET/POST（同一个 handler），tools/list 回八个工具", async () => {
     expect(typeof route.GET).toBe("function");
     expect(typeof route.POST).toBe("function");
     expect(route.GET).toBe(route.POST); // 2.x 一个 handler 通吃，不再分 SSE/message 两条路
@@ -106,13 +109,16 @@ describe("MCP 壳 · 注册表", () => {
     })) as { result?: { tools?: ListedTool[] } };
     const tools = r.result?.tools ?? [];
 
-    // 🔴 基线随卡增长：001 三个系统工具 + 002-C 两个考点工具
+    // 🔴 基线随卡增长：001 三个系统工具 + 002-C 两个考点工具 + 003-D 三个录题工具
     expect(tools.map((t) => t.name)).toEqual([
       "health",
       "integrity_check",
       "backup_now",
       "resolve_kp",
       "kp_context",
+      "kb_ingest",
+      "propose_question",
+      "get_ingest_batch",
     ]);
     // 描述是给 agent 看的，不许空
     for (const t of tools) expect(t.description ?? "").not.toBe("");
@@ -123,6 +129,22 @@ describe("MCP 壳 · 注册表", () => {
         ?.reason?.enum ?? [];
     expect(reasons).toEqual(["daily", "batch", "manual"]);
     expect(reasons).not.toContain("pre-restore");
+
+    // 🔴 kb_ingest 的入参 schema 是 core 契约正本（ingest-schema.ts）长出来的，
+    //    不是这儿抄的第二份 —— 抄一份迟早跟契约漂，这条断言就是漂移闸。
+    const ingest = tools.find((t) => t.name === "kb_ingest");
+    expect(Object.keys(ingest?.inputSchema?.properties ?? {})).toEqual([
+      "contract",
+      "source",
+      "sourceDoc",
+      "items",
+      "dry_run",
+    ]);
+    expect(ingest?.inputSchema?.required).toEqual([
+      "contract",
+      "source",
+      "items",
+    ]);
   });
 });
 

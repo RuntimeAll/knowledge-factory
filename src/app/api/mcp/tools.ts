@@ -2,6 +2,7 @@
  * app/api/mcp/tools.ts —— MCP 工具实现层
  *   · 三个系统工具 health / integrity_check / backup_now（AI:PRD-001 · WP5）
  *   · 两个考点工具 resolve_kp / kp_context（AI:PRD-002 · 002-C）
+ *   · 三个录题工具 kb_ingest / propose_question / get_ingest_batch（AI:PRD-003 · 003-D）
  *
  * 为什么和 route.ts 分家：route.ts 是「注册表」，只负责把工具挂到 mcp-handler 上；
  * 真正的入参 schema、错误分类、返回外壳全在这儿 —— 这样单测能直接调函数，
@@ -27,18 +28,31 @@
 import { z } from "zod";
 
 import {
+  IngestError,
   KgError,
   KpNotFoundError,
+  QueueError,
   backupNow,
+  getIngestBatch,
   health,
+  ingestPayloadSchema,
   integrityCheck,
+  itemReds,
   kpContext,
+  proposeItemSchema,
+  proposeQuestion,
   resolveKp,
+  runIngestBatch,
+  sourceDocSchema,
   type BackupResult,
   type HealthReport,
+  type IngestBatchRecord,
+  type IngestCounts,
   type IntegrityReport,
   type KpCandidate,
   type KpContextCard,
+  type PrecheckRed,
+  type ProposeQuestionResult,
   type ResolveKpResult,
 } from "~/core";
 
@@ -77,7 +91,14 @@ export interface ToolErr {
 export type ToolPayload<T> = ToolOk<T> | ToolErr;
 
 export type ToolName =
-  "health" | "integrity_check" | "backup_now" | "resolve_kp" | "kp_context";
+  | "health"
+  | "integrity_check"
+  | "backup_now"
+  | "resolve_kp"
+  | "kp_context"
+  | "kb_ingest"
+  | "propose_question"
+  | "get_ingest_batch";
 
 export const TOOL_NAMES: readonly ToolName[] = [
   "health",
@@ -85,6 +106,9 @@ export const TOOL_NAMES: readonly ToolName[] = [
   "backup_now",
   "resolve_kp",
   "kp_context",
+  "kb_ingest",
+  "propose_question",
+  "get_ingest_batch",
 ];
 
 /**
@@ -94,7 +118,8 @@ export const TOOL_NAMES: readonly ToolName[] = [
  *   DB_BUSY         库被别人锁着（SQLITE_BUSY）——过一会儿重试有戏
  *   IO_ERROR        磁盘侧失败（备份目录写不进、异地目录不可达）
  *   KP_NOT_FOUND    🆕 考点 id 库里没有（多半是编的）——错误体里带 candidates
- *   INVALID_INPUT   🆕 入参没过校验（空查询串之类）——改参数再来
+ *   INVALID_INPUT   🆕 入参没过校验（空查询串 / 契约结构错）——改参数再来
+ *   NOT_FOUND       🆕 指名道姓要的那行东西库里没有（batch_id 写错之类）
  *   INTERNAL        没归到上面任何一类的意外
  */
 export const TOOL_ERROR_CODES = [
@@ -104,6 +129,7 @@ export const TOOL_ERROR_CODES = [
   "IO_ERROR",
   "KP_NOT_FOUND",
   "INVALID_INPUT",
+  "NOT_FOUND",
   "INTERNAL",
 ] as const;
 
@@ -162,11 +188,61 @@ export const kpContextInput = z.object({
     ),
 });
 
+// ── AI:PRD-003 · 003-D 录题三工具 ──────────────────────────────────────────
+
+/**
+ * kb-ingest/v1 的 payload **原样**当入参，只多挂一个 dry_run。
+ *
+ * 🔴 复用 core 的 zod 正本（`ingest-schema.ts`），不在这儿抄一份字段表 ——
+ *    抄出来的那份迟早跟契约漂。加新键用 `.extend()` 是允许的
+ *    （zod v4 只禁止在带 refinement 的对象上**覆盖已有键**）。
+ */
+export const kbIngestInput = ingestPayloadSchema.extend({
+  dry_run: z
+    .boolean()
+    .optional()
+    .describe(
+      "只验不写：跑完全套闸、返回逐题结论，但库与磁盘一个字节都不动。默认 false。",
+    ),
+});
+
+export const proposeQuestionInput = z.object({
+  item: proposeItemSchema.describe(
+    "一道题（kb-ingest/v1 的 items[] 元素；单题时 seq 可省）。",
+  ),
+  source: z
+    .string()
+    .trim()
+    .min(1)
+    .optional()
+    .describe("喂料方标识（skill/脚本@版本）。默认 propose@agent。"),
+  source_doc: sourceDocSchema
+    .optional()
+    .describe("批级源文档；prov.type='scan' 时必给。"),
+  note: z
+    .string()
+    .trim()
+    .min(1)
+    .optional()
+    .describe("写给审的人的一句话：这题哪儿来的、为什么值得收。"),
+});
+
+export const getIngestBatchInput = z.object({
+  batch_id: z
+    .string()
+    .trim()
+    .min(1)
+    .describe("批 id（形如 batch_01J…），来自 kb_ingest 的返回。"),
+});
+
 export type HealthArgs = z.infer<typeof healthInput>;
 export type IntegrityCheckArgs = z.infer<typeof integrityCheckInput>;
 export type BackupNowArgs = z.infer<typeof backupNowInput>;
 export type ResolveKpArgs = z.infer<typeof resolveKpInput>;
 export type KpContextArgs = z.infer<typeof kpContextInput>;
+export type KbIngestArgs = z.infer<typeof kbIngestInput>;
+export type ProposeQuestionArgs = z.infer<typeof proposeQuestionInput>;
+export type GetIngestBatchArgs = z.infer<typeof getIngestBatchInput>;
 
 // ---------------------------------------------------------------------------
 // 错误分类
@@ -205,6 +281,34 @@ export function classifyToolError(tool: ToolName, e: unknown): ToolErr {
       // 可重试 = 「换个 id 再调一次就有戏」，候选就在下面
       recoverable: true,
       candidates: e.candidates,
+    };
+  }
+  // 🔴 契约结构错（整批拒）= 喂料方自己改得对的事 ⇒ INVALID_INPUT + 可重试。
+  //    闸的人话（缺哪个字段、该长什么样）原样带出去，别缩成一句「参数错误」。
+  if (e instanceof IngestError) {
+    return {
+      ok: false,
+      tool,
+      code: "INVALID_INPUT",
+      message: `${tool} 契约不合格[${e.code}]：${e.message}`,
+      recoverable: true,
+    };
+  }
+  if (e instanceof QueueError) {
+    const code: ToolErrorCode =
+      e.code === "INVALID_INPUT"
+        ? "INVALID_INPUT"
+        : e.code === "QUEUE_NOT_FOUND" || e.code === "QUARANTINE_NOT_FOUND"
+          ? "NOT_FOUND"
+          : "INTERNAL";
+    return {
+      ok: false,
+      tool,
+      // 队列的稳定码一律带进 message：翻不成工具码的那些（KIND_MISMATCH /
+      // ALREADY_DECIDED …）落 INTERNAL，但读的人得知道 core 到底判了什么
+      message: `${tool} 失败[${e.code}]：${e.message}`,
+      code,
+      recoverable: code !== "INTERNAL",
     };
   }
   if (e instanceof KgError) {
@@ -329,6 +433,114 @@ export function runKpContext(
   args: KpContextArgs,
 ): Promise<ToolPayload<KpContextCard>> {
   return run("kp_context", () => kpContext(args.kp_id));
+}
+
+// ---------------------------------------------------------------------------
+// 录题三工具（AI:PRD-003 · 003-D）
+// ---------------------------------------------------------------------------
+
+/** 逐题小结（wire 上给这个，全账留库里 —— 60 题 × 9 闸的详账没人在对话里读） */
+export interface KbIngestItemBrief {
+  seq: number;
+  /**
+   * accepted     落库了，干净
+   * needs_review 落库了，但带题干图 ⇒ 已开图审工单，审完才算数
+   * rejected     没落库，进了隔离区（改完走 get_ingest_batch 看账、或在队列页改判重投）
+   */
+  verdict: "accepted" | "needs_review" | "rejected";
+  questionId: string | null;
+  reds: PrecheckRed[];
+}
+
+export interface KbIngestData {
+  batchId: string | null;
+  dryRun: boolean;
+  contractVer: string;
+  source: string;
+  counts: IngestCounts;
+  perItem: KbIngestItemBrief[];
+  questionIds: string[];
+  /** 开出来的人审工单（题干图必审） */
+  queueIds: string[];
+  /** 进隔离区的行 */
+  quarantineIds: string[];
+  backupPath: string | null;
+  /** 🔴 明确告诉 agent 全账在哪 —— 不然它只会以为「报告就这么多」 */
+  fullReport: string;
+}
+
+/**
+ * 批量录题（唯一入口）。
+ * 🔴 逐题小结上 wire，全账落 `ingest_batch.gate_report_json`（get_ingest_batch 取）。
+ */
+export function runKbIngest(
+  args: KbIngestArgs,
+): Promise<ToolPayload<KbIngestData>> {
+  return run("kb_ingest", async () => {
+    const { dry_run: dryRun, ...payload } = args;
+    const r = await runIngestBatch(payload, {
+      actor: "agent",
+      dryRun: dryRun === true,
+    });
+    return {
+      batchId: r.batchId,
+      dryRun: r.dryRun,
+      contractVer: r.contractVer,
+      source: r.source,
+      counts: r.counts,
+      perItem: r.gateReport.items.map((it) => ({
+        seq: it.seq,
+        verdict:
+          it.verdict === "rejected"
+            ? ("rejected" as const)
+            : it.reviewRequired
+              ? ("needs_review" as const)
+              : ("accepted" as const),
+        questionId: it.questionId,
+        reds: itemReds(it),
+      })),
+      questionIds: r.questionIds,
+      queueIds: r.queueIds,
+      quarantineIds: r.quarantineIds,
+      backupPath: r.backup?.path ?? null,
+      fullReport: r.batchId
+        ? `逐题逐闸全账在库里：get_ingest_batch({batch_id:"${r.batchId}"})`
+        : "dry_run 不落批，全账只在这次返回里（要留账就去掉 dry_run 真跑一次）",
+    };
+  });
+}
+
+/** 提议一道题（提议态，人审转正）。 */
+export function runProposeQuestion(
+  args: ProposeQuestionArgs,
+): Promise<ToolPayload<ProposeQuestionResult>> {
+  return run("propose_question", () =>
+    proposeQuestion({
+      item: args.item,
+      source: args.source,
+      sourceDoc: args.source_doc,
+      note: args.note,
+      actor: "agent",
+    }),
+  );
+}
+
+/** 取一次录题批的全账（批行 + gate_report_json 全量 + 隔离计数）。 */
+export function runGetIngestBatch(
+  args: GetIngestBatchArgs,
+): Promise<ToolPayload<IngestBatchRecord>> {
+  return run("get_ingest_batch", async () => {
+    const rec = await getIngestBatch(args.batch_id);
+    if (!rec) {
+      // 🔴 查无此批不是「空结果」而是「你给的 id 不对」：报 NOT_FOUND，
+      //    回一个空壳会让 agent 以为批跑了但没账。
+      throw new QueueError(
+        "QUEUE_NOT_FOUND",
+        `批 ${args.batch_id} 不在库里 —— 核对 kb_ingest 返回的 batchId（dry_run 不落批，没有 id）。`,
+      );
+    }
+    return rec;
+  });
 }
 
 // ---------------------------------------------------------------------------

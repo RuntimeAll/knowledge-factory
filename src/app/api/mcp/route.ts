@@ -29,15 +29,21 @@ import { createMcpHandler } from "mcp-handler";
 import pkg from "../../../../package.json";
 import {
   backupNowInput,
+  getIngestBatchInput,
   healthInput,
   integrityCheckInput,
+  kbIngestInput,
   kpContextInput,
   payloadToText,
+  proposeQuestionInput,
   resolveKpInput,
   runBackupNow,
+  runGetIngestBatch,
   runHealth,
   runIntegrityCheck,
+  runKbIngest,
   runKpContext,
+  runProposeQuestion,
   runResolveKp,
   type ToolPayload,
 } from "./tools";
@@ -138,6 +144,61 @@ const handler = createMcpHandler(
         inputSchema: kpContextInput,
       },
       async (args) => toResult(await runKpContext(args)),
+    );
+
+    // ── 录题三工具（AI:PRD-003 · 003-D）────────────────────────────────────
+
+    server.registerTool(
+      "kb_ingest",
+      {
+        title: "批量录题（唯一入口）",
+        description:
+          "🔴 **一切批量入题只走这里**：一次调用 = 一个 ingest_batch，全套硬闸逐题跑" +
+          "（来源 provenance / 考点标全 / 题面禁指令词 / 前缀清洗 / 占位红旗 / 查重 / 可实算即实算 / 判档 / 配图分级）。" +
+          "入参就是 kb-ingest/v1 的 payload（contract + source + items[]，可带 sourceDoc），外加 dry_run。" +
+          "🔴 **红灯题不落库、进隔离区**（quarantine，带原样 payload + 为什么），一道坏题不连累同批好题；" +
+          "题干图入库即必审（question.review_required=1 + 一张 kind='图片' 工单）。" +
+          "dry_run=true 只验不写：库与磁盘零变化，拿完整逐题结论。" +
+          "返回 { ok, data:{ batchId, dryRun, counts:{total,accepted,queued,rejected}, " +
+          "perItem:[{seq,verdict(accepted|needs_review|rejected),questionId,reds:[{gate,code,message}]}], " +
+          "questionIds, queueIds, quarantineIds, backupPath, fullReport } }。" +
+          "🔴 perItem 是**逐题小结**；每题每闸的详账落在库里，用 get_ingest_batch(batch_id) 取。" +
+          "🔴 kps[].ref 一律先 resolve_kp 查真考点，编 id/编名字会被闸③直接拒。",
+        inputSchema: kbIngestInput,
+      },
+      async (args) => toResult(await runKbIngest(args)),
+    );
+
+    server.registerTool(
+      "propose_question",
+      {
+        title: "提议一道题（提议态，人审转正）",
+        description:
+          "会话里零星碰到一道值得收的题 —— 走这里，**不直接入库**：先跑一遍零写预检（同一套闸），" +
+          "然后开一张 kind='新题草稿' 的待审工单，人在队列页点「转正」才真入库。" +
+          "🔴 预检红了照样开工单（红灯原样附在工单里，让人看着改）；只有 payload 结构错才当场退回给你。" +
+          "整本书/整张卷请走 kb_ingest，别一道一道提议。" +
+          "返回 { ok, data:{ queueId, seq, precheck:{ ok, verdict, reds:[{gate,code,message}], stripped, notes, " +
+          "matchKey, solutionGrade, calcVerdict, kpIds, primaryKpId, reviewRequired } } }。",
+        inputSchema: proposeQuestionInput,
+      },
+      async (args) => toResult(await runProposeQuestion(args)),
+    );
+
+    server.registerTool(
+      "get_ingest_batch",
+      {
+        title: "取一次录题批的全账",
+        description:
+          "按 batch_id 取批行 + **逐题逐闸全账**（gate_report_json 全量，含被剥片段、实算结论、每道闸的结果）+ 关联隔离计数。" +
+          "kb_ingest 的返回只给逐题小结，要看「到底是哪道闸、原话怎么说的」就调它。" +
+          "返回 { ok, data:{ id, contractVer, source, payloadHash, counts, status, createdAt, committedAt, " +
+          "gateReport:{ ok, contract, items:[{seq,verdict,questionId,gates:{items:[{name,result,ms}]},failure,stripped,notes,…}], counts }, " +
+          "gateReportRaw, questionIds, quarantine:{total,open,resolved,openIds} } }。" +
+          "🔴 id 写错回 ok:false / code=NOT_FOUND（dry_run 不落批，所以它没有 batchId）。",
+        inputSchema: getIngestBatchInput,
+      },
+      async (args) => toResult(await runGetIngestBatch(args)),
     );
   },
   {
