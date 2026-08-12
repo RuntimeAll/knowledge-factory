@@ -1,0 +1,2493 @@
+{
+  "id": "fae61dbb-aef0-4a47-8595-0f7f0490b87f",
+  "prevId": "0ceb028f-7504-4799-93c2-f5d5d035beaa",
+  "version": "6",
+  "dialect": "sqlite",
+  "tables": {
+    "edition_node": {
+      "name": "edition_node",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "tree_id": {
+          "name": "tree_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "parent_id": {
+          "name": "parent_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "level": {
+          "name": "level",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sort": {
+          "name": "sort",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "edition_node_tree_id_edition_tree_id_fk": {
+          "name": "edition_node_tree_id_edition_tree_id_fk",
+          "tableFrom": "edition_node",
+          "columnsFrom": [
+            "tree_id"
+          ],
+          "tableTo": "edition_tree",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "edition_node_parent_id_edition_node_id_fk": {
+          "name": "edition_node_parent_id_edition_node_id_fk",
+          "tableFrom": "edition_node",
+          "columnsFrom": [
+            "parent_id"
+          ],
+          "tableTo": "edition_node",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "edition_tree": {
+      "name": "edition_tree",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "subject": {
+          "name": "subject",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "edition": {
+          "name": "edition",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "grade_sem": {
+          "name": "grade_sem",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_edtree_active": {
+          "name": "idx_edtree_active",
+          "columns": [
+            "subject",
+            "edition",
+            "grade_sem"
+          ],
+          "where": "status='active'",
+          "isUnique": true
+        },
+        "edition_tree_subject_edition_grade_sem_version_unique": {
+          "name": "edition_tree_subject_edition_grade_sem_version_unique",
+          "columns": [
+            "subject",
+            "edition",
+            "grade_sem",
+            "version"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "edition_tree_status_ck": {
+          "name": "edition_tree_status_ck",
+          "value": "status IN ('active','readonly')"
+        }
+      }
+    },
+    "kp": {
+      "name": "kp",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "grade_band": {
+          "name": "grade_band",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "domain": {
+          "name": "domain",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "topic": {
+          "name": "topic",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "card_md": {
+          "name": "card_md",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "merged_into": {
+          "name": "merged_into",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "kp_merged_into_kp_id_fk": {
+          "name": "kp_merged_into_kp_id_fk",
+          "tableFrom": "kp",
+          "columnsFrom": [
+            "merged_into"
+          ],
+          "tableTo": "kp",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "kp_status_ck": {
+          "name": "kp_status_ck",
+          "value": "status IN ('draft','active','merged','retired')"
+        },
+        "kp_merged_into_ck": {
+          "name": "kp_merged_into_ck",
+          "value": "status <> 'merged' OR merged_into IS NOT NULL"
+        }
+      }
+    },
+    "kp_alias": {
+      "name": "kp_alias",
+      "columns": {
+        "kp_id": {
+          "name": "kp_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "alias": {
+          "name": "alias",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_alias": {
+          "name": "idx_alias",
+          "columns": [
+            "alias"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "kp_alias_kp_id_kp_id_fk": {
+          "name": "kp_alias_kp_id_kp_id_fk",
+          "tableFrom": "kp_alias",
+          "columnsFrom": [
+            "kp_id"
+          ],
+          "tableTo": "kp",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "kp_alias_kp_id_alias_pk": {
+          "columns": [
+            "kp_id",
+            "alias"
+          ],
+          "name": "kp_alias_kp_id_alias_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "kp_edge": {
+      "name": "kp_edge",
+      "columns": {
+        "from_kp": {
+          "name": "from_kp",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "to_kp": {
+          "name": "to_kp",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "type": {
+          "name": "type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "kp_edge_from_kp_kp_id_fk": {
+          "name": "kp_edge_from_kp_kp_id_fk",
+          "tableFrom": "kp_edge",
+          "columnsFrom": [
+            "from_kp"
+          ],
+          "tableTo": "kp",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "kp_edge_to_kp_kp_id_fk": {
+          "name": "kp_edge_to_kp_kp_id_fk",
+          "tableFrom": "kp_edge",
+          "columnsFrom": [
+            "to_kp"
+          ],
+          "tableTo": "kp",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "kp_edge_from_kp_to_kp_type_pk": {
+          "columns": [
+            "from_kp",
+            "to_kp",
+            "type"
+          ],
+          "name": "kp_edge_from_kp_to_kp_type_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "kp_edge_type_ck": {
+          "name": "kp_edge_type_ck",
+          "value": "type='prereq'"
+        }
+      }
+    },
+    "node_kp_map": {
+      "name": "node_kp_map",
+      "columns": {
+        "node_id": {
+          "name": "node_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "kp_id": {
+          "name": "kp_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "node_kp_map_node_id_edition_node_id_fk": {
+          "name": "node_kp_map_node_id_edition_node_id_fk",
+          "tableFrom": "node_kp_map",
+          "columnsFrom": [
+            "node_id"
+          ],
+          "tableTo": "edition_node",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "node_kp_map_kp_id_kp_id_fk": {
+          "name": "node_kp_map_kp_id_kp_id_fk",
+          "tableFrom": "node_kp_map",
+          "columnsFrom": [
+            "kp_id"
+          ],
+          "tableTo": "kp",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "node_kp_map_node_id_kp_id_pk": {
+          "columns": [
+            "node_id",
+            "kp_id"
+          ],
+          "name": "node_kp_map_node_id_kp_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "asset": {
+      "name": "asset",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "path": {
+          "name": "path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "hash": {
+          "name": "hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "bytes": {
+          "name": "bytes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "asset_hash_unique": {
+          "name": "asset_hash_unique",
+          "columns": [
+            "hash"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "question": {
+      "name": "question",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "stem": {
+          "name": "stem",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "stem_plain": {
+          "name": "stem_plain",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "answer": {
+          "name": "answer",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "analysis": {
+          "name": "analysis",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "qtype": {
+          "name": "qtype",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "difficulty": {
+          "name": "difficulty",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "solution_grade": {
+          "name": "solution_grade",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "review_required": {
+          "name": "review_required",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "default": 0
+        },
+        "match_key": {
+          "name": "match_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "prov_type": {
+          "name": "prov_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_doc_id": {
+          "name": "source_doc_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "source_page_no": {
+          "name": "source_page_no",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "model_id": {
+          "name": "model_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "pipeline_ref": {
+          "name": "pipeline_ref",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "ingest_batch_id": {
+          "name": "ingest_batch_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "edition_scope": {
+          "name": "edition_scope",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_q_status_diff": {
+          "name": "idx_q_status_diff",
+          "columns": [
+            "status",
+            "difficulty"
+          ],
+          "isUnique": false
+        },
+        "idx_q_matchkey": {
+          "name": "idx_q_matchkey",
+          "columns": [
+            "match_key"
+          ],
+          "where": "status IN ('pending','active')",
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "question_source_doc_id_source_doc_id_fk": {
+          "name": "question_source_doc_id_source_doc_id_fk",
+          "tableFrom": "question",
+          "columnsFrom": [
+            "source_doc_id"
+          ],
+          "tableTo": "source_doc",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "question_model_id_exam_model_id_fk": {
+          "name": "question_model_id_exam_model_id_fk",
+          "tableFrom": "question",
+          "columnsFrom": [
+            "model_id"
+          ],
+          "tableTo": "exam_model",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "question_ingest_batch_id_ingest_batch_id_fk": {
+          "name": "question_ingest_batch_id_ingest_batch_id_fk",
+          "tableFrom": "question",
+          "columnsFrom": [
+            "ingest_batch_id"
+          ],
+          "tableTo": "ingest_batch",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "question_status_ck": {
+          "name": "question_status_ck",
+          "value": "status IN ('pending','active','quarantine','rejected','retired')"
+        },
+        "question_solution_grade_ck": {
+          "name": "question_solution_grade_ck",
+          "value": "solution_grade IN ('calc_verified','analysis_only','no_solution')"
+        },
+        "question_prov_type_ck": {
+          "name": "question_prov_type_ck",
+          "value": "prov_type IN ('scan','model','pipeline','manual')"
+        },
+        "question_prov_scan_ck": {
+          "name": "question_prov_scan_ck",
+          "value": "prov_type != 'scan'     OR (source_doc_id IS NOT NULL AND source_page_no IS NOT NULL)"
+        },
+        "question_prov_model_ck": {
+          "name": "question_prov_model_ck",
+          "value": "prov_type != 'model'    OR model_id IS NOT NULL"
+        },
+        "question_prov_pipeline_ck": {
+          "name": "question_prov_pipeline_ck",
+          "value": "prov_type != 'pipeline' OR pipeline_ref IS NOT NULL"
+        },
+        "question_prov_manual_ck": {
+          "name": "question_prov_manual_ck",
+          "value": "prov_type != 'manual'   OR created_by IS NOT NULL"
+        }
+      }
+    },
+    "question_figure": {
+      "name": "question_figure",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "question_id": {
+          "name": "question_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "asset_id": {
+          "name": "asset_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "review_state": {
+          "name": "review_state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "question_figure_question_id_question_id_fk": {
+          "name": "question_figure_question_id_question_id_fk",
+          "tableFrom": "question_figure",
+          "columnsFrom": [
+            "question_id"
+          ],
+          "tableTo": "question",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "question_figure_asset_id_asset_id_fk": {
+          "name": "question_figure_asset_id_asset_id_fk",
+          "tableFrom": "question_figure",
+          "columnsFrom": [
+            "asset_id"
+          ],
+          "tableTo": "asset",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "question_figure_role_ck": {
+          "name": "question_figure_role_ck",
+          "value": "role IN ('stem','analysis')"
+        },
+        "question_figure_review_state_ck": {
+          "name": "question_figure_review_state_ck",
+          "value": "review_state IN ('pending','passed','rejected')"
+        }
+      }
+    },
+    "question_kp": {
+      "name": "question_kp",
+      "columns": {
+        "question_id": {
+          "name": "question_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "kp_id": {
+          "name": "kp_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "is_primary": {
+          "name": "is_primary",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "default": 0
+        }
+      },
+      "indexes": {
+        "idx_qkp_kp": {
+          "name": "idx_qkp_kp",
+          "columns": [
+            "kp_id",
+            "question_id"
+          ],
+          "isUnique": false
+        },
+        "idx_qkp_primary": {
+          "name": "idx_qkp_primary",
+          "columns": [
+            "question_id"
+          ],
+          "where": "is_primary=1",
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "question_kp_question_id_question_id_fk": {
+          "name": "question_kp_question_id_question_id_fk",
+          "tableFrom": "question_kp",
+          "columnsFrom": [
+            "question_id"
+          ],
+          "tableTo": "question",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "question_kp_kp_id_kp_id_fk": {
+          "name": "question_kp_kp_id_kp_id_fk",
+          "tableFrom": "question_kp",
+          "columnsFrom": [
+            "kp_id"
+          ],
+          "tableTo": "kp",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "question_kp_question_id_kp_id_pk": {
+          "columns": [
+            "question_id",
+            "kp_id"
+          ],
+          "name": "question_kp_question_id_kp_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "question_tag": {
+      "name": "question_tag",
+      "columns": {
+        "question_id": {
+          "name": "question_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "tag": {
+          "name": "tag",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_tag": {
+          "name": "idx_tag",
+          "columns": [
+            "tag",
+            "question_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "question_tag_question_id_question_id_fk": {
+          "name": "question_tag_question_id_question_id_fk",
+          "tableFrom": "question_tag",
+          "columnsFrom": [
+            "question_id"
+          ],
+          "tableTo": "question",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "question_tag_question_id_tag_pk": {
+          "columns": [
+            "question_id",
+            "tag"
+          ],
+          "name": "question_tag_question_id_tag_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "question_vec": {
+      "name": "question_vec",
+      "columns": {
+        "question_id": {
+          "name": "question_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "embedding": {
+          "name": "embedding",
+          "type": "blob",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "embed_model_ver": {
+          "name": "embed_model_ver",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "question_vec_question_id_question_id_fk": {
+          "name": "question_vec_question_id_question_id_fk",
+          "tableFrom": "question_vec",
+          "columnsFrom": [
+            "question_id"
+          ],
+          "tableTo": "question",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "source_doc": {
+      "name": "source_doc",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "path": {
+          "name": "path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "hash": {
+          "name": "hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "pages": {
+          "name": "pages",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "source_doc_kind_ck": {
+          "name": "source_doc_kind_ck",
+          "value": "kind IN ('册子','群卷','试卷','讲义','其他')"
+        }
+      }
+    },
+    "source_page": {
+      "name": "source_page",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "doc_id": {
+          "name": "doc_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "page_no": {
+          "name": "page_no",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "image_asset_id": {
+          "name": "image_asset_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "source_page_doc_id_page_no_unique": {
+          "name": "source_page_doc_id_page_no_unique",
+          "columns": [
+            "doc_id",
+            "page_no"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "source_page_doc_id_source_doc_id_fk": {
+          "name": "source_page_doc_id_source_doc_id_fk",
+          "tableFrom": "source_page",
+          "columnsFrom": [
+            "doc_id"
+          ],
+          "tableTo": "source_doc",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "source_page_image_asset_id_asset_id_fk": {
+          "name": "source_page_image_asset_id_asset_id_fk",
+          "tableFrom": "source_page",
+          "columnsFrom": [
+            "image_asset_id"
+          ],
+          "tableTo": "asset",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "exam_model": {
+      "name": "exam_model",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "kp_id": {
+          "name": "kp_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "stem_template": {
+          "name": "stem_template",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "var_spec_json": {
+          "name": "var_spec_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "error_model_json": {
+          "name": "error_model_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "dsl_ref": {
+          "name": "dsl_ref",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "difficulty": {
+          "name": "difficulty",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "origin_qids_json": {
+          "name": "origin_qids_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "activated_at": {
+          "name": "activated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "exam_model_kp_id_kp_id_fk": {
+          "name": "exam_model_kp_id_kp_id_fk",
+          "tableFrom": "exam_model",
+          "columnsFrom": [
+            "kp_id"
+          ],
+          "tableTo": "kp",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "exam_model_status_ck": {
+          "name": "exam_model_status_ck",
+          "value": "status IN ('proposed','active','deprecated')"
+        }
+      }
+    },
+    "cause_example": {
+      "name": "cause_example",
+      "columns": {
+        "cause_id": {
+          "name": "cause_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "question_id": {
+          "name": "question_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "cause_example_cause_id_error_cause_id_fk": {
+          "name": "cause_example_cause_id_error_cause_id_fk",
+          "tableFrom": "cause_example",
+          "columnsFrom": [
+            "cause_id"
+          ],
+          "tableTo": "error_cause",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "cause_example_question_id_question_id_fk": {
+          "name": "cause_example_question_id_question_id_fk",
+          "tableFrom": "cause_example",
+          "columnsFrom": [
+            "question_id"
+          ],
+          "tableTo": "question",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "cause_example_cause_id_question_id_pk": {
+          "columns": [
+            "cause_id",
+            "question_id"
+          ],
+          "name": "cause_example_cause_id_question_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "err_code_map": {
+      "name": "err_code_map",
+      "columns": {
+        "kp_id": {
+          "name": "kp_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "err_code": {
+          "name": "err_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "cause_id": {
+          "name": "cause_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "mapped_by": {
+          "name": "mapped_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "mapped_at": {
+          "name": "mapped_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "err_code_map_kp_id_kp_id_fk": {
+          "name": "err_code_map_kp_id_kp_id_fk",
+          "tableFrom": "err_code_map",
+          "columnsFrom": [
+            "kp_id"
+          ],
+          "tableTo": "kp",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "err_code_map_cause_id_error_cause_id_fk": {
+          "name": "err_code_map_cause_id_error_cause_id_fk",
+          "tableFrom": "err_code_map",
+          "columnsFrom": [
+            "cause_id"
+          ],
+          "tableTo": "error_cause",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "err_code_map_kp_id_err_code_pk": {
+          "columns": [
+            "kp_id",
+            "err_code"
+          ],
+          "name": "err_code_map_kp_id_err_code_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "error_cause": {
+      "name": "error_cause",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "desc": {
+          "name": "desc",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "seed_code": {
+          "name": "seed_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "error_cause_status_ck": {
+          "name": "error_cause_status_ck",
+          "value": "status IN ('active','retired')"
+        }
+      }
+    },
+    "kp_error": {
+      "name": "kp_error",
+      "columns": {
+        "kp_id": {
+          "name": "kp_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "cause_id": {
+          "name": "cause_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "kp_error_kp_id_kp_id_fk": {
+          "name": "kp_error_kp_id_kp_id_fk",
+          "tableFrom": "kp_error",
+          "columnsFrom": [
+            "kp_id"
+          ],
+          "tableTo": "kp",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "kp_error_cause_id_error_cause_id_fk": {
+          "name": "kp_error_cause_id_error_cause_id_fk",
+          "tableFrom": "kp_error",
+          "columnsFrom": [
+            "cause_id"
+          ],
+          "tableTo": "error_cause",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "kp_error_kp_id_cause_id_pk": {
+          "columns": [
+            "kp_id",
+            "cause_id"
+          ],
+          "name": "kp_error_kp_id_cause_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "grading_batch_link": {
+      "name": "grading_batch_link",
+      "columns": {
+        "batch_id": {
+          "name": "batch_id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "task_id": {
+          "name": "task_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "grading_task_map": {
+      "name": "grading_task_map",
+      "columns": {
+        "task_id": {
+          "name": "task_id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sku_id": {
+          "name": "sku_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "grading_task_map_sku_id_unique": {
+          "name": "grading_task_map_sku_id_unique",
+          "columns": [
+            "sku_id"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "grading_task_map_sku_id_sku_id_fk": {
+          "name": "grading_task_map_sku_id_sku_id_fk",
+          "tableFrom": "grading_task_map",
+          "columnsFrom": [
+            "sku_id"
+          ],
+          "tableTo": "sku",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "ingest_batch": {
+      "name": "ingest_batch",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "contract_ver": {
+          "name": "contract_ver",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "payload_hash": {
+          "name": "payload_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "n_total": {
+          "name": "n_total",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "n_accepted": {
+          "name": "n_accepted",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "n_queued": {
+          "name": "n_queued",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "n_rejected": {
+          "name": "n_rejected",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "gate_report_json": {
+          "name": "gate_report_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "committed_at": {
+          "name": "committed_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "ingest_batch_status_ck": {
+          "name": "ingest_batch_status_ck",
+          "value": "status IN ('open','committed','failed')"
+        }
+      }
+    },
+    "quarantine": {
+      "name": "quarantine",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "batch_id": {
+          "name": "batch_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "payload_json": {
+          "name": "payload_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "why": {
+          "name": "why",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "resolved_at": {
+          "name": "resolved_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "quarantine_batch_id_ingest_batch_id_fk": {
+          "name": "quarantine_batch_id_ingest_batch_id_fk",
+          "tableFrom": "quarantine",
+          "columnsFrom": [
+            "batch_id"
+          ],
+          "tableTo": "ingest_batch",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "sku": {
+      "name": "sku",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "type": {
+          "name": "type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "recipe_json": {
+          "name": "recipe_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "layout": {
+          "name": "layout",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "edition_ctx": {
+          "name": "edition_ctx",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "sku_type_ck": {
+          "name": "sku_type_ck",
+          "value": "type IN ('打卡','专项','合刊','讲义','练习册','卷')"
+        },
+        "sku_status_ck": {
+          "name": "sku_status_ck",
+          "value": "status IN ('draft','active','retired')"
+        }
+      }
+    },
+    "sku_item": {
+      "name": "sku_item",
+      "columns": {
+        "sku_id": {
+          "name": "sku_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "question_id": {
+          "name": "question_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "ord": {
+          "name": "ord",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "sku_item_sku_id_question_id_unique": {
+          "name": "sku_item_sku_id_question_id_unique",
+          "columns": [
+            "sku_id",
+            "question_id"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "sku_item_sku_id_sku_id_fk": {
+          "name": "sku_item_sku_id_sku_id_fk",
+          "tableFrom": "sku_item",
+          "columnsFrom": [
+            "sku_id"
+          ],
+          "tableTo": "sku",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "sku_item_question_id_question_id_fk": {
+          "name": "sku_item_question_id_question_id_fk",
+          "tableFrom": "sku_item",
+          "columnsFrom": [
+            "question_id"
+          ],
+          "tableTo": "question",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "sku_item_sku_id_ord_pk": {
+          "columns": [
+            "sku_id",
+            "ord"
+          ],
+          "name": "sku_item_sku_id_ord_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "sku_output": {
+      "name": "sku_output",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sku_id": {
+          "name": "sku_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "asset_id": {
+          "name": "asset_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "gate_results_json": {
+          "name": "gate_results_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "sku_output_sku_id_sku_id_fk": {
+          "name": "sku_output_sku_id_sku_id_fk",
+          "tableFrom": "sku_output",
+          "columnsFrom": [
+            "sku_id"
+          ],
+          "tableTo": "sku",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "sku_output_asset_id_asset_id_fk": {
+          "name": "sku_output_asset_id_asset_id_fk",
+          "tableFrom": "sku_output",
+          "columnsFrom": [
+            "asset_id"
+          ],
+          "tableTo": "asset",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "sku_output_kind_ck": {
+          "name": "sku_output_kind_ck",
+          "value": "kind IN ('pdf_q','pdf_a','png','物料','其他')"
+        }
+      }
+    },
+    "roster": {
+      "name": "roster",
+      "columns": {
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "alias": {
+          "name": "alias",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "grade": {
+          "name": "grade",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "edition_ctx": {
+          "name": "edition_ctx",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "joined_at": {
+          "name": "joined_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "roster_status_ck": {
+          "name": "roster_status_ck",
+          "value": "status IN ('active','paused','closed')"
+        }
+      }
+    },
+    "audit_log": {
+      "name": "audit_log",
+      "columns": {
+        "seq": {
+          "name": "seq",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "ts": {
+          "name": "ts",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "actor": {
+          "name": "actor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "tool": {
+          "name": "tool",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "args_digest": {
+          "name": "args_digest",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "gate_results_json": {
+          "name": "gate_results_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "row_refs_json": {
+          "name": "row_refs_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "prev_hash": {
+          "name": "prev_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "hmac": {
+          "name": "hmac",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "audit_log_actor_ck": {
+          "name": "audit_log_actor_ck",
+          "value": "actor IN ('agent','human','proxy','system')"
+        }
+      }
+    },
+    "ledger": {
+      "name": "ledger",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "ts": {
+          "name": "ts",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "actor": {
+          "name": "actor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "body_md": {
+          "name": "body_md",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "pointer": {
+          "name": "pointer",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "ledger_kind_ck": {
+          "name": "ledger_kind_ck",
+          "value": "kind IN ('decision','delivery','change')"
+        },
+        "ledger_actor_ck": {
+          "name": "ledger_actor_ck",
+          "value": "actor IN ('agent','human','system')"
+        }
+      }
+    },
+    "ledger_ref": {
+      "name": "ledger_ref",
+      "columns": {
+        "ledger_id": {
+          "name": "ledger_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "ref_type": {
+          "name": "ref_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "ref_id": {
+          "name": "ref_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_ledger_ref": {
+          "name": "idx_ledger_ref",
+          "columns": [
+            "ref_type",
+            "ref_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "ledger_ref_ledger_id_ledger_id_fk": {
+          "name": "ledger_ref_ledger_id_ledger_id_fk",
+          "tableFrom": "ledger_ref",
+          "columnsFrom": [
+            "ledger_id"
+          ],
+          "tableTo": "ledger",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "ledger_ref_ledger_id_ref_type_ref_id_pk": {
+          "columns": [
+            "ledger_id",
+            "ref_type",
+            "ref_id"
+          ],
+          "name": "ledger_ref_ledger_id_ref_type_ref_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "ledger_ref_ref_type_ck": {
+          "name": "ledger_ref_ref_type_ck",
+          "value": "ref_type IN ('kp','question','sku','student','batch','model','cause')"
+        }
+      }
+    },
+    "metric_event": {
+      "name": "metric_event",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "ts": {
+          "name": "ts",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "ref": {
+          "name": "ref",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "value_json": {
+          "name": "value_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "review_queue": {
+      "name": "review_queue",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "ref_type": {
+          "name": "ref_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "ref_id": {
+          "name": "ref_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "payload_json": {
+          "name": "payload_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "signals_json": {
+          "name": "signals_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "verdict_by": {
+          "name": "verdict_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "verdict_note": {
+          "name": "verdict_note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "verdict_at": {
+          "name": "verdict_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_queue_open": {
+          "name": "idx_queue_open",
+          "columns": [
+            "state",
+            "kind"
+          ],
+          "where": "state='open'",
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "review_queue_kind_ck": {
+          "name": "review_queue_kind_ck",
+          "value": "kind IN ('kp低置信','图片','KG提议','模型转正','新题草稿','隔离','抽查','其他')"
+        },
+        "review_queue_state_ck": {
+          "name": "review_queue_state_ck",
+          "value": "state IN ('open','passed','rejected')"
+        }
+      }
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  },
+  "internal": {
+    "indexes": {}
+  }
+}
