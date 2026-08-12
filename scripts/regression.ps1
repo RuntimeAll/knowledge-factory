@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-  一键全量回归（AI:PRD-001 · WP7）—— 回归清单 A 组的正式载体。
+  一键全量回归（AI:PRD-001 · WP7 / AI:PRD-002 · 002-E）—— 回归清单 A 组 + B 组的正式载体。
 
 .DESCRIPTION
   按序跑完所有关卡，逐关打 [PASS]/[FAIL]，**任一关红了也继续跑完**（一次跑完
@@ -16,8 +16,13 @@
     REG-A3b  依赖规则活性探针 往 src/app 塞一个违规 import，lint **必须红**
     REG-A1   对账六项        integrity-check.ts 退出码=red 数，须 0
     REG-A2   审计链校验      audit-verify.ts 从创世行起整链重算
-    REG-TEST 单测全量        vitest（105 例基线）
+    REG-TEST 单测全量        vitest（131 例基线）
+    REG-B    KG 金标         tests/kg-golden.test.ts 单跑（B1~B4）
     REG-A4   备份快照有效    backup-verify.ts 出新快照 + 独立只读复算
+
+  🔴 REG-B 单独成关而不是「TEST 里已经跑过了」：触发矩阵有一条
+     「KG 数据（导底/重整/合并）→ B 全 + A1②」——改了 KG 数据要能
+     `-Only B` 只跑金标，5 秒出结论，不必陪跑整轮单测。
 
   🔴 每月一次的「真库全恢复演练」(restore-drill --yes) **不在本脚本里**，
      它会真删库文件，必须人守着跑 —— 结尾 NOTE 只提示，不代劳。
@@ -146,10 +151,25 @@ $gates = @(
 
   [pscustomobject]@{
     Id     = 'REG-TEST'
-    Name   = '单测全量（vitest，105 例基线）'
+    Name   = '单测全量（vitest，131 例基线）'
     Action = {
       & pnpm test | Write-Host
       if ($LASTEXITCODE -ne 0) { return "vitest 退出码 $LASTEXITCODE（有用例挂了）" }
+      return $null
+    }
+  },
+
+  [pscustomobject]@{
+    Id     = 'REG-B'
+    Name   = 'KG 金标（B1 十条 / B2 双版本 / B3 合并无悬挂 / B4 编造 id）'
+    Action = {
+      # 🔴 单跑金标文件：触发矩阵「KG 数据变更 → B 全 + A1②」时 -Only B 就够了。
+      #    金标 B1/B2/B4 直接打**真库**且只读（文件末尾有行数自证），
+      #    B3 要真合并所以走 VACUUM INTO 副本 —— 库被改动过，这一关会先红。
+      & pnpm exec vitest run tests/kg-golden.test.ts | Write-Host
+      if ($LASTEXITCODE -ne 0) {
+        return "KG 金标红了（哪条见上面输出）——KG 数据动过就重核期望值，别顺手改金标把红旗按灭"
+      }
       return $null
     }
   },
@@ -189,7 +209,7 @@ try {
 
   $bar = '=' * 78
   Write-Host $bar
-  Write-Host "全量回归 · AI:PRD-001"
+  Write-Host "全量回归 · AI:PRD-001 + AI:PRD-002"
   Write-Host "  仓根  ：$root"
   Write-Host "  开始  ：$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
   Write-Host "  关卡  ：$($selected.Count) 关（$(($selected | ForEach-Object { $_.Id }) -join '、')）"
