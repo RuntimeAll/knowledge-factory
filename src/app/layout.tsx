@@ -35,8 +35,8 @@ const NAV: ReadonlyArray<{
 }> = [
   { label: "首页", href: "/", card: "001" },
   { label: "知识图谱", href: "/kg", card: "002" },
-  // 🔴 审查队列的 KG 提议/低置信两类已在 /kg/queue 上；003 卡长的是全域队列，届时再点亮
-  { label: "审查队列", card: "003" },
+  // 003-D 点亮：全域处置台（kp低置信 / 图片 / 新题草稿 / 隔离区 四类）
+  { label: "审查队列", href: "/queue", card: "003" },
   { label: "题库检索", card: "004" },
   { label: "生产登记", card: "005" },
   { label: "学情", card: "006" },

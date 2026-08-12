@@ -45,8 +45,8 @@ export default async function KgHomePage({
             <Link className="text-acc-deep underline" href="/kg/merge">
               合并向导
             </Link>
-            <Link className="text-acc-deep underline" href="/kg/queue">
-              提议审批{openTotal > 0 ? `（${openTotal}）` : ""}
+            <Link className="text-acc-deep underline" href="/queue">
+              审查队列{openTotal > 0 ? `（${openTotal}）` : ""}
             </Link>
           </div>
         }

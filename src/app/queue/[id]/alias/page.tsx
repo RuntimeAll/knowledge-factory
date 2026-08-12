@@ -1,5 +1,5 @@
 /**
- * KG 治理 · 低置信工单的快捷处置：补别名（AI:PRD-002 · 002-D）
+ * 队列 · 低置信工单的快捷处置：补别名（AI:PRD-002 · 002-D 原件，003-D 随队列页搬到 /queue）
  *
  * 工单里那句「问不出来的说法」是**现成的搜索词**：从它出发再搜一遍（这次由人看），
  * 认出目标考点后一键 = 补别名 + 工单判过（core 的 passQueueWithAlias 串完两笔写）。
@@ -13,8 +13,8 @@ import Link from "next/link";
 
 import { Chip, Notice, PageHead, Panel, statusTone } from "~/components/kit";
 import { getQueueItem, resolveKp, type KpCandidate } from "~/core";
-import { quickAliasAction } from "../../../actions";
-import { param } from "../../../shared";
+import { param } from "../../../kg/shared";
+import { quickAliasAction } from "../../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -53,7 +53,7 @@ export default async function QueueAliasPage({
         />
         <div className="text-pen text-[12.5px]">这条工单不在库里。</div>
         <div className="mt-4 text-[12.5px]">
-          <Link className="text-acc-deep underline" href="/kg/queue">
+          <Link className="text-acc-deep underline" href="/queue?tab=kp">
             ← 回队列
           </Link>
         </div>
@@ -93,7 +93,7 @@ export default async function QueueAliasPage({
             <Chip tone={item.state === "open" ? "a" : "n"}>{item.state}</Chip>
             <Link
               className="text-acc-deep text-[12.5px] underline"
-              href="/kg/queue"
+              href="/queue?tab=kp"
             >
               ← 队列
             </Link>
@@ -214,7 +214,7 @@ export default async function QueueAliasPage({
       <div className="text-mut mt-4 text-[12px] leading-[1.9]">
         都不对？那这条说法可能对应一个<b>还没建的考点</b> —— 回队列
         <Link
-          href={`/kg/queue/${item.id}/reject`}
+          href={`/queue/${item.id}/reject`}
           className="text-pen mx-1 underline"
         >
           驳回

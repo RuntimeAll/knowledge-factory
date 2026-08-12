@@ -12,9 +12,19 @@
  *    （build 期预渲染、库文件不在位，都会走到这条路。）
  *
  * 三态与文案的映射是纯函数 redFlagView()，在 core 里，可单测；本文件只管画。
+ *
+ * ── 003-D 扩面：开放工单徽章 ────────────────────────────────────────────────
+ * 🔴 工单是**流程**不是**事故**：所以徽章一律 amber，绝不进红旗那三态。
+ *    「队列里积着 3 张图审」不该让红旗条变红 —— 红是「库不可信」，
+ *    把流程性待办也染红，红旗就会被当成噪音，那才是真正的损失。
+ * 🔴 零 open 不显示：没活儿的时候，条上就不该有这一行。
  */
+import Link from "next/link";
+
 import {
+  countOpenQueueByKind,
   getLatestIntegritySummary,
+  listQuarantine,
   redFlagView,
   type IntegritySummary,
   type RedFlagView,
@@ -34,6 +44,24 @@ async function load(): Promise<{
   return { view: redFlagView(summary), error: null };
 }
 
+/** 开放工单摘要（🔴 读不动就当没有：队列徽章绝不能把红旗条本身搞崩） */
+async function 未处置(): Promise<{ label: string; total: number }> {
+  try {
+    const [byKind, qr] = await Promise.all([
+      countOpenQueueByKind(),
+      listQuarantine({ state: "open", limit: 500 }),
+    ]);
+    const 项 = [
+      ...byKind.filter((k) => k.count > 0).map((k) => `${k.kind}${k.count}`),
+      ...(qr.length > 0 ? [`隔离${qr.length}`] : []),
+    ];
+    const total = byKind.reduce((a, b) => a + b.count, 0) + qr.length;
+    return { label: 项.join(" · "), total };
+  } catch {
+    return { label: "", total: 0 };
+  }
+}
+
 const TONE = {
   none: "border-l-hair2 bg-code text-mut",
   red: "border-l-pen bg-pen-soft text-pen font-semibold",
@@ -44,7 +72,7 @@ const TONE = {
 const LAMP = { none: "○", red: "⚑", green: "●" } as const;
 
 export async function RedFlagBar() {
-  const { view, error } = await load();
+  const [{ view, error }, 工单] = await Promise.all([load(), 未处置()]);
   const { state } = view;
 
   return (
@@ -61,6 +89,17 @@ export async function RedFlagBar() {
           <span className="text-amber font-normal">
             另有 warn {view.warnCount} 项
           </span>
+        ) : null}
+
+        {/* 🔴 工单是流程不是事故：amber 一枚徽章，点得进去，零 open 时整枚不出现 */}
+        {工单.total > 0 ? (
+          <Link
+            href="/queue"
+            className="border-amber/30 bg-amber-soft text-amber ml-auto rounded-[2px] border px-2 py-[1px] font-normal no-underline"
+          >
+            工单 open <span className="num">{工单.total}</span>
+            {工单.label ? `：${工单.label}` : ""}
+          </Link>
         ) : null}
       </div>
 

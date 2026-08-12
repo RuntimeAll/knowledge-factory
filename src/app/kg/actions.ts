@@ -28,11 +28,9 @@ import {
   addKpAlias,
   integrityCheck,
   mergeKp,
-  passQueueWithAlias,
   removeKpAlias,
   retireKp,
   setTreeStatus,
-  verdictQueueItem,
   type CheckResult,
   type MergeKpResult,
 } from "~/core";
@@ -183,59 +181,8 @@ export async function mergeKpAction(fd: FormData): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// 审查队列
-// ---------------------------------------------------------------------------
-
-/** 通过 / 驳回一条工单（驳回在页面上走确认页，理由落 verdict_note） */
-export async function verdictQueueAction(fd: FormData): Promise<void> {
-  const id = field(fd, "id");
-  const verdict = field(fd, "verdict") === "rejected" ? "rejected" : "passed";
-  const note = field(fd, "note");
-
-  let msg: { ok?: string; err?: string };
-  try {
-    const r = await verdictQueueItem(id, verdict, {
-      by: PAGE_ACTOR,
-      note: note || undefined,
-      actor: PAGE_ACTOR,
-    });
-    msg = {
-      ok: `工单 ${id} 已${verdict === "passed" ? "通过" : "驳回"}（审计行 seq ${r.seq}）`,
-    };
-  } catch (e) {
-    msg = { err: humanError(e) };
-  }
-
-  revalidatePath("/kg/queue");
-  redirect(withMsg("/kg/queue", msg));
-}
-
-/**
- * 低置信工单的快捷处置：把工单里那句问不出来的说法，补成某个考点的别名，工单同时判过。
- * 一次点击串完两笔 core 写（顺序与失败语义见 core/queue.ts 的 passQueueWithAlias）。
- */
-export async function quickAliasAction(fd: FormData): Promise<void> {
-  const queueId = field(fd, "queueId");
-  const kpId = field(fd, "kpId");
-  const alias = field(fd, "alias");
-  const kpName = field(fd, "kpName") || kpId;
-
-  let msg: { ok?: string; err?: string };
-  try {
-    const r = await passQueueWithAlias(
-      queueId,
-      { kpId, alias, by: PAGE_ACTOR },
-      { actor: PAGE_ACTOR },
-    );
-    msg = {
-      ok:
-        `「${alias}」已${r.alias.inserted ? "补进" : "本来就在"}「${kpName}」的别名词表` +
-        `（别名 seq ${r.alias.seq} / 裁决 seq ${r.verdict.seq}），工单已通过。`,
-    };
-  } catch (e) {
-    msg = { err: humanError(e) };
-  }
-
-  revalidatePath("/kg/queue");
-  redirect(withMsg("/kg/queue", msg));
-}
+// 审查队列 → 已搬到 /queue（AI:PRD-003 · 003-D）
+//
+// 🔴 verdictQueueAction / quickAliasAction 现在住在 `app/queue/actions.ts`：
+//    003 起队列长出了图审、草稿转正、隔离改判三条处置链，处置台升成顶级路由 /queue，
+//    动作跟着页面走。这里**不留转发壳** —— 两处能调的同名 action 迟早各改各的。
