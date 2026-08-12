@@ -21,7 +21,13 @@
  * 异地副本：env `BACKUP_REMOTE_DIR` 设了就再复制一份过去；没设 = 跳过并如实上报
  * （🔴 不静默 —— 「以为有异地其实没有」是备份体系最贵的误会）。
  */
-import { copyFileSync, existsSync, mkdirSync, statSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  statSync,
+} from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 
 import { createClient } from "@libsql/client";
@@ -188,4 +194,61 @@ export async function backupNow(
 
   await logMetric("backup", target, result, h);
   return result;
+}
+
+// ---------------------------------------------------------------------------
+// 只读：列快照（WP6 页面「备份」卡的取数口）
+// ---------------------------------------------------------------------------
+
+export interface BackupSnapshotInfo {
+  /** 文件名（备份卡上显示的就是它） */
+  file: string;
+  /** 绝对路径 */
+  path: string;
+  bytes: number;
+  /** 文件 mtime，本地 ISO（与全库时间口径一致） */
+  mtime: string;
+  /** 从文件名解出的时间点；解不出=unknown（手工拷进来的文件也照列，不假装没有） */
+  reason: BackupReason | "unknown";
+}
+
+/** `资料库-daily-20260812-172733.db` → daily */
+function reasonOf(file: string): BackupReason | "unknown" {
+  for (const r of BACKUP_REASONS) {
+    if (file.includes(`-${r}-`)) return r;
+  }
+  return "unknown";
+}
+
+/**
+ * 列备份目录里的快照，新→旧。
+ *
+ * 🔴 事实源是**文件系统**不是库：备份的意义就在于「库没了它还在」，
+ *    所以「有没有备份」这个问题不能靠查库回答（库能答说明库还活着，
+ *    而这正是要备份的那个前提）。metric_event 里的 backup 行只是留痕，不是账本。
+ */
+export async function listBackups(
+  options: { dir?: string; limit?: number } = {},
+  handle?: CoreDbHandle,
+): Promise<BackupSnapshotInfo[]> {
+  const dir =
+    options.dir ??
+    backupDirFor(dbUrlToPath((handle ?? (await getCoreDb())).url));
+  if (!existsSync(dir)) return [];
+
+  const out: BackupSnapshotInfo[] = [];
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    if (!e.isFile() || !e.name.toLowerCase().endsWith(".db")) continue;
+    const full = join(dir, e.name);
+    const st = statSync(full);
+    out.push({
+      file: e.name,
+      path: full,
+      bytes: st.size,
+      mtime: nowLocalISO(st.mtime),
+      reason: reasonOf(e.name),
+    });
+  }
+  out.sort((a, b) => (a.mtime < b.mtime ? 1 : a.mtime > b.mtime ? -1 : 0));
+  return typeof options.limit === "number" ? out.slice(0, options.limit) : out;
 }

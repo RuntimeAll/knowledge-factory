@@ -841,6 +841,16 @@ export async function integrityCheck(
         checks: Object.fromEntries(
           checks.map((c) => [c.id, c.ok ? "ok" : c.level]),
         ),
+        // 🔴 WP6 加的（只加不减，老行照样读得动）：摘要里带上每项的**名字**。
+        //    页面全局红旗条不现跑对账（那要连圣域、扫全表，扛不起每次页面加载），
+        //    它只读这条摘要 —— 而「红旗 3 项」不说是哪三项等于没说，
+        //    光有 id（C1/C4）也还得回代码里查是什么。名字放这儿，读侧零依赖。
+        items: checks.map((c) => ({
+          id: c.id,
+          name: c.name,
+          ok: c.ok,
+          level: c.level,
+        })),
       },
       h,
     );

@@ -21,6 +21,7 @@
  *   backup.ts  VACUUM INTO 快照（+异地副本）
  *   grading.ts 🔴 圣域 审核.db **只读**连接（三道锁，见文件头）
  *   integrity.ts 对账六项 C1~C6
+ *   status.ts  页面读侧（最近一次对账摘要 + 红旗条显示态纯函数）
  */
 
 export {
@@ -83,9 +84,11 @@ export {
   backupDirFor,
   backupNow,
   dbUrlToPath,
+  listBackups,
   type BackupReason,
   type BackupResult,
   type BackupRowCounts,
+  type BackupSnapshotInfo,
 } from "./backup";
 
 export {
@@ -119,6 +122,17 @@ export {
   type IntegrityOptions,
   type IntegrityReport,
 } from "./integrity";
+
+export {
+  INTEGRITY_METRIC_KIND,
+  getLatestIntegritySummary,
+  parseIntegritySummary,
+  redFlagView,
+  type IntegrityCheckItem,
+  type IntegritySummary,
+  type RedFlagState,
+  type RedFlagView,
+} from "./status";
 
 export {
   PASS,
