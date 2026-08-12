@@ -18,21 +18,25 @@
  *    但同样一个字节不写——校验动作不该改变被校验的对象。
  *
  * ════════════════════════════════════════════════════════════════════════════
- * 🔴 kp / question 的「空库期自动降级」（总指挥拍板，逻辑写死在下面 judge()，不靠人记）
+ * 🔴 「逐表分相升格」（总指挥 2026-08-12 拍板修正，逻辑写死在下面 judge()，不靠人记）
  *
- *   本卡（AI:PRD-001）只是库底座，业务数据要等 AI:PRD-003 的录入链才进来。
- *   在那之前 kp=question=0 是**正常状态**，硬断言非零只会让本关天天假红、
- *   然后被人习惯性忽略——那才是真正危险的（红旗麻木）。
+ *   本关要证的是**这份快照忠实地装下了源库现在有的东西**，所以判据必须逐表比源库：
  *
- *   判据（三表全为 0 才算空库期，任一非 0 立刻升格）：
- *     kp=0 且 question=0 且 ingest_batch=0  → 空库期，kp/question 允许为 0，打 PASS(空库期)
- *     三者任一 > 0                          → 非空库期，kp>0 且 question>0 是**硬断言**，
- *                                             不满足即 FAIL
+ *     源库该表 > 0  → 快照该表**必须 > 0**（硬断言。源库有、快照没有 = 备份丢数据，
+ *                     正是本关存在的唯一理由）
+ *     源库该表 = 0  → 该表「空库期」，快照为 0 是正常，打 PASS(空库期)
  *
- *   ingest_batch 是那个「有没有真的录过东西」的开关：只要录入链跑过一次批次，
- *   本关就自动升格成非零硬断言，不需要任何人回来改这个脚本。
- *   （反过来说：ingest_batch 有行而 kp/question 是空的 = 录进来的东西没落地，
- *     正是本关该抓的事故。）
+ *   ── 为什么改掉旧口径 ────────────────────────────────────────────────────
+ *   旧口径把三张表捆成一个开关：`kp/question/ingest_batch 任一非 0` 就同时对
+ *   **kp 与 question 两张表**下非零硬断言。于是 002 导底后（kp=415、question=0）
+ *   本关会因为「question 还是 0」当场假红 —— 而 question 要等 003 录题链才有行。
+ *   一个天天假红的闸，两周内就会被人习惯性忽略，那才是真正危险的（红旗麻木）。
+ *   逐表分相之后，每张表按**自己**的相位走，不再互相牵连。
+ *
+ *   ── 相位表（跟着卡走，不需要任何人回来改这个脚本）──────────────────────
+ *     kp            AI:PRD-002 导底（2026-08-12，415 行）之后 → 已升格为硬断言
+ *     question      AI:PRD-003 首批录题之后               → 届时自动升格
+ *     ingest_batch  同上（录入链跑过第一个批次就升格）
  *
  *   audit_log > 0 与表数=TABLES_BASELINE **任何时候都是硬断言**：空库也必须有审计行
  *   （建库那几次 core 写就留了痕），表数少一张 = 快照不完整或 schema 被动过。
@@ -44,6 +48,8 @@ import {
   BACKUP_REASONS,
   backupNow,
   closeCoreDb,
+  dbUrlToPath,
+  getCoreDb,
   type BackupReason,
 } from "../src/core/index";
 
@@ -53,6 +59,10 @@ import {
  */
 const TABLES_BASELINE = 47;
 
+/** 🔴 逐表分相的三张业务表（相位表见文件头）；audit_log/tables 是恒定硬断言，不在此列 */
+const PHASED_TABLES = ["kp", "question", "ingest_batch"] as const;
+type PhasedTable = (typeof PHASED_TABLES)[number];
+
 interface SnapshotCounts {
   tables: number;
   audit_log: number;
@@ -61,9 +71,12 @@ interface SnapshotCounts {
   ingest_batch: number;
 }
 
+/** 源库侧的同名计数（判据的另一半：快照要跟源库比，不是跟自己比） */
+type SourceCounts = Record<PhasedTable, number>;
+
 interface Assertion {
   ok: boolean;
-  /** 空库期降级后仍算通过时为 true（打 PASS(空库期)） */
+  /** 该表处于空库期（源库也是 0），降级放行时为 true（打 PASS(空库期)） */
   downgraded?: boolean;
   name: string;
   detail: string;
@@ -107,9 +120,33 @@ async function countInSnapshot(path: string): Promise<SnapshotCounts> {
   }
 }
 
-/** 🔴 判据写死在这里：空库期口径见文件头 */
-function judge(c: SnapshotCounts, bytes: number): Assertion[] {
-  const emptyPhase = c.kp === 0 && c.question === 0 && c.ingest_batch === 0;
+/**
+ * 源库侧逐表计数（同样用 node:sqlite **只读**打开，一个字节不写）。
+ * 🔴 为什么另开一条只读连接而不问 core 要数：本关的判据是「源库有的，快照里也得有」，
+ *    两边都由本脚本自己数才谈得上是**校验**；拿备份代码自报的数当基准就成了自证。
+ */
+async function countInSource(path: string): Promise<SourceCounts> {
+  const { DatabaseSync } = await import("node:sqlite");
+  const db = new DatabaseSync(path, { readOnly: true });
+  try {
+    const out = {} as SourceCounts;
+    for (const t of PHASED_TABLES) {
+      const row = db.prepare(`SELECT COUNT(*) AS c FROM ${t}`).get() as
+        { c: number | bigint } | undefined;
+      out[t] = Number(row?.c ?? -1);
+    }
+    return out;
+  } finally {
+    db.close();
+  }
+}
+
+/** 🔴 判据写死在这里：逐表分相升格，口径见文件头 */
+function judge(
+  c: SnapshotCounts,
+  src: SourceCounts,
+  bytes: number,
+): Assertion[] {
   const out: Assertion[] = [];
 
   out.push({
@@ -132,27 +169,30 @@ function judge(c: SnapshotCounts, bytes: number): Assertion[] {
     detail: `COUNT=${c.audit_log}${c.audit_log > 0 ? "" : "（空库也该有建库那几笔的审计痕，一行没有=链丢了）"}`,
   });
 
-  if (emptyPhase) {
-    out.push({
-      ok: true,
-      downgraded: true,
-      name: "kp / question 有行",
-      detail:
-        `kp=0 question=0 ingest_batch=0 → 判「空库期」，本关自动降级放行。` +
-        `　🔴 库里一有业务数据（kp / question / ingest_batch 任一非 0），` +
-        `本关自动升格为「kp>0 且 question>0」的非零硬断言，无需改脚本。`,
-    });
-  } else {
-    out.push({
-      ok: c.kp > 0,
-      name: "kp 有行（非空库期硬断言）",
-      detail: `kp=${c.kp}（ingest_batch=${c.ingest_batch} question=${c.question} → 已过空库期）`,
-    });
-    out.push({
-      ok: c.question > 0,
-      name: "question 有行（非空库期硬断言）",
-      detail: `question=${c.question}（ingest_batch=${c.ingest_batch} kp=${c.kp} → 已过空库期）`,
-    });
+  // 🔴 逐表分相：每张表只跟**它自己在源库里的行数**比，互不牵连
+  for (const t of PHASED_TABLES) {
+    const 源 = src[t];
+    const 快 = c[t];
+    if (源 > 0) {
+      out.push({
+        ok: 快 > 0,
+        name: `${t} 有行（该表已升格为硬断言）`,
+        detail:
+          `源库 ${源} → 快照 ${快}` +
+          (快 > 0
+            ? ""
+            : "（🔴 源库有行而快照是空的 = 备份把这张表丢了，本关就是为抓这个而存在）"),
+      });
+    } else {
+      out.push({
+        ok: true,
+        downgraded: true,
+        name: `${t} 有行`,
+        detail:
+          `源库 ${源} → 该表处于「空库期」，快照为 ${快} 属正常，降级放行。` +
+          `　🔴 源库这张表一有行，本关对它自动升格为非零硬断言，无需改脚本。`,
+      });
+    }
   }
 
   return out;
@@ -163,16 +203,27 @@ async function main(): Promise<void> {
   const asJson = argv.includes("--json");
   const reason = parseReason(argv);
 
+  // 🔴 源库计数要在出快照**之前**数：先数快照后数源库的话，
+  //    中间被写进来一行就会得出「源库有、快照没有」的假红。
+  const srcPath = dbUrlToPath((await getCoreDb()).url);
+  const source = await countInSource(srcPath);
+
   const r = await backupNow({ reason });
   const bytes = statSync(r.path).size;
   const counts = await countInSnapshot(r.path);
-  const assertions = judge(counts, bytes);
+  const assertions = judge(counts, source, bytes);
   const failed = assertions.filter((a) => !a.ok);
 
   if (asJson) {
     process.stdout.write(
       JSON.stringify(
-        { backup: r, recounted: counts, assertions, ok: failed.length === 0 },
+        {
+          backup: r,
+          source,
+          recounted: counts,
+          assertions,
+          ok: failed.length === 0,
+        },
         null,
         2,
       ) + "\n",
@@ -182,6 +233,10 @@ async function main(): Promise<void> {
     L.push(`新快照已出（reason=${r.reason}，耗时 ${r.ms}ms）`);
     L.push(`  文件：${r.path}`);
     L.push(`  异地：${r.remote}`);
+    L.push(
+      `源库逐表基线（${srcPath}）：` +
+        PHASED_TABLES.map((t) => `${t}=${source[t]}`).join("  "),
+    );
     L.push("独立只读复算（node:sqlite readOnly，不信备份自报的数）：");
     L.push(
       `  tables=${counts.tables}  audit_log=${counts.audit_log}  ` +
