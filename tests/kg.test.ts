@@ -38,6 +38,7 @@ import {
   setTreeStatus,
   verifyAuditChain,
   withCoreWrite,
+  writeQuestionFts,
   type CheckId,
   type CoreDbHandle,
   type CreateEditionTreeInput,
@@ -128,7 +129,13 @@ function reds(report: IntegrityReport): CheckId[] {
     .map((c) => c.id);
 }
 
-/** 造几道题（走 core，rowRefs 如实报，好让 C1a 保持绿） */
+/**
+ * 造几道题（走 core，rowRefs 如实报，好让 C1a 保持绿）。
+ *
+ * 🔴 2026-08-12（AI:PRD-003）补 writeQuestionFts：对账新增了 C1(f)「FTS 投影对齐」——
+ *    写 question 却不写投影，那题就是 FTS 查不到的半失效行，对账会红。
+ *    这不是测试的将就，正是那条纪律本身：**写题的每一条路径都要同事务写投影**。
+ */
 async function 造题(h: CoreDbHandle, n: number): Promise<string[]> {
   const ids = Array.from({ length: n }, () => newId("q"));
   await withCoreWrite(
@@ -145,6 +152,10 @@ async function 造题(h: CoreDbHandle, n: number): Promise<string[]> {
           provType: "manual",
           createdBy: "test",
           createdAt: nowLocalISO(),
+        });
+        await writeQuestionFts(tx, {
+          questionId: id,
+          stemPlain: `测试题 ${id}`,
         });
         refs.push({ table: "question", id, op: "insert" });
       }
