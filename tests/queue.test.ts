@@ -83,7 +83,10 @@ async function 行<T>(h: CoreDbHandle, sql: string): Promise<T[]> {
 }
 
 async function 审计行数(h: CoreDbHandle): Promise<number> {
-  const rows = await 行<{ c: number }>(h, "SELECT COUNT(*) AS c FROM audit_log");
+  const rows = await 行<{ c: number }>(
+    h,
+    "SELECT COUNT(*) AS c FROM audit_log",
+  );
   return Number(rows[0]?.c ?? 0);
 }
 
