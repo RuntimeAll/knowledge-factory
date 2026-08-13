@@ -15,9 +15,10 @@
  *
  * 🔴 侧车是真起 python 子进程（jieba 载词典 ~0.4s），单例耗时秒级属正常。
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
+  SIDECAR_TIMEOUT_MS,
   SidecarError,
   calcVerify,
   lineVerify,
@@ -25,6 +26,20 @@ import {
   segmentTexts,
   sidecarStatus,
 } from "~/core";
+
+/**
+ * 🔴 本文件每条用例都真起 python 子进程，超时一律给到**侧车自己的**
+ *    SIDECAR_TIMEOUT_MS（30s），不用 vitest 默认的 5s。
+ *
+ *    理由不是"让它容易过"：单跑时每条 1~3s，绰绰有余；但 `pnpm test` 是 16 个
+ *    测试文件并行，机器一忙 spawn + 载词典就会顶破 5s —— 断言其实全过，
+ *    只是墙钟没赶上。2026-08-13（003-E4）实测到这种假红：全量红 3 条、
+ *    单跑同一批全绿、再全量又绿。**会随机红的闸和常绿的闸一样没用**。
+ *
+ *    ⚠️ 真挂了照样红：侧车没装是 CONFIG_MISSING（④ 那条测的就是它，且它
+ *    走的是"文件不存在"的快路径，不受本设置影响），判定错是断言红 —— 都不是超时。
+ */
+vi.setConfig({ testTimeout: SIDECAR_TIMEOUT_MS });
 
 describe("① segment（去 LaTeX + jieba）", () => {
   it("LaTeX 不进词串，中文被切开，数字留得住", async () => {
