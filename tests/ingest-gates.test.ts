@@ -561,6 +561,38 @@ describe("闸⑦ 查重 match_key", () => {
     expect(matchKeyOf("3-5")).not.toBe(matchKeyOf("35"));
   });
 
+  // ── 003-E5：严格剥法 —— 数学裸不等号不许被当标签吃 ────────────────────────
+  it("绿：裸不等号一个字不丢（旧宽松 `<[^>]*>` 会整段吞掉）", () => {
+    // 一句里有 `<` 也有 `>`：宽松剥法会把 `< 50 653 < 1 000 000` 当一个标签吃掉
+    expect(normalizeStem("1 000 < 50 653 < 1 000 000 > 999")).toBe(
+      "1000<50653<1000000>999",
+    );
+    // E4 在真库抓到的两条原样
+    expect(normalizeStem("有理数 a < 0，b < 0，c > 0，且 |a|<|c|<|b|。")).toBe(
+      "有理数a<0b<0c>0且|a|<|c|<|b|",
+    );
+    expect(normalizeStem("（用 < 或 > 或 = 号填空）")).toBe(
+      "(用<或>或=号填空)",
+    );
+    // 🔴 归一后必须还能区分：只在被吃那段上不同的两道题，键不能撞
+    expect(matchKeyOf("已知 a < 0，b > 0，求值")).not.toBe(
+      matchKeyOf("已知 a > 0，b < 0，求值"),
+    );
+  });
+
+  it("绿：真 HTML 标签照剥净（填空线 span / 选项栅格 div）", () => {
+    const 带标签 =
+      '甲数是 <span style="display:inline-block;border-bottom:1px solid #000;min-width:3.4em"></span>，' +
+      '乙数是 <div style="display:grid;grid-template-columns:repeat(2,1fr)">6</div>。';
+    expect(normalizeStem(带标签)).toBe("甲数是乙数是6");
+    // 同一道题换个行内样式不该变成"新题"
+    expect(normalizeStem('<span style="a">3+5</span>')).toBe(
+      normalizeStem("<span>3+5</span>"),
+    );
+    // 🔴 先剥后解码：被转义的 `&lt;span&gt;` 是正文，不能还原后再被剥掉
+    expect(normalizeStem("比较 &lt;span&gt; 的大小")).toBe("比较<span>的大小");
+  });
+
   it("红：撞库里的老题带出它是哪一行；同批互撞也拦", async () => {
     const 题面 = "闸单测·查重专用题 |x-3|=5";
     const 老题 = newId("q");
