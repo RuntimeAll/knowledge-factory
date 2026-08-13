@@ -170,6 +170,17 @@ export interface BridgeOptions {
   student?: string;
   /** 只看某条线（tasks.line，如 '七上混合运算'）——未挂桥批次不带线名，会被滤掉 */
   line?: string;
+  /**
+   * 只看某一个批次（AI:PRD-006 · 006-C 补）。
+   *
+   * 🔴 为什么非有不可：**学情报告是一天一份**（「第02天学情分析」），而
+   *    getStudentView 默认把该学员挂上桥的批次**全部汇总**。小崽子的 d2 与 d4
+   *    同属七上混合运算线、考点重叠，不筛批次就会把两天并成一行 perKp ——
+   *    那不是任何一天的报告。走库出某一天的报告，必须传它。
+   * 🔴 传了它以后 coverage 就是**单批口径**（1/1 或 0/1），不是全库覆盖率，
+   *    warnings 里会说一声，别拿它当覆盖率汇报。
+   */
+  batchId?: number;
 }
 
 /**
@@ -255,6 +266,7 @@ export async function bridgeBatches(
   const out: BridgedBatch[] = [];
   for (const b of batches) {
     if (opts.student && b.student !== opts.student) continue;
+    if (opts.batchId !== undefined && Number(b.id) !== opts.batchId) continue;
 
     const viaSlot = slotKey.get(`${b.student ?? ""}${K}${b.day ?? ""}`);
     const viaLink = linkByBatch.get(Number(b.id));
@@ -304,6 +316,13 @@ export async function bridgeBatches(
           "（它们没有线名，天然被滤掉）。要看全量覆盖口径请不要传 line。",
       );
     }
+  }
+
+  if (opts.batchId !== undefined) {
+    warnings.push(
+      `只看 batch ${opts.batchId}：coverage 是**单批口径**（${结果.length === 0 ? "该批次不存在" : "1 个批次的分母"}），` +
+        "不是全库挂桥覆盖率。要看覆盖率别传 batchId。",
+    );
   }
 
   const matched = 结果.filter((b) => b.matched).length;

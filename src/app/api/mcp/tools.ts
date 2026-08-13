@@ -501,6 +501,17 @@ export const studentViewInput = z.object({
     .describe(
       "只看某条线（tasks.line，如 '七上混合运算'）。🔴 传了它，未挂桥的批次会被一起滤掉（它们没有线名），覆盖口径会失真——要看全量别传。",
     ),
+  batch_id: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe(
+      "🔴 只看某一个批次（= 某一天的那份卷）。**出「第 NN 天学情分析」必须传它**：" +
+        "不传就是把该学员挂上桥的所有批次汇总，同线同考点的两天会被并成一行 perKp，" +
+        "那不是任何一天的报告。batch_id 从不传 batch_id 的那次调用的 batches[] 里挑。" +
+        "🔴 传了它，coverage 就是单批口径（1/1），不是全库挂桥覆盖率。",
+    ),
 });
 
 export const groupKpStatsInput = z.object({
@@ -1178,7 +1189,7 @@ export function runStudentView(
   args: StudentViewArgs,
 ): Promise<ToolPayload<StudentViewResult>> {
   return run("student_view", () =>
-    getStudentView(args.code, { line: args.line }),
+    getStudentView(args.code, { line: args.line, batchId: args.batch_id }),
   );
 }
 

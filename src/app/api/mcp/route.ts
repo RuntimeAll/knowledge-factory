@@ -386,6 +386,8 @@ const handler = createMcpHandler(
           "perKp:[{kpId,kpName,ok,total,fallbackAll}], causes(=错因分布，三形态分列+unmapped 红旗), " +
           "coverage:{matched,total,rate,unmatched[]}, rubric, warnings } }。" +
           "🔴 **coverage 必看**：没挂上桥的批次分数照给、但算不到考点上；报告要用 perKp 就得说清这一点。" +
+          "🔴 **出「第 NN 天」的报告要传 batch_id**（AI:PRD-006 · 006-C）：不传 = 该学员所有挂桥批次汇总，" +
+          "同线同考点的两天会被并成一行 perKp，那不是任何一天的报告。先不传拿到 batches[]，再挑 batchId 重调。" +
           "🔴 本工具只交数据，**不写报告文案** —— 英雄卡结论仍由人/agent 写（来源 作答稿.json）。",
         inputSchema: studentViewInput,
       },
