@@ -221,12 +221,19 @@ const handler = createMcpHandler(
           "③semanticQuery 走**语意**（句向量近邻，能吃「含字母的绝对值怎么讨论」这种说不出关键词的问法）。" +
           "②③ 都给时按 RRF(k=60) 融合，且**只在①的候选集内**排名。" +
           "🔴 kpIds 一律先 resolve_kp 查真 id（merged 旧 id 会自动折叠到活跃落点）。" +
+          "🔴 **kpAutoResolve 在本工具默认开**：keywords 若本身是个考点的说法（『去绝对值』这类，" +
+          "题面里根本不会出现这四个字），会先 resolve 成考点，再**额外开一条考点标签召回轴**（axes.kpAuto）" +
+          "一起进 RRF——只认 confidence=1.0 的精确名/别名命中，一词多考点全部并入（any-of），" +
+          "落靶结果回显在 query.kpAutoResolved，命中该轴的题带 sources.kp。" +
+          "🔴 它**不动硬过滤**（不并进 kpIds），所以只会加召回、绝不会把字面本来查得到的题挤掉。" +
+          "要纯字面口径就显式传 kpAutoResolve:false。" +
           "🔴 默认排除 solution_grade='no_solution'（连解析都没有的题），要看得显式传。" +
           "返回 { ok, data:{ query(参数回显), total, candidateCount, " +
-          "axes:{sql:{count},fts:{active,count,degraded,op,tokens},vector:{active,count,modelVer}}, " +
+          "axes:{sql:{count},fts:{active,count,degraded,op,tokens},vector:{active,count,modelVer}," +
+          "kpAuto:{active,count,kpIds}}, " +
           "degraded, warnings, ms, " +
           "hits:[{questionId,stemBrief,qtype,difficulty,solutionGrade,status,kps(★=主考点),rrfScore," +
-          "sources:{fts?:{rank,score},vector?:{rank,score},sqlOnly?}}], fullText } }。" +
+          "sources:{fts?:{rank,score},vector?:{rank,score},kp?:{rank,kpIds},sqlOnly?}}], fullText } }。" +
           "🔴 每条命中都带 **sources 来源标注**：哪条轴召回的、排第几——挑题时看得见理由。" +
           "🔴 hits 是**摘要**（题面截断、无答案解析）；全文用 get_question 取。" +
           "🔴 warnings 里出现「语意轴已降级」= 向量版本混杂/模型没装（对账 C3），" +

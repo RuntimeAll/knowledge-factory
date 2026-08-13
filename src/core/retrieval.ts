@@ -42,6 +42,26 @@
  *   一律**自动降级为纯 FTS**，并在 `warnings` 里把原因写成人话。
  *   降级不是报错（检索照常出结果），但用的人必须知道少了一条轴。
  *
+ * ── 🔴 kpAutoResolve：考点用词自动落靶 = **第四条召回轴**（004-C 追加）──────
+ *   人（和 agent）张口就是「去绝对值」「绝对值压轴」——那是**考点的说法**，
+ *   不是题面里会出现的字。硬塞进 FTS 只会零命中（题面里根本没有「去绝对值」四个字），
+ *   而库里明明有 3 道挂在「绝对值的化简与去号」名下的题。
+ *
+ *   开了 `kpAutoResolve` 时：keywords 先过一次 {@link resolveKp}，
+ *   **只认 confidence=1.0 的精确名/别名命中**（前缀 0.9、trigram 0.5 一律不算——
+ *   "沾边"也算就等于让一个模糊判断去改检索口径），命中的考点变成第 ④ 条**召回轴**：
+ *   候选集里挂着这些考点的题按稳定序进名次表，和 FTS/向量一起走 RRF。
+ *   一词多考点（『绝对值压轴』是四个考点的共用别名）**全部并入**——any-of 语义。
+ *
+ *   🔴🔴 **落靶绝不动硬过滤（不并进 kpIds）**，这是本设计最要紧的一条。
+ *      并进 kpIds 就成了**交集**，于是落靶能把本来查得到的题**删掉**：
+ *      实测「立方根」——考点『立方根的概念与开立方运算』存在但身上一道题都没挂，
+ *      并进 kpIds 后候选集直接归零，而纯字面本来能查到 4 道真题（题面里有"立方根"三个字）。
+ *      「帮你理解得更好」的功能反手删掉 4 道真结果，是比零命中更坏的故障——
+ *      它静默、而且只有恰好知道那 4 道题存在的人才发现得了。
+ *      作为**并集的召回轴**则只会加、不会减：字面中的照中，考点挂的也一并召回，
+ *      两边都中的题靠 RRF 自然排到最前（sources 里两枚徽章都在）。
+ *
  * ── 收尾打点（M1 · Q9）─────────────────────────────────────────────────────
  *   每次检索落一条 `metric_event(kind='search')`：参数摘要 + 各轴命中数 + 降级标记。
  *   004-D 的评测集**从这里抽真实查询**，不另造假数据。
@@ -57,6 +77,7 @@ import { matchKeyOf } from "./gates/ingest-dedup.gate";
 import { QTYPES, SOLUTION_GRADES } from "./ingest-schema";
 import { KgError, resolveMergedKp } from "./kg";
 import { logMetric } from "./metrics";
+import { resolveKp } from "./resolve";
 import { stripHtmlForSeg } from "./segment";
 import { cosineTopK, vecAxisStatus, VecError } from "./vec";
 
@@ -115,6 +136,13 @@ function 向量深度(limit: number, candidateCount: number): number {
 
 /** IN(...) 一次塞多少个参数（hydrate 时分批，别撞变量数上限） */
 const IN_CHUNK = 400;
+
+/**
+ * kpAutoResolve 时向 resolveKp 要几条候选。
+ * 🔴 比默认的 8 宽：一词多考点是常态（『绝对值压轴』当下就挂着 4 个考点），
+ *    截在 8 会让「全部并入」变成「并入前 8 个」——而那个截断没人看得见。
+ */
+const KP_AUTO_LIMIT = 20;
 
 // ---------------------------------------------------------------------------
 // 错误契约
@@ -196,6 +224,13 @@ export const searchParamsSchema = z.object({
     .min(1)
     .optional()
     .describe("FTS 轴：jieba 分词后逐 token AND；零命中自动降级 OR 重试一次"),
+  kpAutoResolve: z
+    .boolean()
+    .optional()
+    .describe(
+      "keywords 若是个**考点用词**（『去绝对值』），额外开一条考点标签召回轴（不动硬过滤，只加召回）；" +
+        "只认 confidence=1.0 的精确名/别名，多义词全并入（any-of）。默认 false",
+    ),
   semanticQuery: z
     .string()
     .trim()
@@ -238,7 +273,12 @@ export interface HitSources {
   fts?: { rank: number; score: number };
   /** 语意轴：批内名次 + 余弦相似度 */
   vector?: { rank: number; score: number };
-  /** 两条轴都没激活：这条纯粹是 SQL 硬过滤的产物，没有"相关性"可言 */
+  /**
+   * 🔴 考点标签轴（kpAutoResolve 落靶来的）：这道题**挂着**关键词落靶到的考点。
+   * 没有相关性分数可言（挂了就是挂了），rank = 候选集稳定序里的位次。
+   */
+  kp?: { rank: number; kpIds: string[] };
+  /** 一条轴都没激活：这条纯粹是 SQL 硬过滤的产物，没有"相关性"可言 */
   sqlOnly?: true;
 }
 
@@ -246,6 +286,23 @@ export interface QuestionKpBrief {
   kpId: string;
   name: string;
   isPrimary: boolean;
+}
+
+/**
+ * 一条「关键词落靶成考点」的记录（`kpAutoResolve` 的回显）。
+ *
+ * 🔴 必须回显：不然用户只看到「我查的是关键词，结果按考点过滤了」这件事**没发生过**——
+ *    命中数对不上、以为是 FTS 的功劳，下次换个说法查不到就无从判断哪儿变了。
+ */
+export interface KpAutoResolved {
+  /** 拿去落靶的词（= keywords 原串，未分词） */
+  query: string;
+  kpId: string;
+  name: string;
+  /** 命中的是考点名还是别名 */
+  via: "exact-name" | "exact-alias";
+  /** via='exact-alias' 时：命中的是哪条别名 */
+  aliasHit?: string;
 }
 
 export interface SearchHit {
@@ -282,14 +339,24 @@ export interface SearchAxes {
     /** 语意轴用的是哪个模型版本（降级时为 null） */
     modelVer: string | null;
   };
+  /** 🔴 考点标签轴（kpAutoResolve）：落靶到哪几个考点、在候选集内召回了几条 */
+  kpAuto: { active: boolean; count: number; kpIds: string[] };
 }
 
 export interface SearchResult {
   /** 归一后的参数摘要（回显：agent 能看出系统"到底按什么在查"） */
   query: {
+    /** 🔴 参与**硬过滤**的考点（只有调用方显式传的；落靶来的不在这儿，见 kpAutoResolved） */
     kpIds: string[];
     /** 折叠前 → 折叠后（只在真发生折叠时非空） */
     kpFolded: { from: string; to: string }[];
+    /** 开没开关键词落靶 */
+    kpAutoResolve: boolean;
+    /**
+     * 🔴 keywords 落靶到了哪几个考点（没开或没精确命中时为空数组）。
+     * 它们走的是**召回轴**（axes.kpAuto），不进 kpIds 那条硬过滤。
+     */
+    kpAutoResolved: KpAutoResolved[];
     primaryOnly: boolean;
     difficulty: { min?: number; max?: number } | null;
     qtype: string[];
@@ -307,7 +374,10 @@ export interface SearchResult {
   /** SQL 硬过滤留下的候选数 */
   candidateCount: number;
   axes: SearchAxes;
-  /** FTS 退过 OR，或语意轴被降级——任一发生即 true */
+  /**
+   * 结果不是「两条轴照常融合」出来的——任一发生即 true：
+   * FTS 退过 OR / 语意轴被降级 / 落靶后关键词轴零命中退回了标签轴。
+   */
   degraded: boolean;
   /** 🔴 降级/截断一律写在这儿，绝不静默 */
   warnings: string[];
@@ -411,6 +481,56 @@ async function 折叠考点(
     }
   }
   return { kpIds: out, folded, warnings };
+}
+
+/**
+ * 关键词 → 精确命中的考点（`kpAutoResolve` 的实现，见文件头 §kpAutoResolve）。
+ *
+ * 🔴 只收 `confidence === 1`（exact-name / exact-alias）。前缀 0.9、trigram 0.5
+ *    那些"沾边"的一律不要：并入 kpIds 是**改硬过滤**，而硬过滤是非黑即白的判断，
+ *    拿一个"大概是这个考点"去缩候选集，缩掉的题用户永远不会知道自己没看见。
+ * 🔴 `enqueue:false`：这是检索的顺手一查，不是 agent 在正经问考点——
+ *    没把握也不该往人的待办队列里塞工单（页面每敲一次回车就塞一张，队列就废了）。
+ * 🔴 `knn:false`：只认 1.0，而 knn-vote 封顶 0.65 —— 它的结果一条都用不上，
+ *    却要为每次检索付一次载模型的钱。
+ * 🔴 落靶失败不抛：检索照常走字面轴，但原因写进 warnings（静默 = 以后没人知道它没跑）。
+ */
+async function 关键词落靶(
+  h: CoreDbHandle,
+  keywords: string,
+): Promise<{ hits: KpAutoResolved[]; warnings: string[] }> {
+  try {
+    const r = await resolveKp(keywords, {
+      handle: h,
+      enqueue: false,
+      knn: false,
+      limit: KP_AUTO_LIMIT,
+    });
+    const hits: KpAutoResolved[] = [];
+    for (const c of r.candidates) {
+      if (c.confidence < 1) continue;
+      if (c.matchedVia !== "exact-name" && c.matchedVia !== "exact-alias") {
+        continue;
+      }
+      hits.push({
+        query: keywords,
+        kpId: c.kpId,
+        name: c.name,
+        via: c.matchedVia,
+        ...(c.aliasHit ? { aliasHit: c.aliasHit } : {}),
+      });
+    }
+    return { hits, warnings: [] };
+  } catch (e) {
+    return {
+      hits: [],
+      warnings: [
+        `关键词「${keywords}」自动落靶考点失败，本次只走字面轴：${
+          e instanceof Error ? e.message : String(e)
+        }`,
+      ],
+    };
+  }
 }
 
 interface 候选行 {
@@ -581,6 +701,59 @@ async function FTS轴(
 }
 
 // ---------------------------------------------------------------------------
+// ④ 考点标签轴（kpAutoResolve 落靶来的；见文件头 §kpAutoResolve）
+// ---------------------------------------------------------------------------
+
+/** 一条考点轴召回：谁、第几名、是被哪几个落靶考点挂着的 */
+export interface KpAxisHit {
+  questionId: string;
+  rank: number;
+  kpIds: string[];
+}
+
+/**
+ * 落靶考点 → 候选集内的名次表。
+ *
+ * 🔴 名次按**候选集的稳定序**（created_at 升序）走，不是"相关度序"——挂着就是挂着，
+ *    考点标签上没有强弱可言。硬编一个分数出来只会让人误以为这里有相关性判断。
+ * 🔴 `primaryOnly` 与 kpIds 那条硬过滤同口径：勾了「只认主考点」，这条轴也只认主考点，
+ *    否则同一个开关在两个地方是两种意思。
+ */
+async function 考点轴(
+  h: CoreDbHandle,
+  kpIds: readonly string[],
+  候选: readonly string[],
+  primaryOnly: boolean,
+): Promise<KpAxisHit[]> {
+  if (kpIds.length === 0 || 候选.length === 0) return [];
+
+  const rows = await q<{ question_id: string; kp_id: string }>(
+    h,
+    `SELECT question_id, kp_id
+       FROM question_kp
+      WHERE kp_id IN (${占位(kpIds.length)})
+        ${primaryOnly ? "AND is_primary = 1" : ""}`,
+    [...kpIds],
+  );
+
+  const 挂着 = new Map<string, string[]>();
+  for (const r of rows) {
+    const qid = String(r.question_id);
+    const list = 挂着.get(qid) ?? [];
+    list.push(String(r.kp_id));
+    挂着.set(qid, list);
+  }
+
+  const hits: KpAxisHit[] = [];
+  for (const id of 候选) {
+    const kps = 挂着.get(id);
+    if (!kps) continue;
+    hits.push({ questionId: id, rank: hits.length + 1, kpIds: kps });
+  }
+  return hits;
+}
+
+// ---------------------------------------------------------------------------
 // ③ 向量轴
 // ---------------------------------------------------------------------------
 
@@ -669,8 +842,11 @@ export interface FusedRow {
 export function rrfFuse(axes: {
   fts?: readonly AxisHit[];
   vector?: readonly AxisHit[];
+  /** 🔴 考点标签轴（kpAutoResolve）：没有分数，只有名次 —— RRF 只吃名次，正好 */
+  kp?: readonly KpAxisHit[];
 }): FusedRow[] {
   const acc = new Map<string, { score: number; sources: HitSources }>();
+  const 取 = (id: string) => acc.get(id) ?? { score: 0, sources: {} };
 
   const 吃一轴 = (
     hits: readonly AxisHit[] | undefined,
@@ -678,7 +854,7 @@ export function rrfFuse(axes: {
   ): void => {
     if (!hits) return;
     for (const hit of hits) {
-      const cur = acc.get(hit.questionId) ?? { score: 0, sources: {} };
+      const cur = 取(hit.questionId);
       cur.score += 1 / (RRF_K + hit.rank);
       cur.sources[key] = { rank: hit.rank, score: hit.score };
       acc.set(hit.questionId, cur);
@@ -687,6 +863,12 @@ export function rrfFuse(axes: {
 
   吃一轴(axes.fts, "fts");
   吃一轴(axes.vector, "vector");
+  for (const hit of axes.kp ?? []) {
+    const cur = 取(hit.questionId);
+    cur.score += 1 / (RRF_K + hit.rank);
+    cur.sources.kp = { rank: hit.rank, kpIds: hit.kpIds };
+    acc.set(hit.questionId, cur);
+  }
 
   return [...acc.entries()]
     .map(([questionId, v]) => ({
@@ -783,15 +965,17 @@ async function 取摘要(
  * 三路检索（**页面与 MCP 工具共用的唯一入口**）。
  *
  * 执行序（不许乱）：
- *   1. zod 校验 → 2. kpIds 折叠 → 3. SQL 硬过滤出候选 id 集 →
- *   4. FTS / 向量**在候选集内**各自出名次表 → 5. RRF 融合 →
- *   6. 截 limit → 7. hydrate 摘要 → 8. logMetric。
+ *   1. zod 校验 → 2. 关键词落靶（kpAutoResolve，**只出召回轴、不动过滤**）→
+ *   3. kpIds 折叠 → 4. SQL 硬过滤出候选 id 集 →
+ *   5. FTS / 向量 / 考点标签**在候选集内**各自出名次表 → 6. RRF 融合 →
+ *   7. 截 limit → 8. hydrate 摘要 → 9. logMetric。
  *
  * ```ts
  * await searchQuestions({
  *   kpIds: ["kp_01KZV…"],           // 绝对值的性质与非负性
  *   qtype: ["填空"],
  *   keywords: "去绝对值",
+ *   kpAutoResolve: true,            // 「去绝对值」是考点别名 ⇒ 多开一条考点召回轴
  *   semanticQuery: "含字母的绝对值怎么分类讨论",
  *   limit: 5,
  * });
@@ -812,17 +996,25 @@ export async function searchQuestions(
   const h = options.handle ?? (await getCoreDb());
   const warnings: string[] = [];
 
-  // ── ② 考点折叠 ────────────────────────────────────────────────────────────
+  // ── ② 关键词落靶（只在显式开了 kpAutoResolve 且真给了 keywords 时跑）────────
+  const 落靶 =
+    p.kpAutoResolve === true && p.keywords !== undefined
+      ? await 关键词落靶(h, p.keywords)
+      : { hits: [] as KpAutoResolved[], warnings: [] as string[] };
+  warnings.push(...落靶.warnings);
+
+  // ── ③ 考点折叠（🔴 只折调用方显式传的：落靶来的走召回轴，不进硬过滤）────────
   const 折叠 = await 折叠考点(h, p.kpIds ?? []);
   warnings.push(...折叠.warnings);
 
-  // ── ③ SQL 硬过滤 ──────────────────────────────────────────────────────────
+  // ── ④ SQL 硬过滤 ──────────────────────────────────────────────────────────
   const 候选 = await 硬过滤(h, p, 折叠.kpIds);
   const 候选集 = new Set(候选);
 
-  // ── ④ 两条召回轴（只在候选集内）──────────────────────────────────────────
+  // ── ⑤ 三条召回轴（只在候选集内）──────────────────────────────────────────
   const ftsOn = p.keywords !== undefined;
   const vecOn = p.semanticQuery !== undefined;
+  const kpAxisOn = 落靶.hits.length > 0;
 
   const fts = ftsOn
     ? await FTS轴(h, p.keywords!, 候选集)
@@ -840,15 +1032,25 @@ export async function searchQuestions(
     : { hits: [], modelVer: null, degraded: false, warnings: [] as string[] };
   warnings.push(...vec.warnings);
 
-  // ── ⑤ 融合 ────────────────────────────────────────────────────────────────
+  const kpAxis = kpAxisOn
+    ? await 考点轴(
+        h,
+        落靶.hits.map((x) => x.kpId),
+        候选,
+        p.primaryOnly === true,
+      )
+    : [];
+
+  // ── ⑥ 融合 ────────────────────────────────────────────────────────────────
   // 🔴 只把**真跑起来了**的轴喂进 RRF：语意轴降级时它是"没有这条轴"，
   //    不是"这条轴一条都没召回"——后者会让 sources 里凭空多一个空壳。
   const vecReallyOn = vecOn && !vec.degraded;
   let fused: FusedRow[];
-  if (ftsOn || vecReallyOn) {
+  if (ftsOn || vecReallyOn || kpAxisOn) {
     fused = rrfFuse({
       ...(ftsOn ? { fts: fts.hits } : {}),
       ...(vecReallyOn ? { vector: vec.hits } : {}),
+      ...(kpAxisOn ? { kp: kpAxis } : {}),
     });
   } else {
     // 零轴：没有"相关性"可言，回硬过滤的稳定序
@@ -862,7 +1064,7 @@ export async function searchQuestions(
   const total = fused.length;
   const 页 = fused.slice(0, limit);
 
-  // ── ⑥ hydrate ────────────────────────────────────────────────────────────
+  // ── ⑦ hydrate ────────────────────────────────────────────────────────────
   const 摘要 = await 取摘要(
     h,
     页.map((f) => f.questionId),
@@ -883,6 +1085,8 @@ export async function searchQuestions(
     query: {
       kpIds: 折叠.kpIds,
       kpFolded: 折叠.folded,
+      kpAutoResolve: p.kpAutoResolve === true,
+      kpAutoResolved: 落靶.hits,
       primaryOnly: p.primaryOnly === true,
       difficulty: p.difficulty ?? null,
       qtype: p.qtype ?? [],
@@ -911,13 +1115,18 @@ export async function searchQuestions(
         count: vec.hits.length,
         modelVer: vec.modelVer,
       },
+      kpAuto: {
+        active: kpAxisOn,
+        count: kpAxis.length,
+        kpIds: 落靶.hits.map((x) => x.kpId),
+      },
     },
     degraded,
     warnings,
     ms,
   };
 
-  // ── ⑦ 打点（Q9 的原料：评测集从真实查询里抽，不另造）───────────────────
+  // ── ⑧ 打点（Q9 的原料：评测集从真实查询里抽，不另造）───────────────────
   if (options.metric !== false) {
     await logMetric(
       "search",
@@ -935,6 +1144,7 @@ export async function searchQuestions(
             op: fts.op,
           },
           vector: { active: vecReallyOn, count: vec.hits.length },
+          kpAuto: { active: kpAxisOn, count: kpAxis.length },
         },
         degraded,
         warnings: warnings.length,

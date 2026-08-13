@@ -27,6 +27,7 @@
  *   vec.ts     向量序列化 + 余弦近邻暴力扫描（AI:PRD-004 004-A）
  *   retrieval.ts 🔴 三路检索唯一入口（SQL 硬过滤 → FTS+向量召回 → RRF k=60）
  *                + getQuestion / findSimilarQuestions / checkDuplicate（004-B）
+ *                + kpAutoResolve 关键词落靶考点（004-C）
  *   fts.ts     question_fts 写侧投影 + 查询串构造（方案甲 · AI:PRD-003）
  *   ingest-schema.ts kb-ingest/v1 契约的机读正本（zod · AI:PRD-003）
  *   ingest.ts  录题管道 runIngestBatch（两相：零写相 + 单事务相 · AI:PRD-003）
@@ -373,6 +374,8 @@ export {
   type FusedRow,
   type GetQuestionOptions,
   type HitSources,
+  type KpAutoResolved,
+  type KpAxisHit,
   type QuestionCard,
   type QuestionFigureView,
   type QuestionKpBrief,

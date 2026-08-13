@@ -652,12 +652,22 @@ function 瘦身(h: SearchHit): SearchQuestionsBrief {
   };
 }
 
-/** 三路检索（题库的唯一查询入口）。 */
+/**
+ * 三路检索（题库的唯一查询入口）。
+ *
+ * 🔴 `kpAutoResolve` 在**这一层默认开**（core 的默认仍是关）：
+ *    agent 张口就是考点的说法（"去绝对值"），而那四个字在任何题面里都不出现，
+ *    不落靶就是稳定零命中；页面同理会显式开。core 保持默认关，是因为
+ *    脚本/评测那类"我要的就是纯字面口径"的调用不该被悄悄改口径。
+ */
 export function runSearchQuestions(
   args: SearchQuestionsArgs,
 ): Promise<ToolPayload<SearchQuestionsData>> {
   return run("search_questions", async () => {
-    const r = await searchQuestions(args);
+    const r = await searchQuestions({
+      ...args,
+      kpAutoResolve: args.kpAutoResolve ?? true,
+    });
     return {
       query: r.query,
       total: r.total,

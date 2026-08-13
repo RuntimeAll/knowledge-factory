@@ -163,6 +163,8 @@ describe("MCP 壳 · 注册表", () => {
       "solutionGrade",
       "editionScope",
       "keywords",
+      // 004-C 追加：考点用词落靶（本工具默认开，见 route.ts 的工具描述）
+      "kpAutoResolve",
       "semanticQuery",
       "excludeQuestionIds",
       "statuses",
