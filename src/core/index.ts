@@ -41,7 +41,10 @@
  *   gates/     闸（骨架来自 001；十道录题闸在 AI:PRD-003 落地，逐闸一文件）
  *   backup.ts  VACUUM INTO 快照（+异地副本）
  *   grading.ts 🔴 圣域 审核.db **只读**连接（三道锁，见文件头）
- *   integrity.ts 对账六项 C1~C6
+ *   cause.ts   错因域写原语（error_cause/kp_error/cause_example/err_code_map/roster · AI:PRD-006）
+ *   gradebridge.ts 🔴 学情挂桥读侧（**零写**）：公共桥 bridgeBatches +
+ *                  群错误率 / 已做题集 / 错因分布 / 学情数据包（AI:PRD-006 · 006-B）
+ *   integrity.ts 对账六项 C1~C6（C5 的桥已改调 gradebridge，全产品一份桥）
  *   status.ts  页面读侧（最近一次对账摘要 + 红旗条显示态纯函数）
  */
 
@@ -571,6 +574,82 @@ export {
   type SkuStatus,
   type SkuType,
 } from "./sku";
+
+// ── AI:PRD-006 · 006-B 错因域 ───────────────────────────────────────────────
+//
+// 🔴 err_code_map 是**复合键 (kp_id, err_code)**：同一个产线码在不同考点下是
+//    不同的错因实体（dist 在混合运算线=运算律简算，在整式线=去括号/合并同类项，
+//    006 备料 §四有交付级实证）。单键表会把两种能力并成一个数。
+export {
+  CAUSE_ERROR_CODES,
+  CAUSE_EXAMPLE_MIN,
+  CAUSE_STATUSES,
+  CauseError,
+  ROSTER_STATUSES,
+  addCauseExample,
+  createErrorCause,
+  getCause,
+  listCauses,
+  listRoster,
+  mapErrCode,
+  mapKpError,
+  retireCause,
+  unmapErrCode,
+  unmapKpError,
+  upsertRoster,
+  type AddCauseExampleResult,
+  type CauseBrief,
+  type CauseCard,
+  type CauseErrorCode,
+  type CauseStatus,
+  type CreateErrorCauseInput,
+  type CreateErrorCauseResult,
+  type KpErrorResult,
+  type ListCausesOptions,
+  type MapErrCodeResult,
+  type RetireCauseResult,
+  type RosterStatus,
+  type UpsertRosterInput,
+  type UpsertRosterResult,
+} from "./cause";
+
+// ── AI:PRD-006 · 006-B 学情挂桥读侧（🔴 全程零写） ──────────────────────────
+//
+// 🔴 桥只有这一份实现（对账 C5 也调它）。桥键 = slots(student, day)，
+//    绝不是 batches.task_id（死列）。所有对外统计一律带 matched/total 覆盖口径。
+export {
+  COPY_REMINDER_MARKERS,
+  RATE_RUBRIC,
+  VERDICT_OK,
+  VERDICT_SKIP,
+  VERDICT_WRONG,
+  bridgeBatches,
+  bridgedItems,
+  causeDistribution,
+  getStudentView,
+  isCopyReminderNote,
+  kpGroupErrorRate,
+  studentDoneSet,
+  type BridgeOptions,
+  type BridgeReport,
+  type BridgeTask,
+  type BridgedBatch,
+  type BridgedItem,
+  type BridgedItemKp,
+  type BridgedItemsResult,
+  type CauseDistRow,
+  type CauseDistributionResult,
+  type CauseForm,
+  type CoverageView,
+  type FormBucket,
+  type KpErrorRateRow,
+  type KpGroupErrorRateResult,
+  type StudentBatchView,
+  type StudentDoneSetResult,
+  type StudentKpRow,
+  type StudentViewResult,
+  type UnmappedCode,
+} from "./gradebridge";
 
 export {
   MODEL_ERROR_CODES,
