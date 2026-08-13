@@ -22,7 +22,8 @@
  * 🔴 端口不写死在代码里：冒烟用 `pnpm dev -- -p 3210`，正式端口等调度中心分配。
  * 🔴 本文件只做注册；入参校验、错误契约、返回外壳全在 ./tools.ts。
  * 🔴 工具数随卡增长：001 三个系统工具 + 002 两个考点工具 + 003 三个录题工具
- *    + 004-B 两个检索工具 = 10（tests/mcp.test.ts 有一条名单断言当漂移闸）。
+ *    + 004-B 两个检索工具 + 005-B 五个产线工具 = 15
+ *    （tests/mcp.test.ts 有一条名单断言当漂移闸）。
  * 🔴 不做鉴权（本地内网单人用；真要上外网再挂 withMcpAuth，那是另一张卡的事）。
  */
 import type { CallToolResult } from "@modelcontextprotocol/server";
@@ -31,23 +32,33 @@ import { createMcpHandler } from "mcp-handler";
 import pkg from "../../../../package.json";
 import {
   backupNowInput,
+  checkDuplicateInput,
+  findSimilarInput,
   getIngestBatchInput,
   getQuestionInput,
   healthInput,
   integrityCheckInput,
   kbIngestInput,
   kpContextInput,
+  mapGradingTaskInput,
   payloadToText,
+  proposeModelInput,
   proposeQuestionInput,
+  registerSkuInput,
   resolveKpInput,
   runBackupNow,
+  runCheckDuplicate,
+  runFindSimilar,
   runGetIngestBatch,
   runGetQuestion,
   runHealth,
   runIntegrityCheck,
   runKbIngest,
   runKpContext,
+  runMapGradingTask,
+  runProposeModel,
   runProposeQuestion,
+  runRegisterSku,
   runResolveKp,
   runSearchQuestions,
   searchQuestionsInput,
@@ -259,6 +270,95 @@ const handler = createMcpHandler(
         inputSchema: getQuestionInput,
       },
       async (args) => toResult(await runGetQuestion(args)),
+    );
+
+    // ── 产线五工具（AI:PRD-005 · 005-B）──────────────────────────────────────
+
+    server.registerTool(
+      "register_sku",
+      {
+        title: "登记一本册子（SKU）",
+        description:
+          "把一本册子/一张卷登记成 SKU：它是什么、装了哪些题（ord=卷面题号）、出了哪些件（双 PDF/图/物料）。" +
+          "一次调用可以编排到底（type+name+items+outputs），也可以分步（传 sku_id 往里补）。" +
+          "🔴 **登记≠上架**：默认 status='draft'。" +
+          "🔴 items[].ord 就是**卷面题号** —— 学情回流按 ord=qno 对位，排错了整卷的作答会错行。" +
+          "🔴 outputs[].file_path 会被读出来算 sha256 并拷进资产仓（内容寻址，同一份文件全库一行）：" +
+          "发出去那份 PDF 日后能一字节不差地对回来。" +
+          "返回 { ok, data:{ skuId, steps:[每一步干了什么], sku:{ id,type,name,status,items:[{ord,questionId,stemBrief,status}], " +
+          "outputs:[{id,kind,hash,path,bytes,note}], taskMap, counts } } }。" +
+          "🔴 中途某步红了**前面的步骤不回滚**（各自是独立事务、各自留了审计行），steps 里如实写到哪一步为止——照着补下一步即可。",
+        inputSchema: registerSkuInput,
+      },
+      async (args) => toResult(await runRegisterSku(args)),
+    );
+
+    server.registerTool(
+      "map_grading_task",
+      {
+        title: "把天卷 SKU 挂到圣域打卡任务上",
+        description:
+          "登记「审核.db 的 tasks.id ↔ 我们的天卷 SKU」（1:1）——学情回流的独木桥。" +
+          "🔴 task_id **必须显式给**：那一列是 SQLite 的 rowid 别名，不给值会**静默自增**出一条" +
+          "谁也查不出来的幽灵映射（学情会把甲的作答算到乙的卷子上）。" +
+          "🔴 本工具在写之前会去**只读侧**查这条 task 真的存在（查不到就拒，并列出最近几条任务）。" +
+          "🔴 圣域是只读参照物：任务是收卷.py 建的，这里只登记「哪本册子对应它」。" +
+          "返回 { ok, data:{ taskId, skuId, task:{date,line,book,day,nq,kind}, " +
+          "nqCheck:{nq,items,ok,note}, createdAt } }。" +
+          "🔴 nqCheck 是对账 C4(c) 的预判（tasks.nq 必须 = 本册题数）：不一致**不拦**（可能还没装完题），但照实说。",
+        inputSchema: mapGradingTaskInput,
+      },
+      async (args) => toResult(await runMapGradingTask(args)),
+    );
+
+    server.registerTool(
+      "propose_model",
+      {
+        title: "提议一个考察模型（提议态，人审转正）",
+        description:
+          "把「一类题的出题法」登记成 exam_model：题干模板 + 变量约束 + 错误模型 + **现役 DSL 指针**。" +
+          "🔴 **提议≠可用**：落 status='proposed' 并开一张 kind='模型转正' 的待审工单，" +
+          "人点转正（active）之后，`prov.type='model'` 引用它的题才过得了录题闸②（否则 PROV_MODEL_NOT_ACTIVE）。" +
+          "🔴 kp 一律先 resolve_kp 查真考点（只认精确命中）：模型挂错考点，按考点召回时会悄悄召回错的一族。" +
+          "🔴 dsl_ref 不许省 —— 收编前它是唯一能重跑这类题的线索（`<册>/_源/qbank.py#类名`）。" +
+          "返回 { ok, data:{ modelId, queueId, kp:{kpId,name}, name, status:'proposed', createdAt } }。",
+        inputSchema: proposeModelInput,
+      },
+      async (args) => toResult(await runProposeModel(args)),
+    );
+
+    server.registerTool(
+      "check_duplicate",
+      {
+        title: "这题是不是已经卖过了",
+        description:
+          "🔴 **出题/出册前先问它**：给一段题面，回「库里有没有一模一样的」+「撞到的题装在哪本册子里」。" +
+          "match_key 与录题闸⑦**同一把尺子**算（剥指令词 → 清前缀 → 归一 → sha256）。" +
+          "两层结论永远分开摆：collision=硬重复（归一后一模一样，事实判断）；" +
+          "similar=语义近似（**只报不拦** —— 同模板换数本来就该长得像，是不是重复得人来判）。" +
+          "返回 { ok, data:{ matchKey, collision, hits:[{questionId,status,stemBrief,skus:[{name,type,status,ord}]}], " +
+          "similar:[{questionId,score,stemBrief,skus}], threshold, degraded, warnings } }。" +
+          "🔴 hits[].skus 是空数组 = 撞的是**库存题**（还没进过任何册子），同样是重复。" +
+          "🔴 degraded=true 表示语意轴没查（模型没装/版本混杂）——那一层这次是瞎的，别当成「没有近似」。",
+        inputSchema: checkDuplicateInput,
+      },
+      async (args) => toResult(await runCheckDuplicate(args)),
+    );
+
+    server.registerTool(
+      "find_similar",
+      {
+        title: "找与这道题最像的题",
+        description:
+          "拿一道题当查询，走语意轴找最像的几道（余弦相似度，排除自身）。" +
+          "用途：出变式前看看库里已经有什么、排重时人工判「这算不算同一道题」、给母题找同族。" +
+          "🔴 用题面**现算**查询向量（不读库里那条）：那道题的向量还没回填时也照样查得动。" +
+          "返回 { ok, data:{ questionId, stemBrief, hits:[{questionId,stemBrief,score,qtype,difficulty,solutionGrade,status,kps}], " +
+          "modelVer, degraded, warnings, ms } }。" +
+          "🔴 degraded=true = 语意轴降级（对账 C3），hits 恒空——是「这次没查」，不是「没有相似题」。",
+        inputSchema: findSimilarInput,
+      },
+      async (args) => toResult(await runFindSimilar(args)),
     );
   },
   {

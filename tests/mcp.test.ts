@@ -15,7 +15,13 @@
  *   ④ 🔴 异常不裸穿：库连不上时回错误契约而不是 throw
  *   ⑤ 序列化：BigInt 不炸 stringify（这坑会在 catch 之外炸成 transport 500）
  */
-import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -28,10 +34,15 @@ import {
   classifyToolError,
   payloadToText,
   runBackupNow,
+  runCheckDuplicate,
+  runFindSimilar,
   runGetQuestion,
   runHealth,
   runIntegrityCheck,
   runKpContext,
+  runMapGradingTask,
+  runProposeModel,
+  runRegisterSku,
   runResolveKp,
   runSearchQuestions,
   type ToolPayload,
@@ -39,6 +50,9 @@ import {
 
 const 真库路径 = join(process.cwd(), "data", "资料库.db");
 let 沙盒: string;
+/** 产线用例之间传递的两个 id（register_sku 那条用例先建出来） */
+let 实测册 = "";
+let 实测题 = "";
 
 function fileUrl(p: string): string {
   return `file:${p.replace(/\\/g, "/")}`;
@@ -98,7 +112,7 @@ interface ListedTool {
 }
 
 describe("MCP 壳 · 注册表", () => {
-  it("route 导出 GET/POST（同一个 handler），tools/list 回十个工具", async () => {
+  it("route 导出 GET/POST（同一个 handler），tools/list 回十五个工具", async () => {
     expect(typeof route.GET).toBe("function");
     expect(typeof route.POST).toBe("function");
     expect(route.GET).toBe(route.POST); // 2.x 一个 handler 通吃，不再分 SSE/message 两条路
@@ -112,7 +126,7 @@ describe("MCP 壳 · 注册表", () => {
     const tools = r.result?.tools ?? [];
 
     // 🔴 基线随卡增长：001 三个系统工具 + 002-C 两个考点工具 + 003-D 三个录题工具
-    //    + 004-B 两个检索工具 = 10
+    //    + 004-B 两个检索工具 + 005-B 五个产线工具 = 15
     expect(tools.map((t) => t.name)).toEqual([
       "health",
       "integrity_check",
@@ -124,6 +138,11 @@ describe("MCP 壳 · 注册表", () => {
       "get_ingest_batch",
       "search_questions",
       "get_question",
+      "register_sku",
+      "map_grading_task",
+      "propose_model",
+      "check_duplicate",
+      "find_similar",
     ]);
     // 描述是给 agent 看的，不许空
     for (const t of tools) expect(t.description ?? "").not.toBe("");
@@ -178,6 +197,14 @@ describe("MCP 壳 · 注册表", () => {
           {},
       ),
     ).toEqual(["question_id"]);
+
+    // 🔴 产线工具的必填面也是一条漂移闸：map_grading_task 的 task_id **必须必填** ——
+    //    它一旦变成可选，rowid 自增出来的幽灵映射就又有路可走了（005-B 文件头那条纪律）。
+    const mapTool = tools.find((t) => t.name === "map_grading_task");
+    expect(mapTool?.inputSchema?.required).toEqual(["task_id", "sku_id"]);
+    expect(
+      tools.find((t) => t.name === "propose_model")?.inputSchema?.required,
+    ).toEqual(["kp", "name", "dsl_ref"]);
   });
 });
 
@@ -327,6 +354,125 @@ describe("MCP 壳 · 检索两工具（AI:PRD-004 · 004-B）", () => {
     if (r.ok) return;
     expect(r.code).toBe("INVALID_INPUT");
     expect(r.recoverable).toBe(true);
+  });
+});
+
+describe("MCP 壳 · 产线五工具（AI:PRD-005 · 005-B）", () => {
+  it("register_sku：一次编排（建册 + 装题 + 登记产出），steps 说得出每一步", async () => {
+    const s = await runSearchQuestions({ keywords: "最小值", limit: 2 });
+    expect(s.ok).toBe(true);
+    if (!s.ok) return;
+    const ids = s.data.hits.map((x) => x.questionId);
+    expect(ids.length).toBeGreaterThanOrEqual(1);
+
+    const 件 = join(沙盒, "mcp-单测题目卷.pdf");
+    writeFileSync(件, "%PDF-1.4 MCP 单测的假 PDF\n");
+
+    const r = await runRegisterSku({
+      type: "专项",
+      name: "MCP 单测·绝对值最值专项",
+      recipe: { 来源: "mcp.test", 题量: ids.length },
+      edition_ctx: "人教七上",
+      items: ids.map((id, i) => ({ question_id: id, ord: i + 1 })),
+      outputs: [{ kind: "pdf_q", file_path: 件, note: "单测件" }],
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.data.steps.length).toBe(3); // 建册 / 装题 / 登记产出
+    expect(r.data.sku.status).toBe("draft"); // 🔴 登记≠上架
+    expect(r.data.sku.counts.items).toBe(ids.length);
+    expect(r.data.sku.outputs[0]?.hash).toMatch(/^[0-9a-f]{64}$/);
+    实测册 = r.data.skuId;
+    实测题 = ids[0]!;
+
+    // 编造的题 id → QUESTION_NOT_FOUND（candidates 恒空，和检索侧一条路）
+    const bad = await runRegisterSku({
+      sku_id: r.data.skuId,
+      items: [{ question_id: "q_我编的", ord: 99 }],
+    });
+    expect(bad.ok).toBe(false);
+    if (bad.ok) return;
+    expect(bad.code).toBe("QUESTION_NOT_FOUND");
+  });
+
+  it("🔴 map_grading_task：圣域没有那条 task ⇒ 拒（幽灵映射防线的工具面）", async () => {
+    const r = await runMapGradingTask({ task_id: 999999, sku_id: 实测册 });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.code).toBe("NOT_FOUND");
+    expect(r.recoverable).toBe(true);
+    expect(r.message).toContain("tasks");
+  });
+
+  it("propose_model：考点不精确 → KP_NOT_FOUND，错误体里带候选（能自愈）", async () => {
+    // 「绝对值的化简」不是任何考点的全名（真名是「绝对值的化简与去号」，0.917）——
+    // 🔴 登记模型只认 1.0：像不算数，但要把最像的那几个交回去让 agent 改对
+    const r = await runProposeModel({
+      kp: "绝对值的化简",
+      name: "MCP 单测·差一点的说法",
+      dsl_ref: "单测/_源/qbank.py#T_x",
+    });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.code).toBe("KP_NOT_FOUND");
+    expect(r.recoverable).toBe(true);
+    // 🔴 「不存在」三个字对 agent 没用，最近似的真考点才有用
+    expect(r.candidates?.length).toBeGreaterThan(0);
+    expect(r.candidates![0]!.name).toContain("绝对值");
+
+    // 纯编的说法：候选如实为空 + message 说清楚「词表里没有这个说法」
+    const 编 = await runProposeModel({
+      kp: "绝对值宇宙无敌考点",
+      name: "MCP 单测·瞎挂考点",
+      dsl_ref: "单测/_源/qbank.py#T_y",
+    });
+    expect(编.ok).toBe(false);
+    if (编.ok) return;
+    expect(编.code).toBe("KP_NOT_FOUND");
+    expect(编.message).toContain("词表里没有这个说法");
+  });
+
+  it("check_duplicate：撞了要说得出撞的是哪本册子（不是只报一个 id）", async () => {
+    const q = await runGetQuestion({ question_id: 实测题 });
+    expect(q.ok).toBe(true);
+    if (!q.ok) return;
+
+    const r = await runCheckDuplicate({ stem: q.data.stem, similar_limit: 3 });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.data.collision).toBe(true);
+    expect(r.data.matchKey).toMatch(/^[0-9a-f]{64}$/);
+    expect(r.data.hits[0]?.questionId).toBe(实测题);
+    expect(r.data.hits[0]?.skus.map((x) => x.name)).toContain(
+      "MCP 单测·绝对值最值专项",
+    );
+
+    // 库里绝对没有的题面 ⇒ collision=false（"查过了、没撞"是有用的结论）
+    const 干净 = await runCheckDuplicate({
+      stem: "MCP 单测·库里绝没有的题：把 2026 拆成三个连续偶数之和。",
+    });
+    expect(干净.ok).toBe(true);
+    if (!干净.ok) return;
+    expect(干净.data.collision).toBe(false);
+    expect(干净.data.hits).toEqual([]);
+  });
+
+  it("find_similar：拿一道题找最像的（004 遗留 C16 的工具面）", async () => {
+    const r = await runFindSimilar({ question_id: 实测题, limit: 3 });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.data.questionId).toBe(实测题);
+    // 🔴 语意轴降级时 hits 恒空且 degraded=true —— 那是「这次没查」，不是「没有相似题」
+    if (!r.data.degraded) {
+      expect(r.data.hits.length).toBeGreaterThan(0);
+      expect(r.data.hits.every((x) => x.questionId !== 实测题)).toBe(true); // 排除自身
+      expect(r.data.hits[0]!.score).toBeLessThanOrEqual(1);
+    }
+
+    const bad = await runFindSimilar({ question_id: "q_我编的" });
+    expect(bad.ok).toBe(false);
+    if (bad.ok) return;
+    expect(bad.code).toBe("QUESTION_NOT_FOUND");
   });
 });
 

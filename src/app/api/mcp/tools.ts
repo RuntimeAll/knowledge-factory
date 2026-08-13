@@ -4,6 +4,8 @@
  *   · 两个考点工具 resolve_kp / kp_context（AI:PRD-002 · 002-C）
  *   · 三个录题工具 kb_ingest / propose_question / get_ingest_batch（AI:PRD-003 · 003-D）
  *   · 两个检索工具 search_questions / get_question（AI:PRD-004 · 004-B）
+ *   · 五个产线工具 register_sku / map_grading_task / propose_model /
+ *     check_duplicate / find_similar（AI:PRD-005 · 005-B）
  *
  * 为什么和 route.ts 分家：route.ts 是「注册表」，只负责把工具挂到 mcp-handler 上；
  * 真正的入参 schema、错误分类、返回外壳全在这儿 —— 这样单测能直接调函数，
@@ -32,36 +34,56 @@ import {
   IngestError,
   KgError,
   KpNotFoundError,
+  ModelError,
   QueueError,
   RetrievalError,
+  SKU_OUTPUT_KINDS,
+  SKU_STATUSES,
+  SKU_TYPES,
+  SkuError,
+  addSkuItems,
+  assertNoSoldDuplicates,
   backupNow,
+  findSimilarQuestions,
   getIngestBatch,
   getQuestion,
+  getSku,
   health,
   ingestPayloadSchema,
   integrityCheck,
   itemReds,
   kpContext,
+  mapGradingTask,
+  matchKeyOfStem,
   proposeItemSchema,
+  proposeModel,
   proposeQuestion,
+  registerSku,
+  registerSkuOutput,
   resolveKp,
   runIngestBatch,
   searchParamsSchema,
   searchQuestions,
   sourceDocSchema,
   type BackupResult,
+  type DupHit,
   type HealthReport,
   type IngestBatchRecord,
   type IngestCounts,
   type IntegrityReport,
   type KpCandidate,
   type KpContextCard,
+  type MapGradingTaskResult,
   type PrecheckRed,
+  type ProposeModelResult,
   type ProposeQuestionResult,
   type QuestionCard,
   type ResolveKpResult,
   type SearchHit,
   type SearchResult,
+  type SimilarResult,
+  type SkuCard,
+  type SoldSimilar,
 } from "~/core";
 
 // ---------------------------------------------------------------------------
@@ -108,7 +130,12 @@ export type ToolName =
   | "propose_question"
   | "get_ingest_batch"
   | "search_questions"
-  | "get_question";
+  | "get_question"
+  | "register_sku"
+  | "map_grading_task"
+  | "propose_model"
+  | "check_duplicate"
+  | "find_similar";
 
 export const TOOL_NAMES: readonly ToolName[] = [
   "health",
@@ -121,6 +148,11 @@ export const TOOL_NAMES: readonly ToolName[] = [
   "get_ingest_batch",
   "search_questions",
   "get_question",
+  "register_sku",
+  "map_grading_task",
+  "propose_model",
+  "check_duplicate",
+  "find_similar",
 ];
 
 /**
@@ -273,6 +305,172 @@ export const getQuestionInput = z.object({
     ),
 });
 
+// ── AI:PRD-005 · 005-B 产线五工具 ──────────────────────────────────────────
+
+/**
+ * 一次调用把一本册子登记齐（sku + 题单 + 产出），也支持分步：
+ * 只给 type/name 就是「先占个册子」，回头再调一次补 items/outputs（分步时传 sku_id）。
+ */
+export const registerSkuInput = z.object({
+  sku_id: z
+    .string()
+    .trim()
+    .min(1)
+    .optional()
+    .describe(
+      "已有册子的 id（分步登记时传它：这次只往里补 items/outputs）。不传 = 新建一本。",
+    ),
+  type: z
+    .enum(SKU_TYPES)
+    .optional()
+    .describe("册型（新建时必给）：打卡/专项/合刊/讲义/练习册/卷。"),
+  name: z
+    .string()
+    .trim()
+    .min(1)
+    .optional()
+    .describe("册名（新建时必给），人认这本册子的凭据。"),
+  recipe: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .describe(
+      "出这本册的配方：生成器、参数、天数…（对象，原样落 recipe_json）。",
+    ),
+  layout: z
+    .string()
+    .trim()
+    .min(1)
+    .optional()
+    .describe("版式键（punch 的 layout_key）。"),
+  edition_ctx: z
+    .string()
+    .trim()
+    .min(1)
+    .optional()
+    .describe(
+      "🔴 Q12 版本上下文：这本册子是按哪个版本教材出的（'人教七上' / '浙教'）。",
+    ),
+  status: z
+    .enum(SKU_STATUSES)
+    .optional()
+    .describe("默认 draft。登记≠上架，开卖再改 active。"),
+  items: z
+    .array(
+      z.object({
+        question_id: z.string().trim().min(1),
+        ord: z.number().int().positive(),
+      }),
+    )
+    .optional()
+    .describe(
+      "题单：ord 就是**卷面题号**（学情回流按 ord=qno 对位，不是随便一个排序字段）。" +
+        "question_id 必须来自 search_questions / kb_ingest 的返回。",
+    ),
+  outputs: z
+    .array(
+      z.object({
+        kind: z.enum(SKU_OUTPUT_KINDS),
+        file_path: z.string().trim().min(1),
+        note: z.string().trim().min(1).optional(),
+      }),
+    )
+    .optional()
+    .describe(
+      "成品件：pdf_q=题目卷 / pdf_a=答案卷 / png=图 / 物料 / 其他。" +
+        "文件会按内容 sha256 拷进资产仓（发出去那份日后能一字节不差对回来）。",
+    ),
+});
+
+export const mapGradingTaskInput = z.object({
+  task_id: z
+    .number()
+    .int()
+    .positive()
+    .describe(
+      "圣域（审核.db）tasks.id —— 🔴 必须显式给：这一列是 rowid 别名，缺了会静默自增出幽灵映射。" +
+        "登记前本工具会去只读侧查它真的存在。",
+    ),
+  sku_id: z
+    .string()
+    .trim()
+    .min(1)
+    .describe("天卷 SKU 的 id（register_sku 的返回）。"),
+  note: z.string().trim().min(1).optional().describe("这条桥的备注。"),
+});
+
+export const proposeModelInput = z.object({
+  kp: z
+    .string()
+    .trim()
+    .min(1)
+    .describe(
+      "模型归位到哪个考点：考点名/别名/kp_id。🔴 只认**精确**命中（先 resolve_kp 查真考点）。",
+    ),
+  name: z
+    .string()
+    .trim()
+    .min(1)
+    .describe("模型名，例：'绝对值几何意义·两点距离和取最值'。"),
+  dsl_ref: z
+    .string()
+    .trim()
+    .min(1)
+    .describe(
+      "现役 DSL 指针：`<册>/_源/qbank.py#类名或函数名`。🔴 收编前，它是唯一能重跑这类题的线索。",
+    ),
+  stem_template: z.string().trim().min(1).optional().describe("题干模板。"),
+  var_spec: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .describe("变量约束（域/步长/互斥），对象。"),
+  error_model: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .describe("错误模型（预置错因 → err 关联），对象。"),
+  difficulty: z.number().int().min(1).max(5).optional(),
+  origin_qids: z
+    .array(z.string().trim().min(1))
+    .optional()
+    .describe("从哪些真题归纳出来（血缘上游，必须是库里真的题 id）。"),
+  note: z.string().trim().min(1).optional().describe("写给审的人的一句话。"),
+});
+
+export const checkDuplicateInput = z.object({
+  stem: z
+    .string()
+    .trim()
+    .min(1)
+    .describe("要查的题面（原样贴，别自己先清洗）。"),
+  similar_limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(20)
+    .optional()
+    .describe("语义近邻取几条，默认 3。"),
+  similar_at: z
+    .number()
+    .min(0)
+    .max(1)
+    .optional()
+    .describe("语义相似的报告线，默认 0.95（只报不拦）。"),
+});
+
+export const findSimilarInput = z.object({
+  question_id: z
+    .string()
+    .trim()
+    .min(1)
+    .describe("拿哪道题当查询（id 来自 search_questions）。"),
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(50)
+    .optional()
+    .describe("回几条，默认 10。"),
+});
+
 export type HealthArgs = z.infer<typeof healthInput>;
 export type IntegrityCheckArgs = z.infer<typeof integrityCheckInput>;
 export type BackupNowArgs = z.infer<typeof backupNowInput>;
@@ -283,6 +481,11 @@ export type ProposeQuestionArgs = z.infer<typeof proposeQuestionInput>;
 export type GetIngestBatchArgs = z.infer<typeof getIngestBatchInput>;
 export type SearchQuestionsArgs = z.infer<typeof searchQuestionsInput>;
 export type GetQuestionArgs = z.infer<typeof getQuestionInput>;
+export type RegisterSkuArgs = z.infer<typeof registerSkuInput>;
+export type MapGradingTaskArgs = z.infer<typeof mapGradingTaskInput>;
+export type ProposeModelArgs = z.infer<typeof proposeModelInput>;
+export type CheckDuplicateArgs = z.infer<typeof checkDuplicateInput>;
+export type FindSimilarArgs = z.infer<typeof findSimilarInput>;
 
 // ---------------------------------------------------------------------------
 // 错误分类
@@ -347,6 +550,64 @@ export function classifyToolError(tool: ToolName, e: unknown): ToolErr {
           : "INVALID_INPUT",
       message: `${tool} 失败[${e.code}]：${e.message}`,
       recoverable: true,
+      ...(e.code === "QUESTION_NOT_FOUND" ? { candidates: [] } : {}),
+    };
+  }
+  // 🔴 SKU 侧（AI:PRD-005）：`*_NOT_FOUND` 分两类落码 ——
+  //    题 id 错落 QUESTION_NOT_FOUND（agent 的处理分支与检索侧一致），
+  //    册子/任务/批次不存在落 NOT_FOUND；撞唯一键（位次被占、任务已登记）
+  //    是**可改参数重试**的事，落 INVALID_INPUT。
+  if (e instanceof SkuError) {
+    const code: ToolErrorCode =
+      e.code === "INVALID_INPUT" ||
+      e.code === "ORD_TAKEN" ||
+      e.code === "QUESTION_TAKEN" ||
+      e.code === "TASK_TAKEN" ||
+      e.code === "SKU_TAKEN" ||
+      e.code === "BATCH_TAKEN"
+        ? "INVALID_INPUT"
+        : e.code === "QUESTION_NOT_FOUND"
+          ? "QUESTION_NOT_FOUND"
+          : e.code === "SKU_NOT_FOUND" ||
+              e.code === "TASK_NOT_FOUND" ||
+              e.code === "BATCH_NOT_FOUND"
+            ? "NOT_FOUND"
+            : e.code === "FILE_MISSING"
+              ? "IO_ERROR"
+              : e.code === "GRADING_UNREACHABLE"
+                ? "DB_UNREACHABLE"
+                : "INTERNAL";
+    return {
+      ok: false,
+      tool,
+      code,
+      message: `${tool} 失败[${e.code}]：${e.message}`,
+      // 🔴 「换个参数再调一次就有戏」= 可重试（撞唯一键、id 写错都属这类）；
+      //    环境不对（圣域连不上）与磁盘失败才是停下来叫人。
+      recoverable: code !== "DB_UNREACHABLE" && code !== "IO_ERROR",
+      ...(e.code === "QUESTION_NOT_FOUND" ? { candidates: [] } : {}),
+    };
+  }
+  // 🔴 模型侧：考点没查着/一名多考点，错误体里**带候选**（与 KP_NOT_FOUND 一条路），
+  //    agent 照着改成真 kp_id 就能自愈。
+  if (e instanceof ModelError) {
+    const code: ToolErrorCode =
+      e.code === "KP_NOT_FOUND" || e.code === "KP_AMBIGUOUS"
+        ? "KP_NOT_FOUND"
+        : e.code === "INVALID_INPUT" || e.code === "KP_NOT_ACTIVE"
+          ? "INVALID_INPUT"
+          : e.code === "QUESTION_NOT_FOUND"
+            ? "QUESTION_NOT_FOUND"
+            : e.code === "MODEL_NOT_FOUND" || e.code === "QUEUE_NOT_FOUND"
+              ? "NOT_FOUND"
+              : "INTERNAL";
+    return {
+      ok: false,
+      tool,
+      code,
+      message: `${tool} 失败[${e.code}]：${e.message}`,
+      recoverable: code !== "INTERNAL",
+      ...(e.candidates ? { candidates: e.candidates } : {}),
       ...(e.code === "QUESTION_NOT_FOUND" ? { candidates: [] } : {}),
     };
   }
@@ -690,6 +951,169 @@ export function runGetQuestion(
   args: GetQuestionArgs,
 ): Promise<ToolPayload<QuestionCard>> {
   return run("get_question", () => getQuestion(args.question_id));
+}
+
+// ---------------------------------------------------------------------------
+// 产线五工具（AI:PRD-005 · 005-B）
+// ---------------------------------------------------------------------------
+
+export interface RegisterSkuData {
+  skuId: string;
+  /** 这次干了哪几步（新建/装题/登记产出），一步一行 */
+  steps: string[];
+  /** 登记完的册子全貌（题单 + 产出 + 挂桥） */
+  sku: SkuCard;
+}
+
+/**
+ * 登记一本册子（可一次编排，也可分步）。
+ *
+ * 🔴 编排顺序固定：建册 → 装题 → 登记产出。中途某一步红了，**前面的步骤不回滚**
+ *    （它们各自是一个事务，各自留了审计行）—— 返回里 `steps` 会如实写到哪一步为止，
+ *    照着补下一步即可（传 sku_id 分步再来一次）。假装整体原子会更难查：
+ *    题装了一半却说「什么都没发生」，人下次就会重装一遍。
+ */
+export function runRegisterSku(
+  args: RegisterSkuArgs,
+): Promise<ToolPayload<RegisterSkuData>> {
+  return run("register_sku", async () => {
+    const steps: string[] = [];
+    let skuId = args.sku_id?.trim() ?? "";
+
+    if (!skuId) {
+      if (!args.type || !args.name) {
+        throw new SkuError(
+          "INVALID_INPUT",
+          "新建册子要给 type 与 name（要往已有册子里补东西，请传 sku_id）。",
+        );
+      }
+      const r = await registerSku({
+        type: args.type,
+        name: args.name,
+        recipeJson: args.recipe,
+        layout: args.layout,
+        editionCtx: args.edition_ctx,
+        status: args.status,
+        actor: "agent",
+      });
+      skuId = r.skuId;
+      steps.push(
+        `建册 ${r.skuId}「${r.name}」type=${r.type} status=${r.status}`,
+      );
+    } else {
+      steps.push(`往已有册子 ${skuId} 里补登记`);
+    }
+
+    if (args.items && args.items.length > 0) {
+      const r = await addSkuItems(
+        skuId,
+        args.items.map((i) => ({ questionId: i.question_id, ord: i.ord })),
+        { actor: "agent" },
+      );
+      steps.push(`装题 ${r.added.length} 道（本册累计 ${r.total} 道）`);
+    }
+
+    for (const o of args.outputs ?? []) {
+      const r = await registerSkuOutput(skuId, {
+        kind: o.kind,
+        filePath: o.file_path,
+        note: o.note,
+        actor: "agent",
+      });
+      steps.push(
+        `登记产出 ${o.kind} → asset ${r.assetId}（${r.reused ? "同 hash 复用" : "新拷进资产仓"}，${r.bytes} 字节）`,
+      );
+    }
+
+    const card = await getSku(skuId);
+    if (!card) {
+      throw new SkuError(
+        "SKU_NOT_FOUND",
+        `册子 ${skuId} 登记完却读不回来（并发删了？）`,
+      );
+    }
+    return { skuId, steps, sku: card };
+  });
+}
+
+/** 登记「圣域打卡任务 ↔ 天卷 SKU」（1:1，写前查只读侧存在性）。 */
+export function runMapGradingTask(
+  args: MapGradingTaskArgs,
+): Promise<ToolPayload<MapGradingTaskResult>> {
+  return run("map_grading_task", () =>
+    mapGradingTask(args.task_id, args.sku_id, {
+      note: args.note,
+      actor: "agent",
+    }),
+  );
+}
+
+/** 提议一个考察模型（proposed + 一张「模型转正」工单）。 */
+export function runProposeModel(
+  args: ProposeModelArgs,
+): Promise<ToolPayload<ProposeModelResult>> {
+  return run("propose_model", () =>
+    proposeModel({
+      kpRef: args.kp,
+      name: args.name,
+      dslRef: args.dsl_ref,
+      stemTemplate: args.stem_template,
+      varSpecJson: args.var_spec,
+      errorModelJson: args.error_model,
+      difficulty: args.difficulty,
+      originQids: args.origin_qids,
+      note: args.note,
+      actor: "agent",
+    }),
+  );
+}
+
+export interface CheckDuplicateData {
+  matchKey: string;
+  /** 🔴 true = 归一后一模一样的题库里已经有了（硬重复） */
+  collision: boolean;
+  /** 撞到的题 + 它们各自装在哪本册子里（空 skus = 撞的是库存题） */
+  hits: DupHit[];
+  /** 语义近似（**只报不拦**：同模板换数本来就该长得像） */
+  similar: SoldSimilar[];
+  threshold: number;
+  degraded: boolean;
+  warnings: string[];
+}
+
+/**
+ * 单题查重（出题/出册前先问一句）。
+ * 🔴 与 kb_ingest 的闸⑦同一把尺子算 match_key，但多一层**归因**：撞的是哪本册子。
+ */
+export function runCheckDuplicate(
+  args: CheckDuplicateArgs,
+): Promise<ToolPayload<CheckDuplicateData>> {
+  return run("check_duplicate", async () => {
+    const r = await assertNoSoldDuplicates([{ seq: 1, stem: args.stem }], {
+      similarTopK: args.similar_limit,
+      similarAt: args.similar_at,
+    });
+    const c = r.collisions[0];
+    return {
+      // 🔴 没撞也要把 key 给出去：agent 拿它去比对自己手上那份料，比"没撞"三个字有用
+      matchKey: c?.matchKey ?? matchKeyOfStem(args.stem),
+      collision: !r.ok,
+      hits: c?.hits ?? [],
+      similar: r.similar,
+      threshold: r.threshold,
+      degraded: r.degraded,
+      warnings: r.warnings,
+    };
+  });
+}
+
+/** 找与某道题最像的题（004 遗留的第三条路，005 补上工具面）。 */
+export function runFindSimilar(
+  args: FindSimilarArgs,
+): Promise<ToolPayload<SimilarResult>> {
+  return run("find_similar", () =>
+    findSimilarQuestions(args.question_id, { limit: args.limit }),
+  );
 }
 
 // ---------------------------------------------------------------------------
