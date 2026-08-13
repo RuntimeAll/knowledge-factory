@@ -8,6 +8,13 @@
  *    各有一条挂位路径，并排列出来。看得见「概念层版本无关」不是口号。
  * 🔴 编造的 id 不给白板：kpContext 抛的 KpNotFoundError 自带最近似候选，
  *    这里原样列出来（验收 2-2 在页面侧的样子）。
+ *
+ * 🆕 AI:PRD-006 · 006-B：加「群错误率」小节 —— 批改线的产出经挂桥链落到这个考点上。
+ * 🔴 这一节是验收 6-1 的页面证据。三条纪律写在小节里，别改：
+ *    ① 数字必须**带覆盖口径**（matched/total + 未挂桥明细）——群错误率是纯新增能力，
+ *       批改线没有对应实现、没有对数基准，唯一能自证的就是「样本面说得清楚」；
+ *    ② 错因**三形态分列**（归因 / '[]' 拒绝归因 / NULL 未记录），绝不并成「没归因」；
+ *    ③ **unmapped 红字**：查不到 (考点,码) 映射的错不许静默丢 —— 丢了等于说它没发生过。
  */
 import Link from "next/link";
 
@@ -19,7 +26,15 @@ import {
   Row,
   statusTone,
 } from "~/components/kit";
-import { KpNotFoundError, kpContext, type KpContextCard } from "~/core";
+import {
+  KpNotFoundError,
+  causeDistribution,
+  kpContext,
+  kpGroupErrorRate,
+  type CauseDistributionResult,
+  type KpContextCard,
+  type KpGroupErrorRateResult,
+} from "~/core";
 import { addAliasAction, removeAliasAction } from "../../actions";
 import { param } from "../../shared";
 
@@ -111,6 +126,176 @@ function Placements({ card }: { card: KpContextCard }) {
   );
 }
 
+/**
+ * 群错误率（验收 6-1 的页面证据）。
+ * 🔴 三样东西缺一不可：数、覆盖口径、错因三形态。少任何一样这个数就会被读错。
+ */
+function GroupStats({
+  kpId,
+  rate,
+  dist,
+}: {
+  kpId: string;
+  rate: KpGroupErrorRateResult;
+  dist: CauseDistributionResult;
+}) {
+  const row = rate.rows.find((r) => r.kpId === kpId) ?? null;
+  const cov = rate.coverage;
+
+  return (
+    <div className="space-y-3">
+      {/* ── 覆盖口径：先说样本面，再说数（顺序不能反） ───────────────── */}
+      <div className="text-[12.5px]">
+        <b>覆盖口径</b>：挂上桥的批次 <span className="num">{cov.matched}</span>{" "}
+        / <span className="num">{cov.total}</span>（{cov.rate}）
+        {row ? (
+          <>
+            ，本考点参与统计 <span className="num">{row.total}</span> 题次 ·{" "}
+            <span className="num">{row.students}</span> 名学员 ·{" "}
+            <span className="num">{row.batches}</span> 个批次
+          </>
+        ) : null}
+      </div>
+
+      {row === null ? (
+        <div className="border-amber/40 bg-amber-soft text-amber rounded-[2px] border p-2.5 text-[12.5px]">
+          覆盖 0 —— 该考点的题没进过任何<b>已挂桥</b>
+          的批次，所以群错误率算不出来。这是「没有数据」，不是「没有错误」。
+          {cov.unmatched.length > 0
+            ? `（圣域侧有 ${cov.unmatched.length} 个批次没挂上桥，明细见下方）`
+            : null}
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
+          <div className="text-[12.5px]">
+            错题次 / 总题次{" "}
+            <b className="num text-[15px]">
+              {row.wrong} / {row.total}
+            </b>
+          </div>
+          <div className="text-[12.5px]">
+            群错误率{" "}
+            <b className="num text-[15px]">
+              {row.rate === null ? "—" : `${(row.rate * 100).toFixed(1)}%`}
+            </b>
+          </div>
+          <div className="text-mut text-[12px]">
+            口径：× 含空题（口径①）／ √ 含订正对了（口径②）／ skip 漏抄整条摘掉
+          </div>
+        </div>
+      )}
+
+      {/* ── 错因分布：三形态分列 ───────────────────────────────────────── */}
+      <div>
+        <div className="text-mut mb-1 text-[11px] tracking-[1px]">错因分布</div>
+        {dist.rows.length > 0 ? (
+          <table className="w-full text-[12.5px]">
+            <thead>
+              <tr className="border-hair2 text-mut border-b text-left text-[11px] tracking-[1px]">
+                <th className="py-1 pr-3 font-semibold">错因</th>
+                <th className="py-1 pr-3 font-semibold">产线码</th>
+                <th className="py-1 pr-3 font-semibold">码次</th>
+                <th className="py-1 font-semibold">学员</th>
+              </tr>
+            </thead>
+            <tbody>
+              {dist.rows.map((r) => (
+                <tr
+                  key={`${r.causeId}|${r.errCode}`}
+                  className="border-hair border-b"
+                >
+                  <td className="py-1.5 pr-3">{r.causeName}</td>
+                  <td className="py-1.5 pr-3 font-mono text-[11.5px]">
+                    {r.errCode}
+                  </td>
+                  <td className="num py-1.5 pr-3">{r.count}</td>
+                  <td className="num py-1.5">{r.students}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <div className="text-mut text-[12.5px]">
+            没有已翻译的归因 —— 要么这个考点的错题都没带码，要么 err_code_map
+            还没铺映射（种子灌入是 006-C 的活）。
+          </div>
+        )}
+
+        {/* 🔴 三形态：'[]' 与 NULL 语义不同，分两行摆，绝不并成「没归因」 */}
+        <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-[12px]">
+          <span>
+            未归因（判 × 且 <code className="font-mono">{"[]"}</code>，明确说
+            「错的不属于本题所挂考点」）：
+            <b className="num ml-1">{dist.unattributed.count}</b>
+          </span>
+          <span>
+            未记录（判 × 且 <code className="font-mono">NULL</code>
+            ，老批次/未走归因链）：
+            <b className="num ml-1">{dist.unrecorded.count}</b>
+          </span>
+          {dist.copyReminder.count > 0 ? (
+            <span>
+              抄写提醒（口径③，不算错因）：
+              <b className="num ml-1">{dist.copyReminder.count}</b>
+            </span>
+          ) : null}
+        </div>
+      </div>
+
+      {/* ── 🔴 unmapped 红字：查不到映射的码不静默丢 ───────────────────── */}
+      {dist.unmapped.length > 0 ? (
+        <div className="border-pen/40 bg-pen/5 rounded-[2px] border p-2.5">
+          <div className="text-pen text-[12.5px] font-semibold">
+            🔴 {dist.unmapped.length} 组 (考点, 码) 查不到 err_code_map 映射，共{" "}
+            {dist.unmapped.reduce((s, x) => s + x.count, 0)} 个码次
+          </div>
+          <div className="text-pen mt-1 text-[12px]">
+            这些错<b>没有被丢掉</b>，全在下面 ——
+            静默丢等于说它们没发生过。处置：给这些 (考点, 码)
+            铺映射，或确认这个码在这个考点下确实没有语义。
+          </div>
+          <ul className="mt-1.5 space-y-0.5 text-[12px]">
+            {dist.unmapped.map((u) => (
+              <li key={`${u.kpId}|${u.errCode}`}>
+                <code className="font-mono">{u.errCode}</code>
+                <span className="text-mut"> @ </span>
+                {u.kpName}
+                <span className="num ml-2">×{u.count}</span>
+                <span className="text-mut ml-2 text-[11.5px]">
+                  {u.sample
+                    .map((s) => `batch ${s.batchId} 第 ${s.qno} 题`)
+                    .join("、")}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {/* ── 未挂桥明细：不神隐 ─────────────────────────────────────────── */}
+      {cov.unmatched.length > 0 ? (
+        <details className="text-[12px]">
+          <summary className="text-mut cursor-pointer">
+            未挂桥的 {cov.unmatched.length} 个批次（学情算不到考点上，但看得见）
+          </summary>
+          <ul className="mt-1 space-y-0.5">
+            {cov.unmatched.map((u) => (
+              <li key={u.batchId}>
+                <span className="font-mono">batch {u.batchId}</span>
+                <span className="text-mut">
+                  {" "}
+                  {u.student ?? "?"} 第 {u.day ?? "?"} 次
+                  {u.auto ? `（${u.auto}）` : ""} —— {u.why}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
+    </div>
+  );
+}
+
 export default async function KpPage({
   params,
   searchParams,
@@ -134,6 +319,23 @@ export default async function KpPage({
 
   const k = card.kp;
   const 版本数 = new Set(card.placements.map((p) => p.edition)).size;
+
+  // 🔴 群错误率读的是圣域（只读）：连不上就如实说一句，**不让整页 500**。
+  //    KG 治理页的主职责是考点本身，学情是加挂的一节 —— 加挂的东西不该拖垮主页面。
+  let 群: {
+    rate: KpGroupErrorRateResult;
+    dist: CauseDistributionResult;
+  } | null = null;
+  let 群失败 = "";
+  try {
+    const [rate, dist] = await Promise.all([
+      kpGroupErrorRate({ kpIds: [k.id] }),
+      causeDistribution({ kpId: k.id }),
+    ]);
+    群 = { rate, dist };
+  } catch (e) {
+    群失败 = String(e);
+  }
 
   return (
     <>
@@ -195,6 +397,31 @@ export default async function KpPage({
           }
         >
           <Placements card={card} />
+        </Panel>
+      </div>
+
+      {/* ── 群错误率（AI:PRD-006 · 006-B / 验收 6-1）───────────────────── */}
+      <div className="mt-3.5">
+        <Panel
+          title="群错误率（批改线回流 · 只读）"
+          right={
+            群 ? (
+              <Chip tone={群.rate.coverage.matched > 0 ? "g" : "a"}>
+                覆盖 {群.rate.coverage.matched}/{群.rate.coverage.total}
+              </Chip>
+            ) : undefined
+          }
+        >
+          {群 ? (
+            <GroupStats kpId={k.id} rate={群.rate} dist={群.dist} />
+          ) : (
+            <Notice tone="err">
+              圣域（审核.db）只读连接开不了，群错误率这一节算不出来 ——
+              页面其余部分不受影响。
+              {"\n"}
+              {群失败}
+            </Notice>
+          )}
         </Panel>
       </div>
 
