@@ -27,6 +27,7 @@ import {
   newId,
   nowLocalISO,
   segmentTexts,
+  stripHtmlForSeg,
   withCoreWrite,
   writeQuestionFts,
   type CoreDbHandle,
@@ -120,6 +121,71 @@ afterAll(() => {
       }
     }
   }
+});
+
+// ---------------------------------------------------------------------------
+// ⓪ 分词喂料先剥 HTML（003-E4；G-3 群卷路观察 / 备料 R2 预警成真）
+// ---------------------------------------------------------------------------
+
+describe("⓪ stripHtmlForSeg：剥版面标记，但不许吃数学不等号", () => {
+  it("绿：span/div 样式串整个消失，题目实义词一个不少", () => {
+    const 填空题 =
+      '绝对值不大于 4.5 的整数有 <span style="display:inline-block;' +
+      'border-bottom:1px solid #000;min-width:3.4em"></span> 个。';
+    const 剥 = stripHtmlForSeg(填空题);
+    // 标记词一个都不许剩（它们曾经真的进过 question.stem_plain）
+    for (const w of [
+      "span",
+      "style",
+      "display",
+      "inline-block",
+      "border-bottom",
+      "solid",
+      "min-width",
+    ]) {
+      expect(剥).not.toContain(w);
+    }
+    // 题目实义词与数字一个不少
+    for (const w of ["绝对值", "不大于", "4.5", "整数", "个"]) {
+      expect(剥).toContain(w);
+    }
+
+    // 选择题的选项栅格：标签没了，选项正文（A/B/C/D 与各自的值）必须留着
+    const 选择题 =
+      '互为相反数，则（　　）<div style="display:grid;grid-template-columns:' +
+      'repeat(2,1fr)"><span>A. a=-5</span><span>B. b=6</span></div>';
+    const 剥2 = stripHtmlForSeg(选择题);
+    expect(剥2).not.toMatch(/div|grid|repeat|span/);
+    for (const w of ["A. a=-5", "B. b=6", "互为相反数"]) {
+      expect(剥2).toContain(w);
+    }
+  });
+
+  it("🔴 红线：数学裸 < > 一个字都不许被吃（核查员方法论坑①）", () => {
+    // 这三条都是真库/真源里的题面，`<[^>]*>` 通杀会把整段吞掉
+    for (const 题面 of [
+      "有理数 a < 0，b < 0，c > 0，且 |a|<|c|<|b|。化简：|a+c|−|b+c|+|a−b|。",
+      "（用 < 或 > 或 = 号填空）",
+      "1 000 < 50 653 < 1 000 000",
+      "有理数 a、b、c 满足 a<0<b<c，且 |b|<|a|<|c|。",
+    ]) {
+      expect(stripHtmlForSeg(题面)).toBe(题面);
+    }
+
+    // 反证：宽松剥法**会**吃字 —— 证明上面那条断言不是白测的
+    expect("有理数 a < 0，c > 0".replace(/<[^>]*>/g, " ")).not.toBe(
+      "有理数 a < 0，c > 0",
+    );
+  });
+
+  it("实体解码：&lt; 变回字面 <，且**不会**被二次当成标签剥掉", () => {
+    expect(stripHtmlForSeg("a &lt; 0 且 b &gt; 0")).toBe("a < 0 且 b > 0");
+    expect(stripHtmlForSeg("甲 &amp; 乙")).toBe("甲 & 乙");
+    // 🔴 顺序钉死的理由：先解实体再剥标签的话，这段正文会整条消失
+    expect(stripHtmlForSeg("正文里写着 &lt;span&gt; 这个词")).toBe(
+      "正文里写着 <span> 这个词",
+    );
+  });
 });
 
 describe("① 预分词才查得动（方案甲的全部理由）", () => {

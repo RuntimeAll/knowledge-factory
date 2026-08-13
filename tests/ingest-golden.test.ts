@@ -146,6 +146,58 @@ afterAll(() => {
 });
 
 // ---------------------------------------------------------------------------
+// REG-C5（003-E4）：真库检索投影的两条**存量**红线
+// ---------------------------------------------------------------------------
+
+describe("REG-C5 真库检索投影干净（真库 · 只读）", () => {
+  it("🔴 全库 stem_plain / question_fts 里没有一个版面标记词", async () => {
+    // 群卷题面的填空线是 <span style="…border-bottom…">、选项栅格是 <div style="display:grid…">，
+    // 曾经原样喂给 jieba ⇒ span/style/display/border 成了检索词（G-3 群卷路观察）。
+    // 转换层已加 stripHtmlForSeg，存量已由 scripts/rederive-stemplain-20260813.ts 重派生。
+    // 这一条守的是**存量不再退回去**：新料由闸与管道守，老料由这里守。
+    const 标记词 = [
+      "span",
+      "style",
+      "display",
+      "border",
+      "bottom",
+      "inline",
+      "block",
+      "div",
+      "grid",
+      "solid",
+    ];
+    const 脏 = 标记词
+      .map(
+        (w) =>
+          `(SELECT COUNT(*) FROM question WHERE ' '||lower(stem_plain)||' ' LIKE '% ${w} %')`,
+      )
+      .concat(
+        标记词.map(
+          (w) =>
+            `(SELECT COUNT(*) FROM question_fts WHERE ' '||lower(stem_plain)||' ' LIKE '% ${w} %'` +
+            ` OR ' '||lower(answer)||' ' LIKE '% ${w} %'` +
+            ` OR ' '||lower(analysis)||' ' LIKE '% ${w} %')`,
+        ),
+      )
+      .join(" + ");
+    const r = await 真库.client.execute(`SELECT ${脏} AS c`);
+    expect(Number((r.rows[0] as unknown as { c: number }).c)).toBe(0);
+  });
+
+  it("🔴 全库正本 stem/answer/analysis 里没有内部占位串『［图』", async () => {
+    // 契约 §2.4：占位串是备料层的红旗，图的信息由 question_figure 承载。
+    // 闸⑥ 的 STEM_INTERNAL_MARKER 守新料；这一条守存量（q_…HHYS 那道配图重投题曾漏进来）。
+    const r = await 真库.client.execute(
+      `SELECT COUNT(*) AS c FROM question
+        WHERE stem LIKE '%［图%' OR answer LIKE '%［图%' OR analysis LIKE '%［图%'
+           OR stem LIKE '%[图%'  OR answer LIKE '%[图%'  OR analysis LIKE '%[图%'`,
+    );
+    expect(Number((r.rows[0] as unknown as { c: number }).c)).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // REG-C2
 // ---------------------------------------------------------------------------
 

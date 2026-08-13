@@ -63,7 +63,7 @@ import {
 import { type AuditActor, sha256Hex, stableStringify } from "./audit";
 import { backupNow, dbUrlToPath, type BackupResult } from "./backup";
 import { getCoreDb, type CoreDbHandle, type CoreTx } from "./db";
-import { writeQuestionFts } from "./fts";
+import { stripHtmlForSeg, writeQuestionFts } from "./fts";
 import { runGates, type Gate, type GateFail, type GateReport } from "./gates";
 import {
   checkContract,
@@ -248,6 +248,11 @@ function 变换(item: KbIngestItem): ItemDerived {
  * 🔴 写侧一律 `mode:'search'`（总指挥拍板 2026-08-12）——长词再切、多留 token；
  *    查侧用 exact。这个方向不能反：查询 token 是索引 token 的子集才只会多命中不会漏
  *    （反过来就是静默查不全，见 fts.ts 文件头的两条召回缺口）。
+ *
+ * 🔴 喂料前先 {@link stripHtmlForSeg} 剥版面标记（003-E4）：群卷题面的填空线是
+ *    `<span style="…border-bottom…">`、选项栅格是 `<div style="display:grid…">`，
+ *    整串喂给 jieba 就把 `span`/`style`/`display`/`border` 变成了检索词。
+ *    剥的是**喂料**，正本 `question.stem` 一个字不动（版面标记是源的一部分）。
  */
 async function 分词(
   payload: KbIngestPayload,
@@ -256,10 +261,11 @@ async function 分词(
 ): Promise<void> {
   const inputs: { id: string; text: string }[] = [];
   payload.items.forEach((item, i) => {
-    inputs.push({ id: `s${i}`, text: derived[i]!.stemClean });
-    if (item.answer !== null) inputs.push({ id: `a${i}`, text: item.answer });
+    inputs.push({ id: `s${i}`, text: stripHtmlForSeg(derived[i]!.stemClean) });
+    if (item.answer !== null)
+      inputs.push({ id: `a${i}`, text: stripHtmlForSeg(item.answer) });
     if (item.analysis !== null)
-      inputs.push({ id: `n${i}`, text: item.analysis });
+      inputs.push({ id: `n${i}`, text: stripHtmlForSeg(item.analysis) });
   });
   const out = await segmentTexts(inputs, { ...opts, mode: "search" });
   const byId = new Map(out.map((r) => [r.id, r.segmented]));
