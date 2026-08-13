@@ -132,6 +132,13 @@
 
 ## 3. 与 punch-ingest/v1 的字段映射
 
+> 🔴 **这张表已有机读实现**（AI:PRD-005 · 005-B）：`src/core/convert-punch.ts` 的
+> `convertPunchIngest()`，吃三形态（对象根 / 数组根 / 群卷题单.json）产 kb-ingest/v1 payload；
+> 产线接线的唯一入口 = `pnpm kb:submit <json路径> [--dry-run] [--assert-dedup]`。
+> **改这张表 = 改那个函数**，别让第二份映射长出来。
+> 转换层只做「搬运 + 有据可查的折算」：题面一个字不改，认不出的字段如实进报告（不静默丢），
+> 每一次归一（口算→计算 / 册级考点下沉 / 来源挂标签）都在返回的 `normalizations` 里留一行。
+
 | punch-ingest/v1 | kb-ingest/v1 | 说明 |
 |---|---|---|
 | `契约` | `contract` | 值从 `punch-ingest/v1` 换成 `kb-ingest/v1` |

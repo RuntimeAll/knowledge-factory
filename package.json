@@ -13,6 +13,7 @@
     "dev": "next dev --turbo",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,mdx}\" --cache",
     "format:write": "prettier --write \"**/*.{ts,tsx,js,jsx,mdx}\" --cache",
+    "kb:submit": "tsx --env-file=.env scripts/kb-submit.ts",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "preview": "next build && next start",

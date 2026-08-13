@@ -19,7 +19,8 @@
     REG-A2   审计链校验      audit-verify.ts 从创世行起整链重算
     REG-TEST 单测全量        vitest（全量基线）
     REG-B    KG 金标         tests/kg-golden.test.ts 单跑（B1~B4）
-    REG-C    录题管道        闸单测 + 管道端到端 + 金标重放 + 队列三链（C1~C4）
+    REG-C    录题+产线接入   闸单测 + 管道端到端 + 金标重放 + 队列三链（C1~C4）
+                             + 产线转换器 + SKU/模型链（C5~C6，AI:PRD-005）
     REG-D    检索            评测集不低于基线 + 命中来源标注 + FTS 注入安全（D1~D3）
     REG-A4   备份快照有效    backup-verify.ts 出新快照 + 独立只读复算
 
@@ -164,7 +165,7 @@ $gates = @(
 
   [pscustomobject]@{
     Id     = 'REG-TEST'
-    Name   = '单测全量（vitest，266 例基线）'
+    Name   = '单测全量（vitest，305 例基线）'
     Action = {
       & pnpm test | Write-Host
       if ($LASTEXITCODE -ne 0) { return "vitest 退出码 $LASTEXITCODE（有用例挂了）" }
@@ -189,16 +190,20 @@ $gates = @(
 
   [pscustomobject]@{
     Id     = 'REG-C'
-    Name   = '录题管道（C1 逐闸红绿 / C2 金标重放 / C3 题干图必审 / C4 实算+逐行恒等）'
+    Name   = '录题管道 + 产线接入（C1 逐闸红绿 / C2 金标重放 / C3 题干图必审 / C4 实算+逐行恒等 / C5 转换器 / C6 SKU·模型链）'
     Action = {
-      # 🔴 四个文件一起跑才叫 C 组：
+      # 🔴 六个文件一起跑才叫 C 组：
       #    ingest-gates  = C1 逐闸一红一绿（十道闸各自的判定）
       #    ingest        = 管道端到端（页页有账 / dryRun 零写 / 隔离 / 对账）
       #    ingest-golden = C2 金标重放 + C3 题干图必审 + C4 实算与逐行恒等
       #    queue-flows   = 图审/草稿/隔离三条处置链（红灯题的去处，和 C3 是同一条链的下半截）
+      #    🆕 AI:PRD-005 · 005-B（这两条与录题是同一条链的上下游，跟着 C 组一起跑）：
+      #    convert-punch = C5 产线三形态 → kb-ingest/v1（搬运/归一/未知字段透传）
+      #    sku-model     = C6 SKU 原语 + 幽灵映射防线 + 模型 propose→activate
+      #                    （含「未 active 模型的题被闸② 拦下」的联通验证 —— 它同时是闸②的活性探针）
       # 🔴 C2/C4 打**真库**且零写（dryRun）：金标验的就是「库现在这个状态下这份料被怎么判」，
       #    所以库被清空/重灌之后它会红 —— 红对了，那说明库不是收卡时那个库。
-      & pnpm exec vitest run tests/ingest-gates.test.ts tests/ingest.test.ts tests/ingest-golden.test.ts tests/queue-flows.test.ts | Write-Host
+      & pnpm exec vitest run tests/ingest-gates.test.ts tests/ingest.test.ts tests/ingest-golden.test.ts tests/queue-flows.test.ts tests/convert-punch.test.ts tests/sku-model.test.ts | Write-Host
       if ($LASTEXITCODE -ne 0) {
         return "录题管道回归红了（哪条见上面输出）——闸的判定或管道行为漂了，先查是改对了还是改坏了，别顺手改基准把红旗按灭"
       }
