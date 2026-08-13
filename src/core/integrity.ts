@@ -32,6 +32,7 @@ import { dirname, join, posix, relative, resolve } from "node:path";
 
 import { dbUrlToPath } from "./backup";
 import { getCoreDb, type CoreDbHandle } from "./db";
+import { bridgeBatches } from "./gradebridge";
 import {
   getGradingDb,
   gradingSchemaHash,
@@ -752,104 +753,61 @@ async function checkC4(
 // C5 · 挂桥覆盖率反向明细（warn，不红拦）
 // ---------------------------------------------------------------------------
 
+/**
+ * 🔴 桥逻辑已抽成公共层 `core/gradebridge.ts`（AI:PRD-006 · 006-B）：
+ *    对账 C5 与读侧三视图（群错误率 / 已做题集 / 错因分布）**共用同一份桥**。
+ *    在此之前这里有一份内联实现 —— 两份桥迟早各自漂一点，而「对账说挂上了、
+ *    报告说没挂上」这种矛盾是最难查的一类（判据不一致，两边都自称对）。
+ *    判据、明细文案、stats 三样一个字没动，只是搬了家。
+ */
 async function checkC5(
-  h: CoreDbHandle,
+  _h: CoreDbHandle,
   gradingUrl: string | undefined,
 ): Promise<CheckResult> {
   const details: string[] = [];
-  let grading;
+  const NAME = "挂桥覆盖率反向明细（批次→slots/补录桥→grading_task_map）";
+  let report;
   try {
-    grading = await getGradingDb(gradingUrl);
+    report = await bridgeBatches({ gradingUrl });
   } catch (e) {
     return {
       id: "C5",
-      name: "挂桥覆盖率反向明细（批次→slots/补录桥→grading_task_map）",
+      name: NAME,
       ok: false,
       level: "warn",
       details: [`圣域只读连接开不了，覆盖率算不了：${String(e)}`],
     };
   }
 
-  const batches = grading.query<{
-    id: number;
-    student: string | null;
-    day: number | null;
-  }>("SELECT id, student, day FROM batches ORDER BY id");
-  const slots = grading.query<{
-    task_id: number | null;
-    student: string | null;
-    day: number | null;
-  }>("SELECT task_id, student, day FROM slots");
-
-  const mapped = new Set(
-    (
-      await q<{ task_id: number }>(h, "SELECT task_id FROM grading_task_map")
-    ).map((r) => Number(r.task_id)),
+  const unmatched = report.unmatched.map(
+    (b) =>
+      `batch_id=${b.batchId} student=${b.student ?? "?"} day=${b.day ?? "?"}` +
+      `（${b.why ?? "原因不明"}）`,
   );
-  const linked = new Map(
-    (
-      await q<{ batch_id: number; task_id: number }>(
-        h,
-        "SELECT batch_id, task_id FROM grading_batch_link",
-      )
-    ).map((r) => [Number(r.batch_id), Number(r.task_id)]),
-  );
-  // 桥键 = (student, day)：slots.day 是该生自己的打卡序号（收卷.py 与任务解耦的设计）
-  const slotKey = new Map<string, number>();
-  for (const s of slots) {
-    if (s.task_id === null) continue;
-    slotKey.set(`${s.student ?? ""}\u0000${s.day ?? ""}`, Number(s.task_id));
-  }
-
-  const unmatched: string[] = [];
-  let matched = 0;
-  for (const b of batches) {
-    const viaSlot = slotKey.get(`${b.student ?? ""}\u0000${b.day ?? ""}`);
-    const viaLink = linked.get(Number(b.id));
-    const taskId =
-      viaSlot !== undefined && mapped.has(viaSlot)
-        ? viaSlot
-        : viaLink !== undefined && mapped.has(viaLink)
-          ? viaLink
-          : null;
-    if (taskId === null) {
-      unmatched.push(
-        `batch_id=${b.id} student=${b.student ?? "?"} day=${b.day ?? "?"}` +
-          (viaSlot !== undefined
-            ? `（slots→task_id=${viaSlot}，但该 task 未登记 grading_task_map）`
-            : viaLink !== undefined
-              ? `（补录桥→task_id=${viaLink}，但该 task 未登记 grading_task_map）`
-              : "（slots 与补录桥两路都查不到）"),
-      );
-    } else matched += 1;
-  }
 
   if (unmatched.length > 0) {
     details.push(
-      `挂不上桥的批次 ${unmatched.length}/${batches.length}【warn·不红拦】——` +
+      `挂不上桥的批次 ${unmatched.length}/${report.total}【warn·不红拦】——` +
         "这些批次的学情算不到考点上（M1：不登记的任务=学情算不到考点，但明细里看得见，不神隐）。" +
         "处置：给对应任务登记 grading_task_map，或用 grading_batch_link 人工补录。",
     );
     for (const line of unmatched.slice(0, 20)) details.push(`  · ${line}`);
     if (unmatched.length > 20)
       details.push(`  · …还有 ${unmatched.length - 20} 条`);
-  } else if (batches.length === 0) {
+  } else if (report.total === 0) {
     details.push("圣域侧还没有批次 —— 覆盖率无从谈起（绿）");
   }
 
   return {
     id: "C5",
-    name: "挂桥覆盖率反向明细（批次→slots/补录桥→grading_task_map）",
+    name: NAME,
     ok: unmatched.length === 0,
     level: "warn",
     details,
     stats: {
-      matched,
-      total: batches.length,
-      覆盖率:
-        batches.length === 0
-          ? "n/a"
-          : `${((matched / batches.length) * 100).toFixed(1)}%`,
+      matched: report.matched,
+      total: report.total,
+      覆盖率: report.coverage,
     },
   };
 }
