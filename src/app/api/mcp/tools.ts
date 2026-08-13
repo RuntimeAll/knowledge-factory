@@ -6,6 +6,7 @@
  *   · 两个检索工具 search_questions / get_question（AI:PRD-004 · 004-B）
  *   · 五个产线工具 register_sku / map_grading_task / propose_model /
  *     check_duplicate / find_similar（AI:PRD-005 · 005-B）
+ *   · 两个学情工具 student_view / group_kp_stats（AI:PRD-006 · 006-B，🔴 只读）
  *
  * 为什么和 route.ts 分家：route.ts 是「注册表」，只负责把工具挂到 mcp-handler 上；
  * 真正的入参 schema、错误分类、返回外壳全在这儿 —— 这样单测能直接调函数，
@@ -44,15 +45,18 @@ import {
   addSkuItems,
   assertNoSoldDuplicates,
   backupNow,
+  causeDistribution,
   findSimilarQuestions,
   getIngestBatch,
   getQuestion,
   getSku,
+  getStudentView,
   health,
   ingestPayloadSchema,
   integrityCheck,
   itemReds,
   kpContext,
+  kpGroupErrorRate,
   mapGradingTask,
   matchKeyOfStem,
   proposeItemSchema,
@@ -66,6 +70,7 @@ import {
   searchQuestions,
   sourceDocSchema,
   type BackupResult,
+  type CauseDistributionResult,
   type DupHit,
   type HealthReport,
   type IngestBatchRecord,
@@ -73,6 +78,7 @@ import {
   type IntegrityReport,
   type KpCandidate,
   type KpContextCard,
+  type KpGroupErrorRateResult,
   type MapGradingTaskResult,
   type PrecheckRed,
   type ProposeModelResult,
@@ -84,6 +90,7 @@ import {
   type SimilarResult,
   type SkuCard,
   type SoldSimilar,
+  type StudentViewResult,
 } from "~/core";
 
 // ---------------------------------------------------------------------------
@@ -135,7 +142,9 @@ export type ToolName =
   | "map_grading_task"
   | "propose_model"
   | "check_duplicate"
-  | "find_similar";
+  | "find_similar"
+  | "student_view"
+  | "group_kp_stats";
 
 export const TOOL_NAMES: readonly ToolName[] = [
   "health",
@@ -153,6 +162,8 @@ export const TOOL_NAMES: readonly ToolName[] = [
   "propose_model",
   "check_duplicate",
   "find_similar",
+  "student_view",
+  "group_kp_stats",
 ];
 
 /**
@@ -471,6 +482,40 @@ export const findSimilarInput = z.object({
     .describe("回几条，默认 10。"),
 });
 
+// ── AI:PRD-006 · 006-B 学情两工具（🔴 只读） ────────────────────────────────
+
+export const studentViewInput = z.object({
+  code: z
+    .string()
+    .trim()
+    .min(1)
+    .describe(
+      "学员**代号**（与批改线 batches.student/slots.student 同口径：'小崽子' 这种）。" +
+        "🔴 不是真名 —— 本产品任何一处都不落真名，传真名一定查不到。",
+    ),
+  line: z
+    .string()
+    .trim()
+    .min(1)
+    .optional()
+    .describe(
+      "只看某条线（tasks.line，如 '七上混合运算'）。🔴 传了它，未挂桥的批次会被一起滤掉（它们没有线名），覆盖口径会失真——要看全量别传。",
+    ),
+});
+
+export const groupKpStatsInput = z.object({
+  kp_ids: z
+    .array(z.string().trim().min(1))
+    .optional()
+    .describe("只看这些考点（id 来自 resolve_kp）。不传 = 全部有数据的考点。"),
+  line: z
+    .string()
+    .trim()
+    .min(1)
+    .optional()
+    .describe("只看某条线（tasks.line）。同上：会把未挂桥批次一起滤掉。"),
+});
+
 export type HealthArgs = z.infer<typeof healthInput>;
 export type IntegrityCheckArgs = z.infer<typeof integrityCheckInput>;
 export type BackupNowArgs = z.infer<typeof backupNowInput>;
@@ -486,6 +531,8 @@ export type MapGradingTaskArgs = z.infer<typeof mapGradingTaskInput>;
 export type ProposeModelArgs = z.infer<typeof proposeModelInput>;
 export type CheckDuplicateArgs = z.infer<typeof checkDuplicateInput>;
 export type FindSimilarArgs = z.infer<typeof findSimilarInput>;
+export type StudentViewArgs = z.infer<typeof studentViewInput>;
+export type GroupKpStatsArgs = z.infer<typeof groupKpStatsInput>;
 
 // ---------------------------------------------------------------------------
 // 错误分类
@@ -1114,6 +1161,62 @@ export function runFindSimilar(
   return run("find_similar", () =>
     findSimilarQuestions(args.question_id, { limit: args.limit }),
   );
+}
+
+// ---------------------------------------------------------------------------
+// 学情两工具（AI:PRD-006 · 006-B）—— 🔴 全程只读（圣域 mode=ro + 本库 SELECT）
+// ---------------------------------------------------------------------------
+
+/**
+ * 一个学员的学情数据包 —— **学情报告的取数入口**。
+ *
+ * 🔴 出报告的流程没变（仍由「学情报告分析」skill 出件、英雄卡结论仍是人/agent 写的），
+ *    换掉的是**数据从哪来**：题单考点、逐题判定、错因归因、已做题集全部从库里现算，
+ *    每条结论都能回指到 batch_id / qno / kp_id。
+ */
+export function runStudentView(
+  args: StudentViewArgs,
+): Promise<ToolPayload<StudentViewResult>> {
+  return run("student_view", () =>
+    getStudentView(args.code, { line: args.line }),
+  );
+}
+
+export interface GroupKpStatsData {
+  /** 按考点的群错误率（错题次/总题次/学生数） */
+  errorRate: KpGroupErrorRateResult;
+  /** 错因分布（三形态分列 + unmapped 红旗） */
+  causes: CauseDistributionResult;
+  /** 🔴 两份报告共用同一份覆盖口径，摆在顶层免得只看一半 */
+  coverage: KpGroupErrorRateResult["coverage"];
+  warnings: string[];
+}
+
+/**
+ * 考点群错误率 + 错因分布（合并回执）。
+ *
+ * 🔴 两件事一次给：只看错误率不看错因 = 知道哪儿弱不知道为什么弱；
+ *    只看错因不看覆盖口径 = 把 1 例当成 100%。
+ */
+export function runGroupKpStats(
+  args: GroupKpStatsArgs = {},
+): Promise<ToolPayload<GroupKpStatsData>> {
+  return run("group_kp_stats", async () => {
+    const errorRate = await kpGroupErrorRate({
+      kpIds: args.kp_ids,
+      line: args.line,
+    });
+    const causes = await causeDistribution({
+      kpId: args.kp_ids?.length === 1 ? args.kp_ids[0] : undefined,
+      line: args.line,
+    });
+    return {
+      errorRate,
+      causes,
+      coverage: errorRate.coverage,
+      warnings: [...new Set([...errorRate.warnings, ...causes.warnings])],
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------

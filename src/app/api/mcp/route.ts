@@ -22,7 +22,7 @@
  * 🔴 端口不写死在代码里：冒烟用 `pnpm dev -- -p 3210`，正式端口等调度中心分配。
  * 🔴 本文件只做注册；入参校验、错误契约、返回外壳全在 ./tools.ts。
  * 🔴 工具数随卡增长：001 三个系统工具 + 002 两个考点工具 + 003 三个录题工具
- *    + 004-B 两个检索工具 + 005-B 五个产线工具 = 15
+ *    + 004-B 两个检索工具 + 005-B 五个产线工具 + 006-B 两个学情工具 = 17
  *    （tests/mcp.test.ts 有一条名单断言当漂移闸）。
  * 🔴 不做鉴权（本地内网单人用；真要上外网再挂 withMcpAuth，那是另一张卡的事）。
  */
@@ -36,6 +36,7 @@ import {
   findSimilarInput,
   getIngestBatchInput,
   getQuestionInput,
+  groupKpStatsInput,
   healthInput,
   integrityCheckInput,
   kbIngestInput,
@@ -51,6 +52,7 @@ import {
   runFindSimilar,
   runGetIngestBatch,
   runGetQuestion,
+  runGroupKpStats,
   runHealth,
   runIntegrityCheck,
   runKbIngest,
@@ -61,7 +63,9 @@ import {
   runRegisterSku,
   runResolveKp,
   runSearchQuestions,
+  runStudentView,
   searchQuestionsInput,
+  studentViewInput,
   type ToolPayload,
 } from "./tools";
 
@@ -359,6 +363,54 @@ const handler = createMcpHandler(
         inputSchema: findSimilarInput,
       },
       async (args) => toResult(await runFindSimilar(args)),
+    );
+
+    // ── 学情两工具（AI:PRD-006 · 006-B）────────────────────────────────────
+
+    server.registerTool(
+      "student_view",
+      {
+        title: "一个学员的学情数据包（学情报告取数入口）",
+        description:
+          "🔴 **学情报告的取数入口**：出报告前先调它，报告里每条结论都能回指到 batch_id / qno / kp_id。" +
+          "把批改线的产出（判题 + 错因）经挂桥链落到考点上，一次给齐：" +
+          "roster 维度行 / 已做题集规模 / **逐批次（含未挂桥的，如实列出）** / 逐考点掌握 perKp / 错因汇总。" +
+          "🔴 code 是**学员代号**（'小崽子' 这种，与批改线同口径），不是真名。" +
+          "🔴 **题数口径**：batches[].score.total = 判定行数 − skip（漏抄整条摘掉），" +
+          "所以是 16/19 而不是 16/20；别拿 perKp 求和当分数（那是考点题次，随打标密度浮动）。" +
+          "🔴 perKp 逐字复现产线公式：**分母来自题单的考点挂载**（不是 error_kp），" +
+          "错因归位**不连坐**（一题挂 3 个考点只错 1 个，另外 2 个这题算对），" +
+          "且 `error_kp` 为 NULL（未记录，该题所挂考点全扣）与 `[]`（拒绝归因，一个都不扣）**语义不同、绝不合并**。" +
+          "返回 { ok, data:{ code, roster, done:{count,questionIds}, " +
+          "batches:[{batchId,day,matched,via,taskId,line,sheet,skuId,why,score:{ok,wrong,skip,total}}], " +
+          "perKp:[{kpId,kpName,ok,total,fallbackAll}], causes(=错因分布，三形态分列+unmapped 红旗), " +
+          "coverage:{matched,total,rate,unmatched[]}, rubric, warnings } }。" +
+          "🔴 **coverage 必看**：没挂上桥的批次分数照给、但算不到考点上；报告要用 perKp 就得说清这一点。" +
+          "🔴 本工具只交数据，**不写报告文案** —— 英雄卡结论仍由人/agent 写（来源 作答稿.json）。",
+        inputSchema: studentViewInput,
+      },
+      async (args) => toResult(await runStudentView(args)),
+    );
+
+    server.registerTool(
+      "group_kp_stats",
+      {
+        title: "考点群错误率 + 错因分布",
+        description:
+          "跨学员按**考点**说话：哪个考点错得多、错在什么原因上。" +
+          "errorRate = 逐考点 { 错题次 / 总题次 / 学生数 / 批次数 }（一题挂 N 个考点算 N 次题次）；" +
+          "causes = 错因分布，**三形态分列**：已翻译的归因(rows) / '[]' 判×拒绝归因(unattributed) / " +
+          "NULL 未记录(unrecorded)，另加口径③ 的抄写提醒单列(copyReminder)。" +
+          "🔴 **unmapped 是红旗不是噪声**：展开后 (考点, 码) 在 err_code_map 里查不到映射的，" +
+          "全部带样本 batch/qno 摆出来 —— 静默丢掉等于说这些错没发生过。处置 = 补映射。" +
+          "🔴 **coverage 必看**（matched/total + 未挂桥明细）：这是纯新增能力，批改线没有对应实现、" +
+          "没有对数基准，唯一能自证的就是样本面说得清楚。样本极薄时别把 1 例算成 100%（看 sampleItems/sampleCodes）。" +
+          "🔴 口径三条（rubric 里原样带着）：空题=×计入错误率 / 订正对了算对（**「有码=错题」是错判据**）/ 抄错题面按所抄算。" +
+          "返回 { ok, data:{ errorRate:{rows,coverage,sampleItems,rubric,warnings}, " +
+          "causes:{rows,unattributed,unrecorded,copyReminder,unmapped,coverage,sampleCodes,rubric,warnings}, coverage, warnings } }。",
+        inputSchema: groupKpStatsInput,
+      },
+      async (args) => toResult(await runGroupKpStats(args)),
     );
   },
   {
