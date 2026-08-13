@@ -435,6 +435,31 @@ describe("④ RRF k=60：融合序可手算复现", () => {
     });
     expect(fused.map((x) => x.questionId)).toEqual(["q_aaa", "q_zzz"]);
   });
+
+  it("🔴 考点标签轴（004-C）当第三条轴融进来：字面+考点双中的排在只中一条的前面", () => {
+    const fused = rrfFuse({
+      // 字面：A 第 1、B 第 2
+      fts: [
+        { questionId: "q_A", rank: 1, score: -3.5 },
+        { questionId: "q_B", rank: 2, score: -2.1 },
+      ],
+      // 考点标签：B 第 1、C 第 2（没有分数，只有名次 —— RRF 只吃名次）
+      kp: [
+        { questionId: "q_B", rank: 1, kpIds: ["kp_x"] },
+        { questionId: "q_C", rank: 2, kpIds: ["kp_x", "kp_y"] },
+      ],
+    });
+
+    expect(fused.map((x) => x.questionId)).toEqual(["q_B", "q_A", "q_C"]);
+    expect(fused[0]!.rrfScore).toBeCloseTo(1 / 62 + 1 / 61, 6);
+    expect(fused[0]!.sources).toEqual({
+      fts: { rank: 2, score: -2.1 },
+      kp: { rank: 1, kpIds: ["kp_x"] },
+    });
+    // 只被考点轴召回的那条：没有 fts/vector 格，但 kpIds 说得出是被哪几个考点挂着的
+    expect(fused[2]!.sources.fts).toBeUndefined();
+    expect(fused[2]!.sources.kp).toEqual({ rank: 2, kpIds: ["kp_x", "kp_y"] });
+  });
 });
 
 describe.skipIf(!装了.ok)(`④b RRF 真查询：分数与名次自洽${跳过理由}`, () => {
@@ -673,6 +698,144 @@ describe.skipIf(!装了.ok)(`⑦ resolve_kp 第五路 knn-vote${跳过理由}`, 
     expect(r.knn.ran).toBe(false);
     expect(r.knn.skipped).toContain("knn:false");
     expect(r.candidates).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ⑨ kpAutoResolve：考点用词落靶成第四条召回轴（004-C）
+// ---------------------------------------------------------------------------
+
+describe("⑨ kpAutoResolve：「去绝对值」这类考点用词从此查得到题", () => {
+  let h: CoreDbHandle;
+
+  beforeAll(async () => {
+    h = await 造副本("kpauto");
+  });
+
+  it("🔴 红：默认关 —— 「去绝对值」四个字任何题面里都没有，纯字面必零命中", async () => {
+    const r = await searchQuestions(
+      { keywords: "去绝对值", limit: 20 },
+      { handle: h, metric: false },
+    );
+    expect(r.total).toBe(0);
+    expect(r.query.kpAutoResolve).toBe(false);
+    expect(r.query.kpAutoResolved).toEqual([]);
+    expect(r.axes.kpAuto.active).toBe(false);
+    // 硬过滤没问题（候选 60 道都在），是两条召回轴都没话说
+    expect(r.candidateCount).toBeGreaterThan(0);
+  });
+
+  it("🔴 绿：开了就落靶到「绝对值的化简与去号」，题按考点轴召回且带 sources.kp", async () => {
+    const kp = await 考点id(h, "绝对值的化简与去号");
+    const r = await searchQuestions(
+      { keywords: "去绝对值", kpAutoResolve: true, limit: 20 },
+      { handle: h, metric: false },
+    );
+
+    expect(r.query.kpAutoResolved).toEqual([
+      {
+        query: "去绝对值",
+        kpId: kp,
+        name: "绝对值的化简与去号",
+        via: "exact-alias",
+        aliasHit: "去绝对值",
+      },
+    ]);
+    expect(r.total).toBeGreaterThan(0);
+    expect(r.axes.kpAuto).toEqual({
+      active: true,
+      count: r.total,
+      kpIds: [kp],
+    });
+
+    // 🔴 落靶**不动硬过滤**：kpIds 仍是空的、候选集仍是全库
+    expect(r.query.kpIds).toEqual([]);
+    expect(r.candidateCount).toBe(
+      (await searchQuestions({ limit: 1 }, { handle: h, metric: false }))
+        .candidateCount,
+    );
+
+    r.hits.forEach((hit, i) => {
+      expect(hit.sources.kp?.rank).toBe(i + 1);
+      expect(hit.sources.kp?.kpIds).toContain(kp);
+      expect(hit.sources.sqlOnly).toBeUndefined();
+      // 每条命中都**真挂着**那个考点（不是猜的）
+      expect(hit.kps.map((k) => k.kpId)).toContain(kp);
+      // 单轴 ⇒ rrfScore 就是 1/(60+rank)
+      expect(hit.rrfScore).toBeCloseTo(1 / (RRF_K + i + 1), 6);
+    });
+  });
+
+  it("🔴🔴 落靶只加召回、绝不减：「立方根」的考点身上一道题都没挂，字面那 4 道必须原样还在", async () => {
+    // 这条是本设计的命根子。落靶若并进 kpIds（= 交集），候选集会被这个空考点
+    // 直接清零，4 道真题静默消失 —— 那比零命中坏得多，因为只有恰好知道
+    // 这 4 道题存在的人才发现得了。
+    const off = await searchQuestions(
+      { keywords: "立方根", limit: 20 },
+      { handle: h, metric: false },
+    );
+    const on = await searchQuestions(
+      { keywords: "立方根", kpAutoResolve: true, limit: 20 },
+      { handle: h, metric: false },
+    );
+
+    expect(off.total).toBeGreaterThan(0);
+    expect(on.query.kpAutoResolved.map((x) => x.name)).toEqual([
+      "立方根的概念与开立方运算",
+    ]);
+    // 落靶了，但那个考点身上零道题 ⇒ 该轴零召回
+    expect(on.axes.kpAuto.active).toBe(true);
+    expect(on.axes.kpAuto.count).toBe(0);
+    // 🔴 命中集与顺序**一字不差**
+    expect(on.total).toBe(off.total);
+    expect(on.hits.map((x) => x.questionId)).toEqual(
+      off.hits.map((x) => x.questionId),
+    );
+  });
+
+  it("多义词：『绝对值压轴』是四个考点的共用别名 —— 全部并入（any-of）", async () => {
+    const r = await searchQuestions(
+      { keywords: "绝对值压轴", kpAutoResolve: true, limit: 50 },
+      { handle: h, metric: false },
+    );
+    expect(r.query.kpAutoResolved.length).toBe(4);
+    expect(r.query.kpAutoResolved.every((x) => x.via === "exact-alias")).toBe(
+      true,
+    );
+    expect(r.axes.kpAuto.kpIds.length).toBe(4);
+
+    const 靶 = new Set(r.axes.kpAuto.kpIds);
+    expect(r.axes.kpAuto.count).toBeGreaterThan(0);
+    // 🔴 total 是**并集**：考点轴召回的 + 字面轴召回的（这个词分词后 OR 也能中几条）
+    expect(r.total).toBeGreaterThanOrEqual(r.axes.kpAuto.count);
+    // 命中任一即可：凡是考点轴给的，都真挂着这四个考点里的某一个
+    const 考点轴给的 = r.hits.filter((x) => x.sources.kp);
+    expect(考点轴给的.length).toBeGreaterThan(0);
+    for (const hit of 考点轴给的) {
+      expect(hit.kps.some((k) => 靶.has(k.kpId))).toBe(true);
+      expect(hit.sources.kp!.kpIds.every((id) => 靶.has(id))).toBe(true);
+    }
+    // 其余条目必然是另一条轴给的（不许有"哪条轴都没说过话"的命中混进来）
+    for (const hit of r.hits) {
+      expect(Boolean(hit.sources.kp ?? hit.sources.fts)).toBe(true);
+      expect(hit.sources.sqlOnly).toBeUndefined();
+    }
+  });
+
+  it("🔴 只认 confidence=1.0：『化简』最高只到 0.9（前缀）⇒ 不落靶，结果与关掉时一致", async () => {
+    const off = await searchQuestions(
+      { keywords: "化简", limit: 20 },
+      { handle: h, metric: false },
+    );
+    const on = await searchQuestions(
+      { keywords: "化简", kpAutoResolve: true, limit: 20 },
+      { handle: h, metric: false },
+    );
+    expect(on.query.kpAutoResolved).toEqual([]);
+    expect(on.axes.kpAuto.active).toBe(false);
+    expect(on.hits.map((x) => x.questionId)).toEqual(
+      off.hits.map((x) => x.questionId),
+    );
   });
 });
 
