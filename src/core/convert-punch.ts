@@ -286,6 +286,24 @@ function 样本(v: unknown): string {
   return t.length > 80 ? `${t.slice(0, 80)}…` : t;
 }
 
+/**
+ * kpMap 查表：产线说法 → 词表 ref（见 {@link ConvertOptions.kpMap}）。
+ * 🔴 表里没有的**原样返回**，交给闸③去判 —— 映射表只解决「叫法对不上」，不代替闸。
+ */
+function 映射考点(ctx: 搬运上下文, refs: string[]): string[] {
+  const m = ctx.opts.kpMap;
+  if (!m) return refs;
+  return refs.map((ref) => {
+    const hit = m[ref];
+    if (hit === undefined || hit === ref) return ref;
+    ctx.normalizations.add(
+      `考点 ref 经 kpMap 显式映射：「${ref}」→「${hit}」` +
+        "（产线说法在词表里歧义/不是考点名/为空时的唯一正当出路；映射值仍要过闸③精确匹配）",
+    );
+    return hit;
+  });
+}
+
 /** 收未知键（🔴 纪律②的实现） */
 function 收未知(
   obj: 对象,
@@ -498,6 +516,9 @@ function 搬一册(
         `题级/册级都没有考点，用外面给的兜底考点：${kpRefs.join("、")}`,
       );
     }
+    // 🔴 册路与题单路同一张 kpMap：册的「模块标题」与群卷的 anchor 本来就是同一批说法
+    //    （群卷脚本 import 原册 qbank.py），两处走不同的表迟早分家。
+    kpRefs = 映射考点(ctx, kpRefs);
     if (kpRefs.length === 0) 无考点.push(seq);
 
     const tags: string[] = [];
