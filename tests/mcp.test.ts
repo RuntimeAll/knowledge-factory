@@ -217,6 +217,8 @@ describe("MCP 壳 · 注册表", () => {
     expect(Object.keys(sv?.inputSchema?.properties ?? {})).toEqual([
       "code",
       "line",
+      // 🔴 006-C 加：学情报告一天一份，不按批次筛就把好几天并成一行 perKp
+      "batch_id",
     ]);
     expect(sv?.inputSchema?.required).toEqual(["code"]);
     const gk = tools.find((t) => t.name === "group_kp_stats");
@@ -521,6 +523,27 @@ describe("MCP 壳 · 学情两工具（AI:PRD-006 · 006-B）", () => {
     expect(r.data.rubric.join("\n")).toMatch(/空题算失分/);
   });
 
+  it("🔴 student_view：batch_id 筛出「那一天」（不筛就把好几天并成一行 perKp）", async () => {
+    const 全 = await runStudentView({ code: "小崽子" });
+    expect(全.ok).toBe(true);
+    if (!全.ok) return;
+    const 挂上的 = 全.data.batches.filter((b) => b.matched);
+    expect(挂上的.length, "小崽子该有不止一天挂上桥").toBeGreaterThan(1);
+
+    const 一天 = await runStudentView({ code: "小崽子", batch_id: 10 });
+    expect(一天.ok).toBe(true);
+    if (!一天.ok) return;
+    expect(一天.data.batches.map((b) => b.batchId)).toEqual([10]);
+    // 🔴 汇总口径的 total 一定 ≥ 单天口径（并起来只会更大）
+    const 单天分母 = 一天.data.perKp.reduce((s, k) => s + k.total, 0);
+    const 汇总分母 = 全.data.perKp.reduce((s, k) => s + k.total, 0);
+    expect(单天分母).toBe(19); // batch10 = 20 题 − 1 漏抄
+    expect(汇总分母).toBeGreaterThan(单天分母);
+    // 单批口径要说出来，别被当成覆盖率
+    expect(一天.data.coverage.total).toBe(1);
+    expect(一天.data.warnings.join("\n")).toMatch(/单批口径/);
+  });
+
   it("student_view：查无此代号 ⇒ 回空数据包而不是报错（如实说「没有」）", async () => {
     const r = await runStudentView({ code: "查无此人代号" });
     expect(r.ok).toBe(true);
@@ -540,10 +563,16 @@ describe("MCP 壳 · 学情两工具（AI:PRD-006 · 006-B）", () => {
     for (const row of r.data.errorRate.rows) {
       expect(row.wrong).toBeLessThanOrEqual(row.total);
     }
-    // 🔴 三形态分列 + unmapped：错因域还没灌种子时，码全在 unmapped 里（不是消失了）
+    // 🔴 三形态分列 + unmapped 的恒等式：**不管种子灌没灌**，展开的码次一个都不许丢。
+    //    006-C 灌完种子后 unmapped 应为空、rows 非空；灌之前正相反。这条对两种状态都成立。
     expect(
       r.data.causes.rows.length + r.data.causes.unmapped.length,
     ).toBeGreaterThan(0);
+    for (const u of r.data.causes.unmapped) {
+      // 万一还有没铺的，它必须指得回去（红旗不许是个光秃秃的数）
+      expect(u.sample.length).toBeGreaterThan(0);
+      expect(u.kpName).not.toBe("");
+    }
     expect(r.data.causes.sampleCodes).toBe(
       r.data.causes.rows.reduce((s, x) => s + x.count, 0) +
         r.data.causes.unmapped.reduce((s, x) => s + x.count, 0),

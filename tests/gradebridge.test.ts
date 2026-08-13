@@ -33,6 +33,7 @@ import {
   createErrorCause,
   fileUrlToPath,
   getCause,
+  getCoreDb,
   getStudentView,
   integrityCheck,
   kpGroupErrorRate,
@@ -61,10 +62,20 @@ interface Fixture {
   }[];
   unmatchedBatchIds: number[];
   perKp: Record<string, Record<string, number>>;
+  分子: Record<string, Record<string, number[] | string>>;
   三形态: {
     coded: { batchId: number; qno: number; errorKp: string[] }[];
     unattributed: { batchId: number; qno: number }[];
     unrecordedInBridged: number;
+  };
+  错因映射: {
+    errorCause: number;
+    errCodeMap: number;
+    kpError: number;
+    causeExample: number;
+    roster: number;
+    unmappedInBridged: number;
+    distMapRows: { kp: string; cause: string }[];
   };
 }
 
@@ -135,8 +146,8 @@ afterAll(() => {
 
 // ---------------------------------------------------------------------------
 
-describe("REG-F1 · 挂桥对数快照（三批次与基准一致，新批次只增不改旧）", () => {
-  it("三条已挂桥的批次逐项对得上基准", async () => {
+describe("REG-F1 · 挂桥对数快照（挂上桥的批次与基准一致，新批次只增不改旧）", () => {
+  it("已挂桥的批次逐项对得上基准", async () => {
     const r = await bridgeBatches();
 
     // 🔴 total 不钉死：批改线每天都在产生新批次。钉的是「旧的这几条结果不变」。
@@ -153,7 +164,8 @@ describe("REG-F1 · 挂桥对数快照（三批次与基准一致，新批次只
       expect(got.matched, `batch ${期望.batchId} 应该挂得上桥`).toBe(true);
       expect(got.student).toBe(期望.student);
       expect(got.day).toBe(期望.day);
-      // 🔴 桥键 = slots(student, day)：这三条走的都是 slots 主路，不是人工补录桥
+      // 🔴 桥键 = slots(student, day) 是主路；batch 24 走的是第二条路 via='link'
+      //    （006-C 人工补录，证据=题面逐位 20/20 全等）。两路都得如实标出来。
       expect(got.via).toBe(期望.via);
       expect(got.taskId).toBe(期望.taskId);
       expect(got.task?.line).toBe(期望.line);
@@ -162,7 +174,7 @@ describe("REG-F1 · 挂桥对数快照（三批次与基准一致，新批次只
       expect(got.skuId, "挂上桥 = 一定有天卷 SKU").toBeTruthy();
     }
 
-    // 基准里那 7 条未挂桥的，仍然未挂桥（补录桥补上了要主动改基准，不许悄悄绿）
+    // 基准里那几条未挂桥的，仍然未挂桥（补录桥补上了要主动改基准，不许悄悄绿）
     const 未挂 = new Set(r.unmatched.map((b) => b.batchId));
     for (const id of 基准.unmatchedBatchIds) {
       expect(
@@ -206,6 +218,40 @@ describe("REG-F1 · 挂桥对数快照（三批次与基准一致，新批次只
     expect(got["去括号法则"]).toBe(基准.perKp["洛天熙"]!["去括号法则"]);
     // 🔴 库侧根本不存在「运算律简算 14/14」这一行 —— 同一个 dist 码在这条线上是别的错因
     expect(got["运算律简算"]).toBeUndefined();
+  });
+
+  it("🔴 6-2 分子：种子灌入后逐批 perKp 与已交付报告一致（batchId 筛的是那一天）", async () => {
+    // 🔴 学情报告一天一份。不传 batchId，小崽子的 d2 与 d4 会被并成一行 ——
+    //    那不是任何一天的报告。走库出某天的报告必须按批次筛。
+    const b10 = await getStudentView("小崽子", { batchId: 10 });
+    const 期10 = 基准.分子["batch10_小崽子"]!;
+    for (const r of b10.perKp) {
+      const e = 期10[r.kpName];
+      if (!Array.isArray(e)) continue;
+      expect([r.ok, r.total], `batch10 ${r.kpName}`).toEqual(e);
+    }
+    // 分母合计 = 非 skip 题数（题数口径 16/19 的 19，不是七码轴的码次 47）
+    expect(b10.perKp.reduce((s, r) => s + r.total, 0)).toBe(19);
+    // 🔴 扣分只扣被真归因的那两道；q19 判×但 error_kp='[]'（拒绝归因）一个考点都不扣
+    expect(
+      b10.perKp
+        .filter((r) => r.ok < r.total)
+        .map((r) => r.kpName)
+        .sort(),
+    ).toEqual(["多重括号的有理数运算", "有理数乘方的运算与符号判定"].sort());
+
+    const b14 = await getStudentView("洛天熙", { batchId: 14 });
+    const 期14 = 基准.分子["batch14_洛天熙"]!;
+    expect(b14.perKp.length).toBe(2);
+    for (const r of b14.perKp) {
+      expect([r.ok, r.total], `batch14 ${r.kpName}`).toEqual(期14[r.kpName]);
+    }
+    // 🔴 q1 判 √ 却带 dist 码：算对就是对，码只作诊断 —— 6/6 一分不扣
+    expect(b14.perKp.every((r) => r.ok === r.total)).toBe(true);
+
+    // 单批口径要说清楚，别被当成覆盖率
+    expect(b14.coverage.total).toBe(1);
+    expect(b14.warnings.join("\n")).toMatch(/单批口径/);
   });
 });
 
@@ -274,7 +320,10 @@ describe("REG-F2 · 错因三形态各归各位（🔴 '[]' 与 NULL 绝不合�
       kpId: "kp_01KZV2HDVDJY3KCMKTYYX43BAN", // 合并同类项
     });
     expect(整式.unattributed.count).toBe(0);
-    expect(整式.unmapped.map((u) => u.errCode)).toEqual(["dist"]);
+    // 🔴 006-C 灌种子后这一格已铺上映射：不再进 unmapped，而是翻译成整式侧的错因实体
+    expect(整式.unmapped).toEqual([]);
+    expect(整式.rows.map((r) => r.errCode)).toEqual(["dist"]);
+    expect(整式.rows[0]!.causeName).toMatch(/^合并同类项错误/);
 
     const 混合 = await causeDistribution({
       kpId: "kp_01KZV2HDVEMPJE1PP7WBGTJWBJ", // 有理数的混合运算
@@ -362,74 +411,102 @@ describe("REG-F4 · 只读物理验证（圣域红线的机器背书）", () => 
 });
 
 describe("🔴 unmapped 红旗 · 查不到映射的错不静默丢", () => {
-  it("错因域全空时：所有码都进 unmapped，且带样本指得回去", async () => {
-    const d = await causeDistribution({ handle: h });
-    expect(d.rows.length, "还没铺映射，翻译结果必然是空的").toBe(0);
+  it("🔴 006-C 灌种子后：挂桥面上的码全部翻译得出，unmapped 清零", async () => {
+    const d = await causeDistribution();
+    expect(d.rows.length, "种子灌完了，翻译结果不该是空的").toBeGreaterThan(0);
     expect(
-      d.unmapped.length,
-      "🔴 码没被丢掉 —— 全在 unmapped 里",
-    ).toBeGreaterThan(0);
-    for (const u of d.unmapped) {
-      expect(u.count).toBeGreaterThan(0);
-      expect(u.sample.length).toBeGreaterThan(0); // 指得回 batch/qno
-      expect(u.kpName).not.toBe("");
-    }
-    expect(d.warnings.join("\n")).toMatch(/查不到 err_code_map 映射/);
-    // 展开的码次 = 已翻译 + 未翻译，一个都没丢
+      d.unmapped,
+      "🔴 unmapped 非空 = 有 (考点,码) 没铺映射，去看它是谁（带样本 batch/qno）",
+    ).toEqual([]);
+    expect(d.unmapped.length).toBe(基准.错因映射.unmappedInBridged);
+    // 展开的码次 = 已翻译 + 未翻译，一个都没丢（这条恒等式与铺没铺映射无关）
     expect(d.sampleCodes).toBe(
       d.rows.reduce((s, r) => s + r.count, 0) +
         d.unmapped.reduce((s, r) => s + r.count, 0),
     );
+    // 每一行都指得回 (考点, 码, 错因)
+    for (const r of d.rows) {
+      expect(r.kpName).not.toBe("");
+      expect(r.causeName).not.toBe("");
+      expect(r.count).toBeGreaterThan(0);
+    }
   });
 
-  it("🔴 6-3 复合键实证：同一个 dist 码在两个考点下落成两个错因实体", async () => {
-    // batch14 q1 的 dist 落在「合并同类项」上；混合运算线的 dist 落在「有理数运算的简便技巧」上
-    const 整式 = await createErrorCause({
-      name: "合并同类项：只并同字母同指数项，系数带符号相加",
-      seedCode: "err_kp:v1.0.0/dist",
-      handle: h,
-      actor: "system",
-    });
-    const 混合 = await createErrorCause({
-      name: "运算律简算：分配律正逆用/提公因数/凑整不硬算",
-      seedCode: "err_kp:v1.0.0/dist",
-      handle: h,
-      actor: "system",
-    });
+  it("🔴 红旗活性探针：摘掉一条映射，那个码当场回到 unmapped（副本上做）", async () => {
+    // 🔴 「清零」本身证明不了红旗还活着 —— 一个永远返回空数组的实现也能通过上一条。
+    //    所以这里主动摘掉一条真映射，看红旗亮不亮，再挂回去。
+    const 前 = await causeDistribution({ handle: h });
+    expect(前.unmapped).toEqual([]);
+    const 目标 = 前.rows.find((r) => r.errCode === "dist")!;
+    expect(目标.kpName).toBe("合并同类项");
 
-    const a = await mapErrCode("合并同类项", "dist", 整式.causeId, {
-      by: "REG-F",
+    const 摘 = await unmapErrCode(目标.kpId, "dist", {
       handle: h,
       actor: "system",
     });
-    const b = await mapErrCode("有理数运算的简便技巧", "dist", 混合.causeId, {
-      by: "REG-F",
-      handle: h,
-      actor: "system",
-    });
-    // 🔴 同一个 err_code、不同 kp_id → 两条独立映射（复合键的全部意义）
-    expect(a.errCode).toBe(b.errCode);
-    expect(a.kpId).not.toBe(b.kpId);
-    expect(a.causeId).not.toBe(b.causeId);
+    expect(摘.errCode).toBe("dist");
 
-    // 铺上映射之后：batch14 q1 的 dist 从 unmapped 挪进 rows
-    const d = await causeDistribution({ handle: h });
-    expect(
-      d.unmapped.some((u) => u.errCode === "dist"),
-      "映射铺好了，dist 不该还在 unmapped 里",
-    ).toBe(false);
-    const row = d.rows.find((r) => r.errCode === "dist");
-    expect(row?.causeId).toBe(整式.causeId); // 落的是整式线那个实体
+    const 中 = await causeDistribution({ handle: h });
+    expect(中.rows.some((r) => r.errCode === "dist")).toBe(false);
+    const u = 中.unmapped.find((x) => x.errCode === "dist");
+    expect(u, "🔴 摘掉映射后这个码必须进 unmapped，不许静默丢").toBeTruthy();
+    expect(u!.kpName).toBe("合并同类项");
+    expect(u!.sample.length).toBeGreaterThan(0); // 指得回 batch/qno
+    expect(u!.sample[0]).toMatchObject({ batchId: 14, qno: 1 });
+    expect(中.warnings.join("\n")).toMatch(/查不到 err_code_map 映射/);
+
+    // 挂回去（副本用完即弃，但别给后面的用例留半截状态）
+    await mapErrCode(目标.kpId, "dist", 目标.causeId, {
+      by: "REG-F 探针复原",
+      handle: h,
+      actor: "system",
+    });
+    const 后 = await causeDistribution({ handle: h });
+    expect(后.unmapped).toEqual([]);
+  });
+
+  it("🔴 6-3 复合键实证：同一个 dist 码落成三个错因实体（读库里的真种子）", async () => {
+    // 🔴 读**真库**：这条验的是 006-C 灌进去的种子本身（含 mapped_by='human' 的落款），
+    //    不是副本上被前一条探针动过的状态。
+    const 真 = await getCoreDb();
+    const r = await 真.client.execute(
+      `SELECT k.name AS kp_name, c.id AS cause_id, c.name AS cause_name, c.seed_code, m.mapped_by
+         FROM err_code_map m
+         JOIN kp k ON k.id = m.kp_id
+         JOIN error_cause c ON c.id = m.cause_id
+        WHERE m.err_code = 'dist'
+        ORDER BY k.name`,
+    );
+    const rows = r.rows as unknown as Record<string, string>[];
+    // 基准里逐条列了哪个考点落哪个错因
+    expect(rows.length).toBe(基准.错因映射.distMapRows.length);
+    for (const e of 基准.错因映射.distMapRows) {
+      const got = rows.find((x) => x.kp_name === e.kp);
+      expect(got, `dist @ ${e.kp} 的映射不见了`).toBeTruthy();
+      expect(got!.cause_name).toBe(e.cause);
+      expect(got!.mapped_by).toBe("human"); // 🔴 人工整理的种子，落款是人
+      expect(got!.seed_code).toMatch(/^err_kp:v1\.0\.0\/dist/);
+    }
+    // 🔴 复合键的全部意义：同一个码，不同考点 → 不同实体（≥2 个）
+    expect(new Set(rows.map((x) => x.cause_id)).size).toBeGreaterThanOrEqual(2);
+    // 整式侧与混合侧确实是两个不同的实体
+    const 整 = rows.find((x) => x.kp_name === "合并同类项")!;
+    const 混 = rows.find((x) => x.kp_name === "有理数运算的简便技巧")!;
+    expect(整.cause_id).not.toBe(混.cause_id);
+
+    // 落到真数据上：batch14 q1 的 dist 走的是整式侧那个实体
+    const d = await causeDistribution({ batchId: 14 });
+    const row = d.rows.find((x) => x.errCode === "dist");
+    expect(row?.causeId).toBe(整.cause_id);
     expect(row?.kpName).toBe("合并同类项");
     expect(row?.count).toBe(1);
-
-    // 其余没铺映射的码仍在 unmapped（红旗不会因为铺了一条就整片熄灭）
-    expect(d.unmapped.map((u) => u.errCode).sort()).toEqual(["pow", "sign"]);
+    // 🔴 绝不是「运算律简算」
+    expect(row?.causeName).not.toMatch(/运算律简算/);
   });
 
   it("同键重复映射 → 显式报错带现值，改判走先 unmap", async () => {
     const 别的 = await createErrorCause({
-      name: "去括号：括号前是负号时每一项都要变号",
+      name: "去括号：括号前是负号时每一项都要变号（REG-F 夹具）",
       handle: h,
       actor: "system",
     });
@@ -441,8 +518,8 @@ describe("🔴 unmapped 红旗 · 查不到映射的错不静默丢", () => {
     } catch (e) {
       expect(e).toBeInstanceOf(CauseError);
       expect((e as CauseError).code).toBe("MAP_TAKEN");
-      // 现值写在 message 里：谁定的、什么时候定的
-      expect((e as CauseError).message).toMatch(/REG-F/);
+      // 现值写在 message 里：谁定的、映射到了谁
+      expect((e as CauseError).message).toMatch(/合并同类项错误/);
     }
     // 先摘后挂才是改判的路
     const 摘 = await unmapErrCode("合并同类项", "dist", { handle: h });
@@ -511,6 +588,17 @@ describe("错因域原语（写侧，跑在副本上）", () => {
   });
 
   it("🔴 roster 只落代号：与圣域 batches.student 同口径，桥才对得上", async () => {
+    // 🔴 006-C 已把四个真代号灌进 roster，所以「小崽子」这条是**更新**不是新建。
+    //    新建路径拿一个不存在的代号验（别为了让 created=true 去改种子）。
+    const 新 = await upsertRoster({
+      code: "REG-F 夹具代号",
+      grade: "七年级",
+      handle: h,
+      actor: "system",
+    });
+    expect(新.created).toBe(true);
+    expect(新.status).toBe("active");
+
     const r = await upsertRoster({
       code: "小崽子",
       grade: "七年级",
@@ -519,7 +607,7 @@ describe("错因域原语（写侧，跑在副本上）", () => {
       handle: h,
       actor: "system",
     });
-    expect(r.created).toBe(true);
+    expect(r.created, "种子已灌，这里必须走更新分支").toBe(false);
     expect(r.status).toBe("active");
 
     // 幂等：再来一次是更新，不是重建
@@ -538,6 +626,23 @@ describe("错因域原语（写侧，跑在副本上）", () => {
     expect(v.roster?.editionCtx).toBe("人教七上");
     // 数据包里出现的一律是代号
     expect(JSON.stringify(v.batches)).not.toMatch(/真名/);
+  });
+
+  it("🔴 006-C 种子：四个学员代号都在名册上，且一个真名都没有", async () => {
+    const rows = await h.client.execute(
+      "SELECT code, grade, edition_ctx, status, note FROM roster ORDER BY code",
+    );
+    const 名册 = rows.rows as unknown as Record<string, string>[];
+    const codes = 名册.map((r) => r.code);
+    for (const c of ["recho", "小崽子", "洛天熙", "鼻涕虫"])
+      expect(codes, `名册里缺 ${c}`).toContain(c);
+    const 种子 = 名册.filter((r) => r.code !== "REG-F 夹具代号");
+    expect(种子.length).toBeGreaterThanOrEqual(基准.错因映射.roster);
+    // 🔴 代号必须与圣域 batches.student 完全一致，写成真名桥当场断
+    const 桥 = await bridgeBatches();
+    const 圣域代号 = new Set(桥.batches.map((b) => b.student));
+    for (const c of ["小崽子", "洛天熙", "鼻涕虫", "recho"])
+      expect(圣域代号.has(c), `圣域里没有代号 ${c}`).toBe(true);
   });
 });
 

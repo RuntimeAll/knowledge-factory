@@ -114,6 +114,8 @@ let 首笔审计seq = 0;
 describe("① withCoreWrite 正常路", () => {
   it("业务行 + 审计行同事务落地，闸自己关回 0", async () => {
     const before = await 计数(主副本, "audit_log");
+    // 🔴 roster 也是活表（AI:PRD-006 006-C 灌了四个真学员代号）——断言一律相对基线
+    const roster前 = await 计数(主副本, "roster");
 
     const receipt = await withCoreWrite(
       { actor: "agent", tool: "test_upsert_roster", args: { code: "stu_a" } },
@@ -127,7 +129,7 @@ describe("① withCoreWrite 正常路", () => {
     );
 
     expect(receipt.seq).toBeGreaterThan(0);
-    expect(await 计数(主副本, "roster")).toBe(1);
+    expect(await 计数(主副本, "roster")).toBe(roster前 + 1);
     expect(await 计数(主副本, "audit_log")).toBe(before + 1);
     // 🔴 静息态永远 0
     expect(await readWriteGate(主副本)).toBe(0);

@@ -365,13 +365,20 @@ async function 开闸(c: Client, on: boolean): Promise<void> {
   });
 }
 
+/** 🔴 roster 是活表（006-C 灌了四个真学员代号）——计数断言一律相对基线，别写死 1/0 */
+let roster基线 = 0;
+async function roster数(): Promise<number> {
+  const n = await 副本.execute("SELECT COUNT(*) c FROM roster");
+  return Number((n.rows[0] as unknown as { c: number }).c);
+}
+
 describe("④ 防裸写闸的真实行为", () => {
   it("闸关着：INSERT 放行，UPDATE / DELETE 被 RAISE 打回", async () => {
+    roster基线 = await roster数();
     await 副本.execute(
       "INSERT INTO roster(code, alias, status) VALUES ('test_stu_1','闸测试','active')",
     );
-    const n = await 副本.execute("SELECT COUNT(*) c FROM roster");
-    expect(Number((n.rows[0] as unknown as { c: number }).c)).toBe(1);
+    expect(await roster数()).toBe(roster基线 + 1);
 
     await expect(
       副本.execute("UPDATE roster SET alias='改了' WHERE code='test_stu_1'"),
@@ -405,8 +412,7 @@ describe("④ 防裸写闸的真实行为", () => {
     expect((r.rows[0] as unknown as { alias: string }).alias).toBe("开闸改的");
 
     await 副本.execute("DELETE FROM roster WHERE code='test_stu_1'");
-    const n = await 副本.execute("SELECT COUNT(*) c FROM roster");
-    expect(Number((n.rows[0] as unknown as { c: number }).c)).toBe(0);
+    expect(await roster数(), "删掉刚插的那条，回到基线").toBe(roster基线);
 
     await 开闸(副本, false);
     const g = await 副本.execute("SELECT allowed FROM _write_gate WHERE id=1");

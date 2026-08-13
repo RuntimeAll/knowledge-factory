@@ -179,7 +179,7 @@ $gates = @(
 
   [pscustomobject]@{
     Id     = 'REG-TEST'
-    Name   = '单测全量（vitest，338 例基线）'
+    Name   = '单测全量（vitest，342 例基线）'
     Action = {
       & pnpm test | Write-Host
       if ($LASTEXITCODE -ne 0) { return "vitest 退出码 $LASTEXITCODE（有用例挂了）" }
