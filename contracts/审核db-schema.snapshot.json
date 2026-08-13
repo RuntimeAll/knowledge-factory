@@ -1,11 +1,11 @@
 {
-  "takenAt": "2026-08-12T16:57:37+08:00",
+  "takenAt": "2026-08-13T09:28:29+08:00",
   "dbPath": "订阅特训/_产线/审核.db（相对 ai-bkb 根）",
-  "schemaHash": "d2f590cabaef708b55d50da560ddb5940dfe83019a61e76a0a874c8e37599869",
+  "schemaHash": "70803a6320baa9becd56b528895f233cfcb6bc2f1ae30459eb5418d03d91c38c",
   "tables": [
     {
       "name": "batches",
-      "sql": "CREATE TABLE batches(\n      id INTEGER PRIMARY KEY AUTOINCREMENT,\n      student TEXT NOT NULL, day INTEGER NOT NULL,\n      status TEXT NOT NULL DEFAULT 'pending',        -- pending / confirmed\n      created_at TEXT, confirmed_at TEXT, round INTEGER DEFAULT 1, exported_at TEXT, task_id INTEGER,\n      UNIQUE(student, day))"
+      "sql": "CREATE TABLE batches(\n      id INTEGER PRIMARY KEY AUTOINCREMENT,\n      student TEXT NOT NULL, day INTEGER NOT NULL,\n      status TEXT NOT NULL DEFAULT 'pending',        -- pending / confirmed\n      created_at TEXT, confirmed_at TEXT, round INTEGER DEFAULT 1, exported_at TEXT, task_id INTEGER, auto TEXT,\n      UNIQUE(student, day))"
     },
     {
       "name": "feedback",
