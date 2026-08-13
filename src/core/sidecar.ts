@@ -87,6 +87,9 @@ export interface SegmentResult {
  * 侧车判两档（kb-sidecar/3 起）：**数值档**（纯数值式比值）→ 数值档判不了时
  * 才轮到**符号档**（两侧都是代数式时比恒等，合并同类项/化简这类题）。
  * 顺序即零回归保证：数值档给过结论的题，符号档碰都碰不到。口径正本 = `sidecar/README.md`。
+ *
+ * 🔴 根式按中学实数范围取值（kb-sidecar/4）：奇次根一律实根（`\sqrt[3]{-8}` = −2），
+ *    偶次根下负数如实 cannot_verify —— 不返回带 I 的结果去比（那种 mismatch 是假红）。
  */
 export type CalcVerdict = "verified" | "mismatch" | "cannot_verify";
 

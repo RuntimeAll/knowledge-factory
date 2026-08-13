@@ -42,6 +42,8 @@ sidecar/main.py —— Python 侧车（AI:PRD-003 · 003-B / 003-E）
       符号档  两侧都是纯代数式且至少一侧含未知量（合并同类项/化简这类题）
               → simplify(expand(题面) - expand(答案)) == 0，reason 注明「符号恒等」
     🔴 符号档只在数值档已经 cannot_verify 时才走，**数值档行为一个字不改**。
+    根式口径（kb-sidecar/4 起，见 §根式口径）：**奇次根一律实根**
+      （`\\sqrt[3]{-8}` = -2，不取复数主值）；偶次根下负数如实 cannot_verify。
     🔴 cannot_verify 是**如实报**，绝不猜：应用题、含未知量的方程/多解枚举、
        单位换算…一律 cannot_verify，把判档权交回上游，
        不许"看着像对的"就给 verified。
@@ -82,7 +84,7 @@ for _s in (sys.stdin, sys.stdout, sys.stderr):
     except Exception:  # pragma: no cover - 老 Python / 非 TextIO 时忽略
         pass
 
-SIDECAR_VERSION = "kb-sidecar/3"
+SIDECAR_VERSION = "kb-sidecar/4"
 
 # ---------------------------------------------------------------------------
 # 去 LaTeX（segment 与 calc_verify 共用的前处理）
@@ -297,9 +299,65 @@ def _latex_to_expr(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip()
 
 
+# ---------------------------------------------------------------------------
+# 根式口径（kb-sidecar/4）—— 奇次根取实根，偶次根下负数如实报判不了
+#
+# 事故（005-C 实跑抓到的阻塞缺口）：`\sqrt[3]{-8}+1` 这道题，答案是 -1，
+# 而侧车判它 mismatch —— 因为 sympy 的 `root(-8, 3)` 给的是**复数主值**
+# `2*(-1)**(1/3)`（辐角最小的那个根），不是初中数学要的实根 -2。
+# 于是一整条实数线的立方根题只要带负号就会被判红，红的却是闸不是题。
+#
+# 口径按**中学实数范围**定死，两条，都不许含糊：
+#   ① 奇次根（3/5/7…）一律 `real_root` 取实根：负数有唯一实立方根，这是课本口径；
+#      正数侧 real_root 与 root 同值，所以这一改对既有题零影响。
+#   ② 偶次根下负数（`\sqrt{-4}`、`\sqrt[4]{-16}`）在实数范围内**无意义** ——
+#      如实抛 _CannotVerify 走 cannot_verify，绝不返回一个带 I 的"计算结果"
+#      去和答案比（比出来的 mismatch 是假红，比 verified 更坏）。
+# 只接管**单参形态**（`root(x, n)` / `sqrt(x)`）；带 k / evaluate 的形态原样交回
+# sympy —— 我们不知道调用方要第几个根，猜不得。
+# ---------------------------------------------------------------------------
+
+
+def _is_negative(x) -> bool:
+    """确定为负才算负（符号量的 is_negative 是 None，不当负数处理）。"""
+    return getattr(x, "is_negative", None) is True
+
+
+def _real_root(x, n, *rest, **kw):
+    """`root(x, n)` 的中学口径替身（见 §根式口径）。"""
+    from sympy import real_root, root, sympify
+
+    if rest or kw:  # root(x, n, k) 这类形态不接管
+        return root(x, n, *rest, **kw)
+    xs, ns = sympify(x), sympify(n)
+    if getattr(ns, "is_Integer", False) and int(ns) != 0:
+        ni = int(ns)
+        if ni % 2 != 0:
+            return real_root(xs, ni)  # ① 奇次根取实根
+        if _is_negative(xs):  # ② 偶次根下负数
+            raise _CannotVerify(
+                f"{ni} 次根下是负数（{xs}），实数范围内无意义 —— 如实报判不了，不取复数主值"
+            )
+    return root(xs, ns)
+
+
+def _real_sqrt(x, *rest, **kw):
+    """`sqrt(x)` = 二次根，负数一律判不了（§根式口径 ②）。"""
+    from sympy import sqrt, sympify
+
+    if rest or kw:
+        return sqrt(x, *rest, **kw)
+    xs = sympify(x)
+    if _is_negative(xs):
+        raise _CannotVerify(
+            f"平方根下是负数（{xs}），实数范围内无意义 —— 如实报判不了，不取复数主值"
+        )
+    return sqrt(xs)
+
+
 def _parse_number_expr(raw: str):
     """表达式串 → sympy 数值表达式；解析不了/不是纯数值就抛 _CannotVerify。"""
-    from sympy import Abs, pi, root, sqrt
+    from sympy import Abs, pi
     from sympy.parsing.sympy_parser import parse_expr, standard_transformations
 
     s = _latex_to_expr(raw)
@@ -324,10 +382,14 @@ def _parse_number_expr(raw: str):
     try:
         expr = parse_expr(
             s,
-            local_dict={"sqrt": sqrt, "root": root, "Abs": Abs, "pi": pi},
+            local_dict={"sqrt": _real_sqrt, "root": _real_root, "Abs": Abs, "pi": pi},
             transformations=standard_transformations,
             evaluate=True,
         )
+    except _CannotVerify:
+        # 🔴 根式口径抛的原因是**人话**（"偶次根下是负数…"），原样端出去；
+        #    落进下面那条 except 就会被压成一句「表达式解析失败：_CannotVerify」。
+        raise
     except Exception as e:  # 语法错 / 括号不配对…
         raise _CannotVerify(f"表达式解析失败：{type(e).__name__}") from e
 
@@ -430,7 +492,7 @@ def _split_implicit_mul(s: str) -> str:
 
 def _parse_symbolic_expr(raw: str):
     """表达式串 → sympy 代数式；不是"纯代数式"就抛 _CannotVerify。返回 (expr, 归一串)。"""
-    from sympy import Abs, Expr, Symbol, pi, root, sqrt
+    from sympy import Abs, Expr, Symbol, pi
     from sympy.parsing.sympy_parser import parse_expr, standard_transformations
 
     s = _latex_to_expr(raw)
@@ -453,7 +515,7 @@ def _parse_symbolic_expr(raw: str):
 
     s = _split_implicit_mul(s)
 
-    local: dict = {"sqrt": sqrt, "root": root, "Abs": Abs, "pi": pi}
+    local: dict = {"sqrt": _real_sqrt, "root": _real_root, "Abs": Abs, "pi": pi}
     for name in set(_NAME_RE.findall(s)):
         if name in _ALLOWED_NAMES:
             continue
@@ -473,6 +535,8 @@ def _parse_symbolic_expr(raw: str):
             transformations=standard_transformations,
             evaluate=True,
         )
+    except _CannotVerify:
+        raise  # 根式口径的人话原样端出（同 _parse_number_expr）
     except Exception as e:
         raise _CannotVerify(f"表达式解析失败：{type(e).__name__}") from e
 

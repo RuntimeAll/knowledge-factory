@@ -9,7 +9,7 @@ JS 生态里没有像样替代物的三件事，交给 Python 干：
 | `line_verify` | **逐行恒等**：解析里每一行都要与原式恒等 | 同一道闸的第二判据 → 红灯 `CALC_LINE_MISMATCH`（003-E） |
 | `ping` | 探活 + 自报版本 | 装完自检 / 排障 |
 
-协议版本 `kb-sidecar/3`（`ping` 自报）：
+协议版本 `kb-sidecar/4`（`ping` 自报）：
 
 - 1 → 2 = 加了 `line_verify`，并给 `calc_verify` 的解析器补了 `\(…\)`/`\[…\]`
   定界符剥离（群卷题面就是这个形态，不剥的话一道算得动的题会被那个裸反斜杠判成
@@ -17,6 +17,11 @@ JS 生态里没有像样替代物的三件事，交给 Python 干：
 - 2 → 3 = `calc_verify` 加了**符号恒等档**（003-E2）：题面与答案都是纯代数式时
   判两式恒不恒等（合并同类项/化简这类题）。**数值档一个字没改** ——
   符号档只接数值档已经 `cannot_verify` 的那一批。
+- 3 → 4 = **根式口径按中学实数范围定死**（005-C）：奇次根一律取实根
+  （`\sqrt[3]{-8}` = −2，不再是 sympy 默认的复数主值 `2*(-1)**(1/3)`），
+  偶次根下负数如实 `cannot_verify`。修的是一个**闸红而题不红**的缺口：
+  实数线整条带负号的立方根题此前全被判成 `mismatch`。正数侧
+  `real_root` 与 `root` 同值 ⇒ 既有题零影响。
 
 Node 侧封装 = `src/core/sidecar.ts`（从 `~/core` 出口，别绕过它自己 spawn）。
 
@@ -36,7 +41,7 @@ python -m venv .venv-sidecar
 
 ```powershell
 '{"op":"ping"}' | .\.venv-sidecar\Scripts\python.exe main.py
-# {"ok": true, "op": "ping", "sidecar": "kb-sidecar/3",
+# {"ok": true, "op": "ping", "sidecar": "kb-sidecar/4",
 #  "versions": {"python": "3.11.9", "jieba": "0.42.1", "sympy": "1.14.0"}}
 ```
 
@@ -106,6 +111,10 @@ jieba 的载词典日志走 stderr，不会污染。
 
 能算的形态：纯数值四则、分数（`\frac`、`a/b`）、根式（`\sqrt{}`、`\sqrt[n]{}`）、
 绝对值（`|-3|`）、乘方（`^` / `**`）、小数、`pi`。
+🔴 根式按**中学实数范围**取值（kb-sidecar/4）：奇次根一律实根（`\sqrt[3]{-8}` = −2、
+`\sqrt[5]{-32}` = −2）；偶次根下负数（`\sqrt{-4}`、`\sqrt[4]{-16}`）实数范围内无意义，
+如实 `cannot_verify` —— **绝不**返回一个带 `I` 的"计算结果"去和答案比（比出来的
+`mismatch` 是假红，比 `verified` 更坏）。
 等值判定 = `simplify(算出来 - 答案) == 0`，退路是数值容差 `< 1e-9`（给浮点答案）。
 `3/4+1/2` vs `5/4` 判 `verified`（Rational 精确相等），不是靠浮点碰巧撞上。
 

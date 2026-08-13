@@ -119,6 +119,41 @@ describe("② calc_verify 三态", () => {
     expect(by.get("红")?.detail.reason).toContain("反证点");
   });
 
+  it("🔴 奇次根取实根（kb-sidecar/4）：立方根下负数一红一绿", async () => {
+    // 005-C 实跑抓到的阻塞缺口：sympy 的 root(-8,3) 给的是**复数主值**
+    // 2*(-1)**(1/3)，于是「实数线」整条带负号的立方根题被判成 mismatch ——
+    // 红的是闸不是题。口径按中学实数范围定死：奇次根一律 real_root。
+    const rs = await calcVerify([
+      { id: "绿", stem: "计算：\\sqrt[3]{-8}+1", answer: "-1" },
+      { id: "红", stem: "计算：\\sqrt[3]{-8}+1", answer: "1" },
+      // 正数侧 real_root 与 root 同值 —— 这一改对既有题零影响的机器证据
+      { id: "正立方", stem: "\\sqrt[3]{27}", answer: "3" },
+      { id: "五次根", stem: "\\sqrt[5]{-32}", answer: "-2" },
+    ]);
+    const by = new Map(rs.map((r) => [r.id, r]));
+
+    expect(by.get("绿")?.verdict).toBe("verified");
+    expect(by.get("红")?.verdict).toBe("mismatch");
+    expect(by.get("红")?.detail.computed).toBe("-1"); // 报得出实算值
+    expect(by.get("正立方")?.verdict).toBe("verified");
+    expect(by.get("五次根")?.verdict).toBe("verified");
+  });
+
+  it("🔴 偶次根下负数如实报判不了（不返回带 I 的假结果去比）", async () => {
+    const rs = await calcVerify([
+      { id: "平方根", stem: "\\sqrt{-4}", answer: "2" },
+      { id: "四次根", stem: "\\sqrt[4]{-16}", answer: "2" },
+      // 正数侧照旧算得动
+      { id: "正平方", stem: "\\sqrt{16}+1", answer: "5" },
+    ]);
+    const by = new Map(rs.map((r) => [r.id, r]));
+
+    expect(by.get("平方根")?.verdict).toBe("cannot_verify");
+    expect(by.get("平方根")?.detail.reason).toContain("实数范围内无意义");
+    expect(by.get("四次根")?.verdict).toBe("cannot_verify");
+    expect(by.get("正平方")?.verdict).toBe("verified");
+  });
+
   it("🔴 符号档不外扩：方程/枚举/纯数值题一律不归它管", async () => {
     const rs = await calcVerify([
       // 含等号 = 方程，判它要比**解集**，不是比恒等
