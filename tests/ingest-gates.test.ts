@@ -480,6 +480,70 @@ describe("闸⑥ 占位红旗", () => {
     expect(缺图.ok).toBe(false);
     if (!缺图.ok) expect(缺图.code).toBe(PLACEHOLDER_CODES.figureMissing);
   });
+
+  // ── 内部占位串（003-E4 补的盲点，G-3 专项路 P1）──────────────────────────
+  it("红：题面带『［图·内联SVG］』——🔴 figures 给了照样红（图已挂 ≠ 占位串可以留）", async () => {
+    const 题面 =
+      "如图，数轴上的三点 A、B、C 分别表示有理数 a，b，c。\n" +
+      "［图·内联SVG］(1) 填空：a−b ______ 0。";
+
+    // ① 没给图：本来就该红（但要红在**更准的那个码**上，不是 FIGURE_DECLARED_BUT_MISSING）
+    const 没图 = await 跑(
+      ingestPlaceholderGate,
+      造ctx(造题({ stem: 题面, analysis: "由数轴定号。" })),
+    );
+    expect(没图.ok).toBe(false);
+    if (!没图.ok) {
+      expect(没图.code).toBe(PLACEHOLDER_CODES.internalMarker);
+      expect(没图.message).toContain("喂料侧");
+    }
+
+    // ② 🔴 给了图 —— 这正是原来放行、把占位串放进库的那条路
+    const 图 = join(临时目录, "fig-marker.svg");
+    writeFileSync(图, '<svg xmlns="http://www.w3.org/2000/svg"/>', "utf8");
+    const 有图 = await 跑(
+      ingestPlaceholderGate,
+      造ctx(
+        造题({
+          stem: 题面,
+          analysis: "由数轴定号。",
+          figures: [{ role: "stem", path: 图 }],
+        }),
+      ),
+    );
+    expect(有图.ok).toBe(false);
+    if (!有图.ok) {
+      expect(有图.code).toBe(PLACEHOLDER_CODES.internalMarker);
+      expect(有图.message).toContain("给没给都一样红");
+    }
+
+    // ③ 解析里带也拦（解析一样要印给人看）
+    const 解析带 = await 跑(
+      ingestPlaceholderGate,
+      造ctx(
+        造题({
+          stem: "化简 |a−b|+|b−c|。",
+          analysis: "先看图定号：[图·内联SVG] 再去壳。",
+        }),
+      ),
+    );
+    expect(解析带.ok).toBe(false);
+    if (!解析带.ok) expect(解析带.code).toBe(PLACEHOLDER_CODES.internalMarker);
+  });
+
+  it("绿：正常中文里的「（图1）」不是内部记号，配了图就该放行", async () => {
+    const 图 = join(临时目录, "fig-ok.svg");
+    writeFileSync(图, '<svg xmlns="http://www.w3.org/2000/svg"/>', "utf8");
+    const ctx = 造ctx(
+      造题({
+        stem: "如图（图1）所示，数轴上 A 表示 a。化简 |a−1|。",
+        analysis: "由数轴定号。",
+        figures: [{ role: "stem", path: 图 }],
+      }),
+    );
+    // 🔴 收得太宽（把「（图1）」也当内部记号）会把一大票正常题打成红灯 —— 这条就是防它
+    expect((await 跑(ingestPlaceholderGate, ctx)).ok).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------

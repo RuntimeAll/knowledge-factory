@@ -267,6 +267,7 @@ export {
 
 export {
   ftsQuery,
+  stripHtmlForSeg,
   writeQuestionFts,
   type FtsQueryOptions,
   type FtsQueryPlan,
@@ -406,6 +407,7 @@ export {
 export {
   PLACEHOLDER_CODES,
   declaresFigure,
+  internalMarkerIn,
   isPurePlaceholder,
 } from "./gates/ingest-placeholder.gate";
 export {

@@ -110,15 +110,23 @@
 
 1. 喂料方**照实写**这个占位符进 `stem`，**不给** `figures` —— 找不到真图就不给图，
    绝不为了过闸去造一张（造出来的图会被印到卷子上）。
-2. 闸⑥ 占位红旗的 `FIGURE_WORDS` 里收了 `［图` / `[图`，于是这类题**必然**红灯
-   `FIGURE_DECLARED_BUT_MISSING` → 进 `quarantine`，带原样 payload。
-   **这是闸在正常工作**，不是误判：题面在说它有图，而图没进来。
+2. 闸⑥ 占位红旗**见占位串即红** `STEM_INTERNAL_MARKER` → 进 `quarantine`，带原样 payload。
+   **这是闸在正常工作**，不是误判：占位串是备料层的红旗，不是题面的一部分。
 3. 解法只有两条，都得**在喂料侧**做，不在管道里绕：
-   把内联 SVG 先渲成 PNG 落盘、再作为 `figures:[{role:'stem', path:…}]` 给进来；
+   把内联 SVG 先渲成 PNG/SVG 落盘、再作为 `figures:[{role:'stem', path:…}]` 给进来；
    或者把题面里对图的引用改写成文字描述（图能被文字说清的话）。
+4. 🔴 **带 `figures` 重投时，必须同时把占位串从题面（与解析）里改写/删除掉。**
+   图的信息由 `figures` 通道承载，`stem`/`analysis` 里不留任何内部记号 ——
+   补了图**不等于**占位串就可以留着，它照样会印到卷面上。
+   闸⑥ 的 `STEM_INTERNAL_MARKER` 对此**无论 `figures` 给没给都红**。
 
 > 出处：003 备料 §5 R4 实测（专项卷 seq 60/61 两题）。此前这条约定只写在备料抄录里，
 > 正式契约没有 —— G-3 核查指出后补进本节，免得后人看见隔离区里那两题以为是闸坏了。
+>
+> 🔴 第 4 条与 `STEM_INTERNAL_MARKER` 是 003-E4 补的（G-3 专项路 P1）：原判据是
+> 「声称有图 **且** `figures` 为空 ⇒ 红」，于是 seq=60 配上真图重投时闸放行了，
+> 题面里那句 `［图·内联SVG］` 跟着灌进了库（实证 `q_01KZVFBGNZ…HHYS`，已修）。
+> 判据已改成「出现即红」——「图已挂但占位串没删」不再是盲点。
 
 ---
 
@@ -160,7 +168,7 @@
 | 7 | 题面纯净零校验 | 指令词闸 ＋ 前缀清洗闸（含机器复核）＋ 占位红旗闸 |
 | 8 | 契约不认识就跳过 | 结构错 = 整批拒，带 `z.prettifyError` 的逐字段人话 |
 | 9 | 无 schema、无前置校验器 | schema 即文件（本文 + zod），入库前全量校验 |
-| 10 | stem 三格式混存无声明 | 归一在管道里做：查重键剥 HTML/LaTeX，检索投影走侧车去 LaTeX + 分词 |
+| 10 | stem 三格式混存无声明 | 归一在管道里做：查重键剥 HTML/LaTeX，检索投影**先剥 HTML 标签**（`stripHtmlForSeg`，003-E4）再走侧车去 LaTeX + 分词 —— 否则 `span`/`style`/`border` 会变成检索词。🔴 剥法只认「标签形状」`</?[a-zA-Z][^<>]*>`，数学裸不等号（`a < 0`、`用 < 或 > 或 =`）一个字都不许吃 |
 
 ---
 
@@ -173,7 +181,7 @@
 | ③ | 考点标全 | `KP_NOT_FOUND` / `AMBIGUOUS_KP` / `KP_ID_NOT_FOUND` / `KP_NOT_ACTIVE` / `KP_DUPLICATE` / `KP_PRIMARY_MULTI` |
 | ④ | 题面禁指令词 | `STEM_HAS_META_WORD` / `STEM_EMPTY_AFTER_STRIP` |
 | ⑤ | 前缀清洗（含残留机器复核） | `STEM_PREFIX_RESIDUE` / `STEM_EMPTY_AFTER_CLEAN` |
-| ⑥ | 占位红旗 | `STEM_EMPTY` / `STEM_PLACEHOLDER` / `FIGURE_DECLARED_BUT_MISSING` |
+| ⑥ | 占位红旗 | `STEM_EMPTY` / `STEM_PLACEHOLDER` / `STEM_INTERNAL_MARKER`（§2.4，与 `figures` 给没给无关） / `FIGURE_DECLARED_BUT_MISSING` |
 | ⑦ | 查重 match_key | `DUPLICATE` / `DUPLICATE_IN_BATCH` |
 | ⑧ | 可实算即实算（**两个判据**：最终答案 + 过程逐行恒等） | `CALC_MISMATCH` / `CALC_LINE_MISMATCH` |
 | ⑨ | 判档 solution_grade | `NO_SOLUTION`（防御） |
