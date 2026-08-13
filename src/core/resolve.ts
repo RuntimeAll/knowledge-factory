@@ -32,7 +32,16 @@
  *   🔴 bm25 是**批内相对**量，不是绝对分——它只回答「这批里谁更像」，
  *      「像不像得过 0.6 这道线」由覆盖率那一半兜着。
  *
- *   同一 kp 多路命中取**最高**分；同分时按 exact-name > exact-alias > prefix > trigram。
+ *   knn-vote                  0.30~0.65   🆕 004-B：近邻题主考点投票（**旁证**，见 §knn-vote）
+ *
+ *   同一 kp 多路命中取**最高**分；同分时按 exact-name > exact-alias > prefix > trigram > knn-vote。
+ *
+ * ── 🆕 第五路 knn-vote 与前四路的关系（AI:PRD-004 · 004-B 回填 002 坑位）────
+ *   前四路问的是「**字面**对不对得上」，第五路问的是「**语义**像不像」。
+ *   它只在前四路全部低置信时才跑（四路命中就一步都不动，省掉载模型的 0.5s），
+ *   拿 query 的句向量找 8 道最近的题，让这些题的**主考点**投票。
+ *   🔴 三条收着用的纪律见 §knn-vote 常量块；最要紧的一条：
+ *      **它不参与 lowConfidence 判定** —— 猜得出意思 ≠ 词表不缺这个说法，红旗照插。
  *
  * ── 为什么 query < 3 字符要另走一条路 ────────────────────────────────────────
  *   kp_fts 用 trigram（3 字符一 token），**2 字以内的 query MATCH 恒空**
@@ -44,9 +53,11 @@ import { z } from "zod";
 import { reviewQueue } from "~/server/db/schema";
 import { type AuditActor } from "./audit";
 import { getCoreDb, type CoreDbHandle } from "./db";
+import { embedTexts } from "./embed";
 import { newId } from "./ids";
 import { KgError, resolveMergedKp } from "./kg";
 import { nowLocalISO } from "./time";
+import { cosineTopK, vecAxisStatus } from "./vec";
 import { withCoreWrite } from "./write";
 
 // ---------------------------------------------------------------------------
@@ -54,7 +65,13 @@ import { withCoreWrite } from "./write";
 // ---------------------------------------------------------------------------
 
 /** 命中方式（描述的是**匹配形态**，不是哪个引擎算出来的） */
-export type MatchedVia = "exact-alias" | "exact-name" | "prefix" | "trigram";
+export type MatchedVia =
+  | "exact-alias"
+  | "exact-name"
+  | "prefix"
+  | "trigram"
+  /** 🔴 第五路：词表四路全低置信时的**近邻投票**（旁证，见 §knn-vote） */
+  | "knn-vote";
 
 /** via 的优先序（同分时谁排前面）；数字越小越靠前 */
 const VIA_RANK: Record<MatchedVia, number> = {
@@ -62,6 +79,8 @@ const VIA_RANK: Record<MatchedVia, number> = {
   "exact-alias": 1,
   prefix: 2,
   trigram: 3,
+  // 🔴 恒排最后：同分时"字面上对得上"永远优先于"语义上像"
+  "knn-vote": 4,
 };
 
 export interface KpCandidate {
@@ -80,14 +99,45 @@ export interface KpCandidate {
    * 「用旧名字查旧考点」会走到这儿——这正是它存在的意义：旧名照样问得出落点。
    */
   resolvedFrom?: { id: string; name: string; hops: number };
+  /**
+   * 🔴 `matchedVia:'knn-vote'` 专属：这条候选是**几道已打标的题投出来的**。
+   * 词表四路是"字面对得上"，它是"语义上像"——把支撑证据摊开，
+   * 人才判得出该补个别名还是该建考点。
+   */
+  evidence?: {
+    /** 有几道近邻题的主考点投给了它 */
+    supportQuestions: number;
+    /** 票重 = 这些题的余弦之和（越高越像） */
+    voteWeight: number;
+    /** 其中最像的那道题的余弦 */
+    topScore: number;
+    /** 最像的那几道题（给人点开看，最多 3 条） */
+    sampleQuestionIds: string[];
+  };
 }
 
 export interface ResolveKpResult {
   /** 归一后的查询串（去首尾空白） */
   query: string;
   candidates: KpCandidate[];
-  /** 候选为空，或 top1 < 0.6 —— 此时已入 review_queue（见 queued） */
+  /**
+   * **词表四路**没把握：候选为空，或四路 top1 < 0.6 —— 此时已入 review_queue（见 queued）。
+   *
+   * 🔴 knn-vote 追加的候选**不参与这个判定**（哪怕它给到 0.65）。
+   *    理由：这条队列是「词表的缺口清单」。近邻投票能猜出意思，恰恰说明
+   *    "这个说法词表里没有"——红旗该照插，不该被旁证按灭。
+   */
   lowConfidence: boolean;
+  /** knn-vote 这一路的运行情况（没跑就是 ran:false + 为什么） */
+  knn: {
+    ran: boolean;
+    /** 没跑的原因（四路已够自信 / 关掉了 / C3 不绿 / 模型没装…） */
+    skipped?: string;
+    /** 参与投票的近邻题数（过了余弦下限的） */
+    supportQuestions?: number;
+    /** 投出来几个候选 */
+    candidates?: number;
+  };
   /**
    * 低置信工单。created=false 表示同 query 已有未决工单，本次没重复开。
    * enqueue:false 或不低置信时为 null。
@@ -106,6 +156,12 @@ export interface ResolveKpOptions {
   actor?: AuditActor;
   /** 🔴 false = 低置信也不入队列（给「只是查一下」的场景，比如 kpContext 的兜底候选） */
   enqueue?: boolean;
+  /**
+   * 🔴 false = 关掉近邻投票那一路（默认开）。
+   *    关它的正当理由只有一个：这次调用**不能承担载模型的 ~0.5s**。
+   *    C3 不绿 / 模型没装会自动关，不必手动传。
+   */
+  knn?: boolean;
 }
 
 /** 低于这条线就是「没把握」，要入队列交人裁 */
@@ -121,6 +177,46 @@ const FETCH_FACTOR = 4;
 const MIN_FETCH = 32;
 /** merged_into 反查链的展开上限（防坏数据把递归拖死） */
 const MERGED_FROM_MAX = 200;
+
+// ── §knn-vote 的四个旋钮（AI:PRD-004 · 004-B，回填 002 留的坑位）───────────
+//
+// 🔴 这一路解决的是词表四路解决不了的那类查询：**用户会说人话，词表只认词条**。
+//    「绝对值里含参数怎么讨论」——库里没有这个说法、也没有这条别名，
+//    exact/prefix/trigram 四路全空手；但库里**已经有 60 道打好标的题**，
+//    其中一批的语义就长这样。让那些题的主考点替词表投个票，是现成的旁证。
+//
+// 🔴 它是**旁证不是正证**，所以三重收着用：
+//    ① 只在四路全低置信时才跑（四路命中就完全不跑，省掉载模型的 0.5s）；
+//    ② 余弦必须过 KNN_MIN_COS，否则一票不算（近邻永远返回 top-K，
+//       不设下限的话查「洛必达法则」也会被强行投出几个初中考点来）；
+//    ③ 置信度封顶 KNN_CONF_MAX < 1，且**不参与 lowConfidence 判定**——
+//       猜得出意思 ≠ 词表不缺这个说法，红旗照插。
+
+/** 投票时看前几道近邻题 */
+export const KNN_TOP_QUESTIONS = 8;
+/**
+ * 余弦下限：低于它的近邻不投票。
+ * 🔴 0.5 不是拍的：本机实测 bge-small-zh 在本库上，
+ *    真·语义相关的自然语句查询 top1 落在 0.57~0.77，
+ *    而「洛必达法则」这种词表外+库外的词 top1 只有 0.37 —— 中间有干净的一刀。
+ */
+export const KNN_MIN_COS = 0.5;
+/** 投票候选的置信度下限（只要投出来了就至少这么多） */
+export const KNN_CONF_MIN = 0.3;
+/** 🔴 置信度封顶：旁证再一致也够不着"确定"，永远留出人裁的余地 */
+export const KNN_CONF_MAX = 0.65;
+/**
+ * 几票才算"票数够了"（不足则按比例打折）。
+ *
+ * 🔴 没有这个因子的话，**一票也叫全票**：只有一道近邻题勉强过线（余弦 0.502）时，
+ *    它的票重占比是 1.0，于是直接顶到封顶的 0.65 —— 而那恰恰是最没底气的一种情形。
+ *    实测抓到过：查「十字相乘」（库里真没有这个考点）投出了「有理数的加减混合运算」，
+ *    支撑题 1 道、余弦 0.502，却拿了满分。加上这个因子后它落到 0.417，
+ *    与「5 道题一致指向同一考点」（0.52）拉开了应有的差距。
+ */
+const KNN_FULL_SUPPORT = 3;
+/** evidence 里附几条样例题 id */
+const KNN_SAMPLE = 3;
 
 // ---------------------------------------------------------------------------
 // 错误契约
@@ -209,6 +305,8 @@ interface Hit {
   aliasHit?: string;
   /** 这一条是从哪个 merged 壳落过来的（⑤ 转换时挂上） */
   resolvedFrom?: { id: string; name: string; hops: number };
+  /** knn-vote 那一路的支撑证据 */
+  evidence?: KpCandidate["evidence"];
 }
 
 interface KpRowLite {
@@ -389,8 +487,49 @@ export async function resolveKp(
   }
 
   // ── ⑥ 同 kp 取最高分（同分按 via 优先序）──────────────────────────────────
+  const 词表候选 = 择优(resolved, limit);
+
+  // 🔴 lowConfidence 只看**词表四路**：第七步的近邻投票是旁证，不参与判定
+  //    （猜得出意思 ≠ 词表不缺这个说法，见 ResolveKpResult.lowConfidence）
+  const top = 词表候选[0]?.confidence ?? 0;
+  const lowConfidence = 词表候选.length === 0 || top < LOW_CONFIDENCE_AT;
+
+  // ── ⑦ 近邻投票（只在四路全低置信时跑）─────────────────────────────────────
+  let candidates = 词表候选;
+  let knn: ResolveKpResult["knn"] = { ran: false };
+  if (!lowConfidence) {
+    knn = { ran: false, skipped: "词表四路已有把握（top ≥ 0.6），无需旁证" };
+  } else if (opts.knn === false) {
+    knn = { ran: false, skipped: "调用方显式关掉了近邻投票（knn:false）" };
+  } else {
+    const 票 = await 近邻投票(h, qs);
+    knn = 票.info;
+    warnings.push(...票.warnings);
+    if (票.hits.length > 0) {
+      // 与词表候选同一套择优规则合并：同一 kp 上两路都有话说时取高分那条
+      candidates = 择优([...resolved, ...票.hits], limit);
+    }
+  }
+
+  let queued: ResolveKpResult["queued"] = null;
+  if (lowConfidence && opts.enqueue !== false) {
+    queued = await 入低置信队列(
+      h,
+      qs,
+      词表候选,
+      top,
+      opts.actor ?? "agent",
+      knn,
+    );
+  }
+
+  return { query: qs, candidates, lowConfidence, knn, queued, warnings };
+}
+
+/** ⑥ 同 kp 取最高分（同分按 via 优先序）→ 排好序、截好长度的候选表 */
+function 择优(hits: readonly Hit[], limit: number): KpCandidate[] {
   const byKp = new Map<string, Hit>();
-  for (const hit of resolved) {
+  for (const hit of hits) {
     const old = byKp.get(hit.kpId);
     if (
       !old ||
@@ -402,7 +541,7 @@ export async function resolveKp(
     }
   }
 
-  const candidates: KpCandidate[] = [...byKp.values()]
+  return [...byKp.values()]
     .sort(
       (a, b) =>
         b.confidence - a.confidence ||
@@ -419,18 +558,163 @@ export async function resolveKp(
         matchedVia: hit.via,
         ...(hit.aliasHit ? { aliasHit: hit.aliasHit } : {}),
         ...(hit.resolvedFrom ? { resolvedFrom: hit.resolvedFrom } : {}),
+        ...(hit.evidence ? { evidence: hit.evidence } : {}),
       };
     });
+}
 
-  const top = candidates[0]?.confidence ?? 0;
-  const lowConfidence = candidates.length === 0 || top < LOW_CONFIDENCE_AT;
+// ---------------------------------------------------------------------------
+// §knn-vote —— 第五路：已打标近邻题的主考点投票（AI:PRD-004 · 004-B）
+// ---------------------------------------------------------------------------
 
-  let queued: ResolveKpResult["queued"] = null;
-  if (lowConfidence && opts.enqueue !== false) {
-    queued = await 入低置信队列(h, qs, candidates, top, opts.actor ?? "agent");
+interface 投票结果 {
+  hits: Hit[];
+  info: ResolveKpResult["knn"];
+  warnings: string[];
+}
+
+/**
+ * 一句人话 → 语义近邻题 → 它们的**主考点**投票 → 候选。
+ *
+ * ```
+ * 票重(kp) = Σ 余弦(近邻题)   // 只算余弦 ≥ KNN_MIN_COS 的
+ * 置信度(kp) = 0.3 + 0.35 × 票重(kp) / 总票重      ∈ [0.3, 0.65]
+ * ```
+ *
+ * 🔴 为什么用**票重占比**而不是绝对余弦：余弦的绝对值是模型的事
+ *    （换个模型整体平移一档），而"这批近邻里有多少票投给了它"是**这次判断内部**的
+ *    相对量，换模型也稳。占比 1.0（八道题一致）才够得着封顶的 0.65。
+ *
+ * 🔴 只认**主考点**（is_primary=1）：副考点是"这题还沾了点别的"，
+ *    拿它投票会把边角知识点顶上来。主考点才代表"这题到底在考什么"。
+ *
+ * 🔴 任何一步出问题（模型没装 / C3 不绿 / 推理炸）都**不抛**：
+ *    近邻投票是锦上添花，它挂了不该让 resolve_kp 整个查不出东西来。
+ *    但原因必须写进 warnings —— 静默关掉一条路 = 以后没人知道它其实一直没在跑。
+ */
+async function 近邻投票(h: CoreDbHandle, query: string): Promise<投票结果> {
+  const st = await vecAxisStatus(h);
+  if (!st.ok) {
+    return {
+      hits: [],
+      info: { ran: false, skipped: st.reason ?? "语意轴不可用" },
+      warnings: [`近邻投票没跑：${st.reason ?? "语意轴不可用"}`],
+    };
   }
 
-  return { query: qs, candidates, lowConfidence, queued, warnings };
+  let 近邻: { questionId: string; score: number }[];
+  try {
+    const [qv] = await embedTexts([query]);
+    近邻 = (
+      await cosineTopK(qv!, { limit: KNN_TOP_QUESTIONS, handle: h })
+    ).filter((t) => t.score >= KNN_MIN_COS);
+  } catch (e) {
+    const why = e instanceof Error ? e.message : String(e);
+    return {
+      hits: [],
+      info: { ran: false, skipped: why },
+      warnings: [`近邻投票没跑：${why}`],
+    };
+  }
+
+  if (近邻.length === 0) {
+    // 🔴 一条都没过线是**正常结论**，不是故障：说明库里确实没有语义上像的题。
+    //    这时候老老实实给零候选，比硬凑几个"最像的"有用得多。
+    return {
+      hits: [],
+      info: { ran: true, supportQuestions: 0, candidates: 0 },
+      warnings: [],
+    };
+  }
+
+  const rows = await q<{
+    question_id: string;
+    kp_id: string;
+    name: string;
+    status: string;
+  }>(
+    h,
+    `SELECT qk.question_id, qk.kp_id, k.name, k.status
+       FROM question_kp qk JOIN kp k ON k.id = qk.kp_id
+      WHERE qk.is_primary = 1
+        AND k.status IN ('draft','active')
+        AND qk.question_id IN (${近邻.map(() => "?").join(",")})`,
+    近邻.map((t) => t.questionId),
+  );
+
+  const 分 = new Map(近邻.map((t) => [t.questionId, t.score]));
+  interface 票 {
+    name: string;
+    status: string;
+    weight: number;
+    n: number;
+    topScore: number;
+    /** 支撑题按余弦降序 */
+    qs: { id: string; score: number }[];
+  }
+  const 票箱 = new Map<string, 票>();
+  for (const r of rows) {
+    const score = 分.get(String(r.question_id)) ?? 0;
+    const kpId = String(r.kp_id);
+    const cur = 票箱.get(kpId) ?? {
+      name: String(r.name),
+      status: String(r.status),
+      weight: 0,
+      n: 0,
+      topScore: 0,
+      qs: [],
+    };
+    cur.weight += score;
+    cur.n += 1;
+    cur.topScore = Math.max(cur.topScore, score);
+    cur.qs.push({ id: String(r.question_id), score });
+    票箱.set(kpId, cur);
+  }
+
+  const 总票重 = [...票箱.values()].reduce((s, v) => s + v.weight, 0);
+  if (总票重 <= 0) {
+    return {
+      hits: [],
+      info: { ran: true, supportQuestions: 近邻.length, candidates: 0 },
+      warnings: [],
+    };
+  }
+
+  const hits: Hit[] = [...票箱.entries()].map(([kpId, v]) => ({
+    kpId,
+    name: v.name,
+    status: v.status,
+    // 置信度 = 下限 + 幅度 × 一致性 × 票数够不够
+    //   一致性 = 这个考点拿到的票重占本批总票重的比例（换模型也稳的相对量）
+    //   票数   = 支撑题数 / KNN_FULL_SUPPORT，截到 1（防"一票即满分"）
+    confidence: round3(
+      KNN_CONF_MIN +
+        (KNN_CONF_MAX - KNN_CONF_MIN) *
+          (v.weight / 总票重) *
+          Math.min(1, v.n / KNN_FULL_SUPPORT),
+    ),
+    via: "knn-vote" as const,
+    // 🔴 aliasHit 留空：这一路压根没经过任何别名，填什么都是编的
+    evidence: {
+      supportQuestions: v.n,
+      voteWeight: round3(v.weight),
+      topScore: round3(v.topScore),
+      sampleQuestionIds: v.qs
+        .sort((a, b) => b.score - a.score)
+        .slice(0, KNN_SAMPLE)
+        .map((x) => x.id),
+    },
+  }));
+
+  return {
+    hits,
+    info: {
+      ran: true,
+      supportQuestions: 近邻.length,
+      candidates: hits.length,
+    },
+    warnings: [],
+  };
 }
 
 /** 低置信入队列（同 query 未决工单去重） */
@@ -440,16 +724,24 @@ async function 入低置信队列(
   candidates: KpCandidate[],
   top: number,
   actor: AuditActor,
+  knn: ResolveKpResult["knn"],
 ): Promise<{ id: string; created: boolean }> {
   const 已有 = await 查未决工单(h, query);
   if (已有) return { id: 已有, created: false };
 
   const id = newId("rq");
-  const reason =
+  const 词表话 =
     candidates.length === 0
       ? `resolve_kp 查「${query}」一条候选都没有——词表里没有这个说法，要么补别名，要么这个考点还没建。`
       : `resolve_kp 查「${query}」最高置信只有 ${top}（< ${LOW_CONFIDENCE_AT}）——` +
         `候选 ${candidates.length} 条，最像的是「${candidates[0]?.name}」，请人裁：是它就补条别名，不是就建考点。`;
+  // 🔴 近邻投票猜出来的东西写进工单，但**只当线索**：裁的人看到
+  //    「库里已有的题指向 X」比看到「查不到」有用得多，而红旗照插不误。
+  const knn话 =
+    knn.ran && (knn.candidates ?? 0) > 0
+      ? ` 另：${knn.supportQuestions} 道语义近邻题的主考点投出了 ${knn.candidates} 个线索（matchedVia=knn-vote，只作旁证）。`
+      : "";
+  const reason = 词表话 + knn话;
 
   let created = true;
   await withCoreWrite(
@@ -469,7 +761,7 @@ async function 入低置信队列(
         id,
         kind: LOW_CONFIDENCE_KIND,
         // 🔴 ref_type/ref_id 留空：低置信工单指不向任何一行（C1d 只查带 ref 的行）
-        payloadJson: JSON.stringify({ query, top, candidates }),
+        payloadJson: JSON.stringify({ query, top, candidates, knn }),
         reason,
         state: "open",
         createdAt: nowLocalISO(),
@@ -797,10 +1089,14 @@ async function 逐步截短探候选(
     const probe = 字.slice(0, n).join("");
     // 🔴 enqueue:false：这是「帮你找补」的顺手一查，不是 agent 的正经检索，
     //    没把握也不该往人的待办队列里塞工单（何况一探就是好几发）。
+    // 🔴 knn:false：本函数已经是**猜之上再猜**（从一个编错的 id 里抠文本，
+    //    再逐级截短），再叠一层语义投票既不增加可信度，还要为每一发探测
+    //    付一次载模型的钱（一探就是好几发，全在错误路径上）。
     const { candidates } = await resolveKp(probe, {
       handle: h,
       limit: 5,
       enqueue: false,
+      knn: false,
     });
     if (candidates.length > 0) return { used: probe, candidates };
   }

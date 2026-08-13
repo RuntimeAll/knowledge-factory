@@ -134,6 +134,12 @@ export const ingestKpGate: Gate<IngestItemCtx> = {
         handle: h,
         limit: 8,
         enqueue: false, // 🔴 相一零写，见文件头
+        // 🔴 knn:false（AI:PRD-004 · 004-B）：本闸**只认精确命中**（confidence
+        //    必须 == EXACT_CONFIDENCE），而近邻投票封顶 0.65 —— 它一条都不可能
+        //    被接受。开着它只有两个后果：每道过不了闸的题白付一次载模型的钱
+        //    （整书录入就是几十上百次），以及在错误提示里塞一个「最像的是 X，
+        //    置信 0.35」的语义猜测——而这里要的是"名字/别名对不对得上"。
+        knn: false,
       });
       const 精确 = r.candidates.filter((c) => c.confidence >= EXACT_CONFIDENCE);
 
