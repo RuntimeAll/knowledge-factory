@@ -142,6 +142,24 @@ export interface ConvertOptions {
   };
   /** 考点兜底：题级、册级都没有考点时用它（写考点名或 kp_id，闸③再解析） */
   kps?: string[];
+  /**
+   * 🔴 群卷题单专用：产线的 `anchor` / `kp_group` 说法 → 词表 ref 的**显式映射表**。
+   *
+   * 为什么非要它（005-C 实测三种对不上的形态，缺一条都投不进去）：
+   *   ① **歧义**：`sign` 在词表里同时是「有理数的加减混合运算」与「有理数的加法法则」
+   *      的别名，`去括号` 同时是一个考点的**正名**和另一个考点的别名 —— 闸③照规矩红
+   *      `AMBIGUOUS_KP`（它没做错，是产线的说法本来就指不明）；
+   *   ② **不是考点名**：绝对值线有一条 anchor 整个是 LaTeX
+   *      （`\(\frac{\left|a\right|}{a}+…\) 型的计算`）—— 这种串不该进词表当别名（那是往
+   *      词表里倒垃圾），只能在这儿显式指向「符号商 |a|/a 型的计算」；
+   *   ③ **anchor 为空**：手写固定卷那两天没有 anchor，只有 `kp_group`（「小数运算与简算」
+   *      这类**题组名**，不是考点名）。
+   *
+   * 口径：先查 `anchor`，没命中再查 `kp_group`；命中就拿映射值当 `kps[].ref` 并记一条
+   * normalization。🔴 **映射表不代替闸** —— 表里没有的照原样送闸③，对不上照样红灯，
+   * 而不是在这里"猜一个最像的"。
+   */
+  kpMap?: Readonly<Record<string, string>>;
   /** 群卷题单的位置补丁（题单本身不带 day/section） */
   punch?: { day: number; section?: string };
   /** 题单形态的默认题型（题单没有题型字段） */
@@ -619,16 +637,31 @@ function 搬题单(
       );
     }
 
+    // kpMap：产线说法 → 词表 ref 的显式映射（先 anchor 后 kp_group，见 ConvertOptions.kpMap）
+    const 查表 = (s: string | null): string | undefined =>
+      s !== null && ctx.opts.kpMap ? ctx.opts.kpMap[s] : undefined;
+    const 映射键 = 查表(anchor) !== undefined ? anchor : 查表(kp_group) !== undefined ? kp_group : null;
+    const 映射值 = 查表(anchor) ?? 查表(kp_group);
+
     const kpRefs =
       (ctx.opts.kps?.length ?? 0) > 0
         ? ctx.opts.kps!
-        : anchor
-          ? [anchor]
-          : kp_group
-            ? [kp_group]
-            : [];
+        : 映射值 !== undefined
+          ? [映射值]
+          : anchor
+            ? [anchor]
+            : kp_group
+              ? [kp_group]
+              : [];
     if (kpRefs.length === 0) 无考点.push(seq);
-    else if (!(ctx.opts.kps?.length ?? 0)) {
+    else if ((ctx.opts.kps?.length ?? 0) > 0) {
+      /* 兜底考点那条已在上面记过账 */
+    } else if (映射值 !== undefined) {
+      ctx.normalizations.add(
+        `考点 ref 经 kpMap 显式映射：「${映射键}」→「${映射值}」` +
+          "（产线说法在词表里歧义/不是考点名/为空时的唯一正当出路；映射值仍要过闸③精确匹配）",
+      );
+    } else {
       ctx.normalizations.add(
         `考点 ref 取自 ${anchor ? "anchor（主锚）" : "kp_group（题组名）"} —— 送闸③做精确匹配，对不上会红灯（不硬挂）`,
       );

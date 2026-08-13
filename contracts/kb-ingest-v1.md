@@ -135,6 +135,14 @@
 > 🔴 **这张表已有机读实现**（AI:PRD-005 · 005-B）：`src/core/convert-punch.ts` 的
 > `convertPunchIngest()`，吃三形态（对象根 / 数组根 / 群卷题单.json）产 kb-ingest/v1 payload；
 > 产线接线的唯一入口 = `pnpm kb:submit <json路径> [--dry-run] [--assert-dedup]`。
+>
+> 🔴 **群卷题单的 anchor 有三种对不上词表的形态**（005-C 实测）：歧义（`sign` 同时是两个
+> 考点的别名、`去括号` 同时是正名与别名）、不是考点名（整条 anchor 是 LaTeX）、为空
+> （手写固定卷只有 `kp_group` 题组名）。出路是 `ConvertOptions.kpMap`
+> ＝「产线说法 → 词表 ref」的**显式映射表**（CLI `--kp-map <json>`），
+> 正本 = [`dicts/qunjuan-anchor-kp.map.json`](../dicts/qunjuan-anchor-kp.map.json)。
+> 🔴 映射表**不代替闸**：表里没有的照原样送闸③，对不上照样红 —— 它只解决「叫法对不上」，
+> 不许在映射层猜一个最像的。
 > **改这张表 = 改那个函数**，别让第二份映射长出来。
 > 转换层只做「搬运 + 有据可查的折算」：题面一个字不改，认不出的字段如实进报告（不静默丢），
 > 每一次归一（口算→计算 / 册级考点下沉 / 来源挂标签）都在返回的 `normalizations` 里留一行。

@@ -327,6 +327,45 @@ describe("④ 群卷题单（字段名全不一样的那份）", () => {
       seq: 2,
     });
   });
+
+  // ── kpMap（005-C）──────────────────────────────────────────────────────
+  it("🔴 kpMap 命中就换 ref 并记账；表里没有的**照原样**送闸③（映射表不代替闸）", () => {
+    const 料 = 拷(群卷题单) as unknown as Record<string, unknown>[];
+    // 第 2 题换成一条「anchor 是 LaTeX、词表里绝无此名」的（真实形态：绝对值线节⑥）
+    料[1]!.anchor = "\\(\\frac{\\left|a\\right|}{a}\\) 型的计算";
+    料[1]!.kp_group = "\\(\\frac{\\left|a\\right|}{a}\\) 型的计算";
+    const r2 = convertPunchIngest(料, {
+      filePath: "D:/x/题单.json",
+      qtype: "填空",
+      kpMap: { "\\(\\frac{\\left|a\\right|}{a}\\) 型的计算": "符号商 |a|/a 型的计算" },
+    });
+    const it2 = 唯一单元(r2).payload.items;
+
+    // 命中：ref 换成词表说法，并留一条 normalization（换过什么，账上写着）
+    expect(it2[1]!.kps).toEqual([
+      { ref: "符号商 |a|/a 型的计算", isPrimary: true },
+    ]);
+    expect(r2.normalizations.join("\n")).toContain("kpMap 显式映射");
+    // 🔴 没命中的那条一个字不改 —— 映射表只解决「叫法对不上」，不代替闸③
+    expect(it2[0]!.kps).toEqual([{ ref: "已知绝对值求数", isPrimary: true }]);
+    // 原始说法照旧进标签，映射前的叫法查得到
+    expect(it2[1]!.tags).toContain(
+      "anchor:\\(\\frac{\\left|a\\right|}{a}\\) 型的计算",
+    );
+  });
+
+  it("kpMap 也吃 anchor 为空的（退到 kp_group 查表）", () => {
+    const 料 = 拷(群卷题单) as unknown as Record<string, unknown>[];
+    料[0]!.anchor = ""; // 手写固定卷那两天就是这个形态
+    料[0]!.kp_group = "小数运算与简算"; // 题组名，不是考点名
+    const r2 = convertPunchIngest(料, {
+      filePath: "D:/x/题单.json",
+      kpMap: { 小数运算与简算: "分数与小数混合的有理数运算" },
+    });
+    expect(唯一单元(r2).payload.items[0]!.kps).toEqual([
+      { ref: "分数与小数混合的有理数运算", isPrimary: true },
+    ]);
+  });
 });
 
 describe("⑤ 🔴 未知字段如实透传（不静默丢）", () => {
