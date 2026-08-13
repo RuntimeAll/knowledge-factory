@@ -37,7 +37,8 @@ const NAV: ReadonlyArray<{
   { label: "知识图谱", href: "/kg", card: "002" },
   // 003-D 点亮：全域处置台（kp低置信 / 图片 / 新题草稿 / 隔离区 四类）
   { label: "审查队列", href: "/queue", card: "003" },
-  { label: "题库检索", card: "004" },
+  // 004-C 点亮：三路检索页（条件面板 + 来源徽章）+ /q/[id] 题目正本
+  { label: "题库检索", href: "/search", card: "004" },
   { label: "生产登记", card: "005" },
   { label: "学情", card: "006" },
 ];
