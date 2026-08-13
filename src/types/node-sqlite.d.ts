@@ -24,6 +24,15 @@ declare module "node:sqlite" {
   export interface StatementSync {
     all(...params: unknown[]): unknown[];
     get(...params: unknown[]): unknown;
+    /**
+     * 🔴 唯一的写方法，全仓只有一个调用点：`tests/gradebridge.test.ts` 的 REG-F4
+     * （绕过我们自己的语句锁，对圣域真发一条 UPDATE，**断言它必须失败**）。
+     * 业务代码里出现它 = 有人在往只读库上写，那是事故。
+     */
+    run(...params: unknown[]): {
+      changes: number | bigint;
+      lastInsertRowid: number | bigint;
+    };
   }
 
   export class DatabaseSync {

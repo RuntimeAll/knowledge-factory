@@ -1,7 +1,7 @@
 ﻿<#
 .SYNOPSIS
   一键全量回归（AI:PRD-001 · WP7 / AI:PRD-002 · 002-E / AI:PRD-003 · 003-E /
-  AI:PRD-004 · 004-D / AI:PRD-005 · 005-D）—— 回归清单 A~E 五组的正式载体。
+  AI:PRD-004 · 004-D / AI:PRD-005 · 005-D / AI:PRD-006 · 006-B）—— 回归清单 A~F 六组的正式载体。
 
 .DESCRIPTION
   按序跑完所有关卡，逐关打 [PASS]/[FAIL]，**任一关红了也继续跑完**（一次跑完
@@ -23,6 +23,7 @@
                              + 产线转换器 + SKU/模型链（C5~C6，AI:PRD-005）
     REG-D    检索            评测集不低于基线 + 命中来源标注 + FTS 注入安全（D1~D3）
     REG-E    产线流程与族谱  出册干跑全链 + 已售题拦截归因 + 变式族谱完整（E1~E3）
+    REG-F    学情读侧        挂桥对数快照 + 错因三形态 + 圣域 schema hash + 只读物理验证（F1~F4）
     REG-A4   备份快照有效    backup-verify.ts 出新快照 + 独立只读复算
 
   🔴 REG-B / REG-C / REG-D 单独成关而不是「TEST 里已经跑过了」：触发矩阵里
@@ -178,7 +179,7 @@ $gates = @(
 
   [pscustomobject]@{
     Id     = 'REG-TEST'
-    Name   = '单测全量（vitest，314 例基线）'
+    Name   = '单测全量（vitest，338 例基线）'
     Action = {
       & pnpm test | Write-Host
       if ($LASTEXITCODE -ne 0) { return "vitest 退出码 $LASTEXITCODE（有用例挂了）" }
@@ -293,6 +294,30 @@ $gates = @(
   },
 
   [pscustomobject]@{
+    Id     = 'REG-F'
+    Name   = '学情读侧（F1 挂桥对数快照 / F2 错因三形态 / F3 圣域 schema hash / F4 只读物理验证）'
+    Action = {
+      # 🔴 四关一个文件（tests/gradebridge.test.ts），触发面 = 触发矩阵那条
+      #    「学情读侧 / 挂桥 → F 全」，外加 schema/migration 那条也带 F3。
+      #    F1/F2 打**真库 + 真圣域**且零写：快照验的就是「库现在这个状态下桥搭成什么样」，
+      #    造假数据验等于验了个寂寞；要写的错因域原语跑在 VACUUM INTO 的副本上。
+      # 🔴 圣域零写有机器背书：文件头尾各取一次 sha256/size/mtime，跑完必须逐位相同
+      #    （afterAll 里断言），并确认没留下 -wal/-shm。
+      # 🔴 F3 红了的正确反应是**人工重新快照并评估**（批改线改了表，我们的读侧口径
+      #    可能已经错了），不是回来重跑快照脚本把红旗按灭 —— 这条写在测试的失败信息里。
+      # 🔴 F1 基准（tests/fixtures/reg-f1-挂桥快照-20260813.json）**入 git**。
+      #    需求卡/回归清单里写的「小崽子×2/鼻涕虫×1」是立卡当天的旧数，已被实况取代
+      #    （实为 batch 10/13/14），基准文件里记着这件事。新批次只增不改旧：
+      #    batch 总数涨了不判红，旧的那三条挂桥结果变了才判红。
+      & pnpm exec vitest run tests/gradebridge.test.ts | Write-Host
+      if ($LASTEXITCODE -ne 0) {
+        return "学情读侧回归红了（哪条见上面输出）——F1 红先看是不是补录了桥（那就改基准并说明）；F3 红走人工重新快照评估；🔴 F4 红 = 圣域只读防线破了，立刻停手查是谁写的"
+      }
+      return $null
+    }
+  },
+
+  [pscustomobject]@{
     Id     = 'REG-A4'
     Name   = '备份快照有效（出新快照 + 独立只读复算）'
     Action = {
@@ -327,7 +352,7 @@ try {
 
   $bar = '=' * 78
   Write-Host $bar
-  Write-Host "全量回归 · AI:PRD-001 + AI:PRD-002 + AI:PRD-003 + AI:PRD-004 + AI:PRD-005（A/B/C/D/E 五组）"
+  Write-Host "全量回归 · AI:PRD-001 + AI:PRD-002 + AI:PRD-003 + AI:PRD-004 + AI:PRD-005 + AI:PRD-006（A/B/C/D/E/F 六组）"
   Write-Host "  仓根  ：$root"
   Write-Host "  开始  ：$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
   Write-Host "  关卡  ：$($selected.Count) 关（$(($selected | ForEach-Object { $_.Id }) -join '、')）"

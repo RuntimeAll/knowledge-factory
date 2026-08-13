@@ -37,6 +37,7 @@ import {
   runCheckDuplicate,
   runFindSimilar,
   runGetQuestion,
+  runGroupKpStats,
   runHealth,
   runIntegrityCheck,
   runKpContext,
@@ -45,6 +46,7 @@ import {
   runRegisterSku,
   runResolveKp,
   runSearchQuestions,
+  runStudentView,
   type ToolPayload,
 } from "~/app/api/mcp/tools";
 
@@ -112,7 +114,7 @@ interface ListedTool {
 }
 
 describe("MCP 壳 · 注册表", () => {
-  it("route 导出 GET/POST（同一个 handler），tools/list 回十五个工具", async () => {
+  it("route 导出 GET/POST（同一个 handler），tools/list 回十七个工具", async () => {
     expect(typeof route.GET).toBe("function");
     expect(typeof route.POST).toBe("function");
     expect(route.GET).toBe(route.POST); // 2.x 一个 handler 通吃，不再分 SSE/message 两条路
@@ -126,7 +128,7 @@ describe("MCP 壳 · 注册表", () => {
     const tools = r.result?.tools ?? [];
 
     // 🔴 基线随卡增长：001 三个系统工具 + 002-C 两个考点工具 + 003-D 三个录题工具
-    //    + 004-B 两个检索工具 + 005-B 五个产线工具 = 15
+    //    + 004-B 两个检索工具 + 005-B 五个产线工具 + 006-B 两个学情工具 = 17
     expect(tools.map((t) => t.name)).toEqual([
       "health",
       "integrity_check",
@@ -143,6 +145,8 @@ describe("MCP 壳 · 注册表", () => {
       "propose_model",
       "check_duplicate",
       "find_similar",
+      "student_view",
+      "group_kp_stats",
     ]);
     // 描述是给 agent 看的，不许空
     for (const t of tools) expect(t.description ?? "").not.toBe("");
@@ -205,6 +209,25 @@ describe("MCP 壳 · 注册表", () => {
     expect(
       tools.find((t) => t.name === "propose_model")?.inputSchema?.required,
     ).toEqual(["kp", "name", "dsl_ref"]);
+
+    // 🔴 学情两工具（006-B）的入参面也当漂移闸：
+    //    student_view 的 code **必填**（学员代号；少了它就成了「随便给我看点学情」），
+    //    group_kp_stats **全可选**（不给参数 = 全库群错误率，是合法查询）。
+    const sv = tools.find((t) => t.name === "student_view");
+    expect(Object.keys(sv?.inputSchema?.properties ?? {})).toEqual([
+      "code",
+      "line",
+    ]);
+    expect(sv?.inputSchema?.required).toEqual(["code"]);
+    const gk = tools.find((t) => t.name === "group_kp_stats");
+    expect(Object.keys(gk?.inputSchema?.properties ?? {})).toEqual([
+      "kp_ids",
+      "line",
+    ]);
+    expect(gk?.inputSchema?.required ?? []).toEqual([]);
+    // 🔴 描述里必须写着「代号不是真名」——这条纪律靠工具描述传给 agent
+    expect(sv?.description ?? "").toMatch(/代号/);
+    expect(sv?.description ?? "").toMatch(/不是真名/);
   });
 });
 
@@ -473,6 +496,65 @@ describe("MCP 壳 · 产线五工具（AI:PRD-005 · 005-B）", () => {
     expect(bad.ok).toBe(false);
     if (bad.ok) return;
     expect(bad.code).toBe("QUESTION_NOT_FOUND");
+  });
+});
+
+describe("MCP 壳 · 学情两工具（AI:PRD-006 · 006-B）", () => {
+  it("student_view：数据包带覆盖口径，未挂桥批次如实列出", async () => {
+    const r = await runStudentView({ code: "小崽子" });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.data.code).toBe("小崽子");
+    expect(r.data.batches.length).toBeGreaterThan(0);
+    // 🔴 覆盖口径必带（少了它，perKp 会被当成全量）
+    expect(r.data.coverage.total).toBeGreaterThan(0);
+    expect(r.data.coverage.unmatched.length).toBe(
+      r.data.coverage.total - r.data.coverage.matched,
+    );
+    // 🔴 未挂桥的批次分数照给、说得出为什么、但没有 taskId
+    for (const b of r.data.batches.filter((x) => !x.matched)) {
+      expect(b.why ?? "").not.toBe("");
+      expect(b.taskId).toBeNull();
+      expect(b.score).toBeTruthy();
+    }
+    // 口径注释跟着数走
+    expect(r.data.rubric.join("\n")).toMatch(/空题算失分/);
+  });
+
+  it("student_view：查无此代号 ⇒ 回空数据包而不是报错（如实说「没有」）", async () => {
+    const r = await runStudentView({ code: "查无此人代号" });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.data.batches).toEqual([]);
+    expect(r.data.roster).toBeNull();
+    expect(r.data.done.count).toBe(0);
+    expect(r.data.warnings.join("\n")).toMatch(/roster 里没有代号/);
+  });
+
+  it("group_kp_stats：错误率 + 错因分布合并回执，unmapped 红旗不静默丢", async () => {
+    const r = await runGroupKpStats({});
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.data.coverage).toEqual(r.data.errorRate.coverage);
+    expect(r.data.errorRate.rows.length).toBeGreaterThan(0);
+    for (const row of r.data.errorRate.rows) {
+      expect(row.wrong).toBeLessThanOrEqual(row.total);
+    }
+    // 🔴 三形态分列 + unmapped：错因域还没灌种子时，码全在 unmapped 里（不是消失了）
+    expect(
+      r.data.causes.rows.length + r.data.causes.unmapped.length,
+    ).toBeGreaterThan(0);
+    expect(r.data.causes.sampleCodes).toBe(
+      r.data.causes.rows.reduce((s, x) => s + x.count, 0) +
+        r.data.causes.unmapped.reduce((s, x) => s + x.count, 0),
+    );
+
+    // 只看一个考点：kp_ids 过滤真的生效
+    const one = r.data.errorRate.rows[0]!.kpId;
+    const f = await runGroupKpStats({ kp_ids: [one] });
+    expect(f.ok).toBe(true);
+    if (!f.ok) return;
+    expect(f.data.errorRate.rows.map((x) => x.kpId)).toEqual([one]);
   });
 });
 
