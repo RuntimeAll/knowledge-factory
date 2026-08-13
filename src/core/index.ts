@@ -37,6 +37,7 @@
  *   dedup.ts   出册前置闸 assertNoSoldDuplicates（撞了带出是哪本册子 · AI:PRD-005）
  *   sku.ts     SKU 登记原语（建册/装题/登记产出/改态 + 通向圣域的两座桥 · AI:PRD-005）
  *   model.ts   考察模型 提议/转正/驳回（exam_model + kind='模型转正' 工单 · AI:PRD-005）
+ *              + 血缘上游 setModelOrigins / 变式族谱 getLineage（005-D）
  *   gates/     闸（骨架来自 001；十道录题闸在 AI:PRD-003 落地，逐闸一文件）
  *   backup.ts  VACUUM INTO 快照（+异地副本）
  *   grading.ts 🔴 圣域 审核.db **只读**连接（三道锁，见文件头）
@@ -577,11 +578,17 @@ export {
   MODEL_STATUSES,
   ModelError,
   activateModel,
+  getLineage,
   getModel,
   listModels,
   proposeModel,
   rejectModel,
   resolveKpRef,
+  setModelOrigins,
+  type LineageModel,
+  type LineageOptions,
+  type LineageQuestion,
+  type LineageView,
   type ListModelsOptions,
   type ModelBrief,
   type ModelCard,
@@ -591,6 +598,7 @@ export {
   type ProposeModelInput,
   type ProposeModelResult,
   type ResolvedKpRef,
+  type SetModelOriginsResult,
 } from "./model";
 
 /**

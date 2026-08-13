@@ -34,6 +34,7 @@ import { getCoreDb, type CoreDbHandle } from "./db";
 import { isId, newId } from "./ids";
 import { resolveMergedKp } from "./kg";
 import { resolveKp, type KpCandidate } from "./resolve";
+import { stemBrief } from "./retrieval";
 import { nowLocalISO } from "./time";
 import { withCoreWrite, type RowRef } from "./write";
 
@@ -278,6 +279,20 @@ function jsonCol(v: unknown): string | null {
   if (v === null || v === undefined) return null;
   if (typeof v === "string") return v.trim() === "" ? null : v;
   return JSON.stringify(v);
+}
+
+/**
+ * `exam_model.origin_qids_json` → id 数组（🔴 唯一一处解法：getModel / setModelOrigins /
+ * getLineage 三处都调它，各解各的迟早对不上）。null / 坏 JSON / 非数组 一律当空。
+ */
+function 解originQids(s: string | null | undefined): string[] {
+  if (typeof s !== "string") return [];
+  try {
+    const parsed: unknown = JSON.parse(s);
+    return Array.isArray(parsed) ? parsed.map((x) => String(x)) : [];
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -633,15 +648,7 @@ export async function getModel(
   const row = (r.rows[0] as unknown as 模型行 | undefined) ?? null;
   if (!row) return null;
 
-  let originQids: string[] = [];
-  if (typeof row.origin_qids_json === "string") {
-    try {
-      const parsed: unknown = JSON.parse(row.origin_qids_json);
-      if (Array.isArray(parsed)) originQids = parsed.map((x) => String(x));
-    } catch {
-      originQids = [];
-    }
-  }
+  const originQids = 解originQids(row.origin_qids_json);
 
   return {
     id: row.id,
@@ -716,4 +723,355 @@ export async function listModels(
     createdAt: m.createdAt,
     activatedAt: m.activatedAt,
   }));
+}
+
+// ---------------------------------------------------------------------------
+// ④ 血缘上游：给模型补 origin 母题（AI:PRD-005 · 005-D）
+// ---------------------------------------------------------------------------
+
+export interface SetModelOriginsResult {
+  modelId: string;
+  name: string;
+  /** 改之前 origin_qids_json 里是什么（空数组 = 之前没记） */
+  before: string[];
+  after: string[];
+  by: string;
+  at: string;
+  seq: number;
+}
+
+const 血缘入参 = z.object({
+  questionIds: z
+    .array(z.string().trim().min(1))
+    .min(1, "至少给一道母题（要清空血缘请显式传 allowEmpty:true）"),
+  by: 署名,
+});
+
+/**
+ * 给一个考察模型写上「它是从哪几道真题归纳出来的」（`exam_model.origin_qids_json`）。
+ *
+ * 为什么这一格非填不可：模型的 `dsl_ref` 只说得清「谁在出这类题」，说不清
+ * **「这类题最早长什么样」**。母题一丢，日后就只剩一串参数不同的变式，
+ * 谁也回答不了「这个模型当初照着什么归纳的、归纳得对不对」——
+ * 而这正是「变式族谱」要给出的第一个答案（005 验收 5-3）。
+ *
+ * 🔴 **覆盖写**（不是追加）：传进来的这一组就是最终态，同一份入参重跑结果一样。
+ *    要追加请自己把并集传进来 —— 隐式合并会让「我到底记了哪几道」变成一笔糊涂账。
+ * 🔴 母题必须是**库里真的题**（同 proposeModel 的口径）：编一个 q_ id 挂上去，
+ *    日后没人查得出它本来指谁。
+ * 🔴 顺序保留、按首次出现去重（同一道题给两遍不算两条血缘）。
+ */
+export async function setModelOrigins(
+  modelId: string,
+  questionIds: string[],
+  opts: {
+    by: string;
+    /** 显式允许清空（把 origin 抹成 null）—— 默认不许，防手滑传空数组 */
+    allowEmpty?: boolean;
+    actor?: AuditActor;
+    handle?: CoreDbHandle;
+  },
+): Promise<SetModelOriginsResult> {
+  const id = (modelId ?? "").trim();
+  const 清空 = opts.allowEmpty === true && (questionIds ?? []).length === 0;
+  const v = 清空
+    ? { questionIds: [] as string[], by: parseInput(署名, opts.by) }
+    : parseInput(血缘入参, { questionIds, by: opts.by });
+  const h = opts.handle ?? (await getCoreDb());
+
+  const m = await h.db
+    .select()
+    .from(examModel)
+    .where(eq(examModel.id, id))
+    .limit(1);
+  const 模型 = m[0];
+  if (!模型) {
+    throw new ModelError(
+      "MODEL_NOT_FOUND",
+      `模型 ${id} 查无此行 —— 模型 id 来自 propose_model 的返回或 list_models，别自己编。`,
+    );
+  }
+
+  const after = [...new Set(v.questionIds.map((s) => s.trim()))];
+
+  if (after.length > 0) {
+    const 有的 = await h.db
+      .select({ id: question.id })
+      .from(question)
+      .where(inArray(question.id, after));
+    const 有 = new Set(有的.map((r) => r.id));
+    const 缺 = after.filter((x) => !有.has(x));
+    if (缺.length > 0) {
+      throw new ModelError(
+        "QUESTION_NOT_FOUND",
+        `这些题查无此行：${缺.slice(0, 8).join("、")}${缺.length > 8 ? " …" : ""}` +
+          " —— 血缘上游得是库里真的题（题 id 来自 search_questions / kb_ingest 的返回）。",
+      );
+    }
+  }
+
+  const before = 解originQids(模型.originQidsJson);
+  const at = nowLocalISO();
+
+  const receipt = await withCoreWrite(
+    {
+      actor: opts.actor ?? "agent",
+      tool: "setModelOrigins",
+      args: { modelId: id, by: v.by, before, after },
+    },
+    async (tx) => {
+      await tx
+        .update(examModel)
+        .set({
+          originQidsJson: after.length > 0 ? JSON.stringify(after) : null,
+        })
+        .where(eq(examModel.id, id));
+      return [{ table: "exam_model", id, op: "update" as const }];
+    },
+    opts.handle,
+  );
+
+  return {
+    modelId: id,
+    name: 模型.name,
+    before,
+    after,
+    by: v.by,
+    at,
+    seq: receipt.seq,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// ⑤ 变式族谱（只读 · AI:PRD-005 · 005-D）
+// ---------------------------------------------------------------------------
+
+/** 族谱里的一道题（只给摘要：全文走 getQuestion，族谱不驮正文） */
+export interface LineageQuestion {
+  questionId: string;
+  stemBrief: string;
+  status: string;
+  qtype: string | null;
+}
+
+/** 族谱里的一个模型（带 dsl_ref：一路能指回真生成器文件） */
+export interface LineageModel {
+  modelId: string;
+  name: string;
+  status: string;
+  dslRef: string | null;
+  kpId: string;
+  kpName: string | null;
+}
+
+export interface LineageView {
+  questionId: string;
+  /**
+   * 本题**由哪个模型生成**（question.model_id）。null = 它不是模型生成的
+   * （scan/pipeline/manual 三型，或 model_id 还没回填）。
+   */
+  bornOf:
+    | (LineageModel & {
+        /** 这个模型的血缘上游（母题）—— 🔴 空数组 = 模型没记母题，族谱到此断链 */
+        origins: LineageQuestion[];
+        /** 同模型的兄弟变式（不含自己） */
+        siblings: LineageQuestion[];
+        /** 兄弟总数（siblings 只取前 limit 条） */
+        siblingTotal: number;
+      })
+    | null;
+  /**
+   * 本题**被哪些模型当作归纳上游**（它的 id 落在某个模型的 origin_qids_json 里）。
+   * 这就是母题侧的那半张族谱：由此题归纳出的模型 → 该模型派生的变式。
+   */
+  originOf: (LineageModel & {
+    derived: LineageQuestion[];
+    derivedTotal: number;
+  })[];
+}
+
+export interface LineageOptions {
+  /** 兄弟/派生列表各取几条，默认 20，上限 200 */
+  limit?: number;
+  handle?: CoreDbHandle;
+}
+
+interface 族谱题行 {
+  id: string;
+  stem: string;
+  status: string;
+  qtype: string | null;
+}
+
+interface 族谱模型行 {
+  id: string;
+  name: string;
+  status: string;
+  dsl_ref: string | null;
+  kp_id: string;
+  kp_name: string | null;
+  origin_qids_json: string | null;
+}
+
+function 简题(r: 族谱题行): LineageQuestion {
+  return {
+    questionId: String(r.id),
+    stemBrief: stemBrief(r.stem),
+    status: String(r.status),
+    qtype: r.qtype,
+  };
+}
+
+function 简模(r: 族谱模型行): LineageModel {
+  return {
+    modelId: String(r.id),
+    name: String(r.name),
+    status: String(r.status),
+    dslRef: r.dsl_ref,
+    kpId: String(r.kp_id),
+    kpName: r.kp_name,
+  };
+}
+
+/**
+ * 一道题的**变式族谱**：往上找母题、往旁找兄弟、往下找派生。
+ *
+ * ```
+ *      母题（模型 origin_qids_json 里的真题）
+ *        │  归纳
+ *        ▼
+ *   exam_model（dsl_ref → 真生成器文件）
+ *        │  生成
+ *        ▼
+ *   变式 A   变式 B   变式 C …
+ * ```
+ *
+ * 两侧都给（一个函数管两种站位，页面不必先判断「我现在是母题还是变式」）：
+ *   - `bornOf`  ：我是变式时 —— 我的模型、模型的母题、我的兄弟；
+ *   - `originOf`：我是母题时 —— 由我归纳出的模型、它们派生的变式。
+ *   一道题两边都占也讲得通（拿变式再归纳出新模型），所以不是二选一。
+ *
+ * 🔴 只读，一个字节都不写库。
+ * 🔴 查不到题**不抛**：回一张两侧全空的卡。族谱是页面上的一个小节，
+ *    为它整页 500 不值当（「这题不在库里」由 getQuestion 那条主路去说）。
+ */
+export async function getLineage(
+  questionId: string,
+  opts: LineageOptions = {},
+): Promise<LineageView> {
+  const id = (questionId ?? "").trim();
+  const limit = Math.min(200, Math.max(1, Math.trunc(opts.limit ?? 20)));
+  const h = opts.handle ?? (await getCoreDb());
+  const 空: LineageView = { questionId: id, bornOf: null, originOf: [] };
+  if (!id) return 空;
+
+  const 本 = await h.client.execute({
+    sql: "SELECT id, model_id FROM question WHERE id = ?",
+    args: [id],
+  });
+  const 本行 = 本.rows[0] as unknown as
+    { id: string; model_id: string | null } | undefined;
+  if (!本行) return 空;
+
+  const 取模型 = async (mid: string): Promise<族谱模型行 | null> => {
+    const r = await h.client.execute({
+      sql: `SELECT m.id, m.name, m.status, m.dsl_ref, m.kp_id, m.origin_qids_json,
+                   k.name AS kp_name
+              FROM exam_model m LEFT JOIN kp k ON k.id = m.kp_id
+             WHERE m.id = ?`,
+      args: [mid],
+    });
+    return (r.rows[0] as unknown as 族谱模型行 | undefined) ?? null;
+  };
+
+  /** 按给定顺序取题；查不到的**不静默丢**，留一条明说（血缘断了要看得见） */
+  const 取题 = async (ids: string[]): Promise<LineageQuestion[]> => {
+    if (ids.length === 0) return [];
+    const 占位 = ids.map(() => "?").join(",");
+    const r = await h.client.execute({
+      sql: `SELECT id, stem, status, qtype FROM question WHERE id IN (${占位})`,
+      args: ids,
+    });
+    const byId = new Map<string, 族谱题行>();
+    for (const row of r.rows as unknown as 族谱题行[]) {
+      byId.set(String(row.id), row);
+    }
+    return ids.map((qid) => {
+      const row = byId.get(qid);
+      return row
+        ? 简题(row)
+        : {
+            questionId: qid,
+            stemBrief:
+              "🔴 这道母题不在库里（origin_qids_json 指了个查无此行的 id）",
+            status: "missing",
+            qtype: null,
+          };
+    });
+  };
+
+  const 列题 = async (
+    sql: string,
+    args: (string | number)[],
+  ): Promise<LineageQuestion[]> => {
+    const r = await h.client.execute({ sql, args });
+    return (r.rows as unknown as 族谱题行[]).map(简题);
+  };
+
+  const 数 = async (sql: string, args: string[]): Promise<number> => {
+    const r = await h.client.execute({ sql, args });
+    return Number((r.rows[0] as unknown as { n: number } | undefined)?.n ?? 0);
+  };
+
+  // ── 我是变式：我的模型 → 它的母题 + 我的兄弟 ───────────────────────────
+  let bornOf: LineageView["bornOf"] = null;
+  if (本行.model_id) {
+    const m = await 取模型(String(本行.model_id));
+    if (m) {
+      bornOf = {
+        ...简模(m),
+        origins: await 取题(解originQids(m.origin_qids_json)),
+        siblings: await 列题(
+          `SELECT id, stem, status, qtype FROM question
+            WHERE model_id = ? AND id <> ? ORDER BY created_at, id LIMIT ?`,
+          [m.id, id, limit],
+        ),
+        siblingTotal: await 数(
+          "SELECT COUNT(*) AS n FROM question WHERE model_id = ? AND id <> ?",
+          [m.id, id],
+        ),
+      };
+    }
+  }
+
+  // ── 我是母题：哪些模型把我列进了 origin_qids_json ──────────────────────
+  //    🔴 走 json_each 而不是 LIKE：LIKE 的模式会被别的 id 的子串蹭中。
+  const 上游 = await h.client.execute({
+    sql: `SELECT m.id, m.name, m.status, m.dsl_ref, m.kp_id, m.origin_qids_json,
+                 k.name AS kp_name
+            FROM exam_model m LEFT JOIN kp k ON k.id = m.kp_id
+           WHERE m.origin_qids_json IS NOT NULL
+             AND EXISTS (SELECT 1 FROM json_each(m.origin_qids_json) je
+                          WHERE je.value = ?)
+           ORDER BY m.created_at, m.id`,
+    args: [id],
+  });
+
+  const originOf: LineageView["originOf"] = [];
+  for (const m of 上游.rows as unknown as 族谱模型行[]) {
+    originOf.push({
+      ...简模(m),
+      derived: await 列题(
+        `SELECT id, stem, status, qtype FROM question
+          WHERE model_id = ? ORDER BY created_at, id LIMIT ?`,
+        [m.id, limit],
+      ),
+      derivedTotal: await 数(
+        "SELECT COUNT(*) AS n FROM question WHERE model_id = ?",
+        [m.id],
+      ),
+    });
+  }
+
+  return { questionId: id, bornOf, originOf };
 }
