@@ -63,7 +63,7 @@ import {
 import { type AuditActor, sha256Hex, stableStringify } from "./audit";
 import { backupNow, dbUrlToPath, type BackupResult } from "./backup";
 import { getCoreDb, type CoreDbHandle, type CoreTx } from "./db";
-import { stripHtmlForSeg, writeQuestionFts } from "./fts";
+import { writeQuestionFts } from "./fts";
 import { runGates, type Gate, type GateFail, type GateReport } from "./gates";
 import {
   checkContract,
@@ -99,12 +99,8 @@ import {
   type KbIngestItem,
   type KbIngestPayload,
 } from "./ingest-schema";
-import {
-  calcVerify,
-  lineVerify,
-  segmentTexts,
-  type SidecarOptions,
-} from "./sidecar";
+import { segSearchString } from "./segment";
+import { calcVerify, lineVerify, type SidecarOptions } from "./sidecar";
 import { nowLocalISO } from "./time";
 import { withCoreWrite, type RowRef } from "./write";
 
@@ -244,36 +240,23 @@ function 变换(item: KbIngestItem): ItemDerived {
 }
 
 /**
- * 侧车分词：一次进程吃整批。
- * 🔴 写侧一律 `mode:'search'`（总指挥拍板 2026-08-12）——长词再切、多留 token；
- *    查侧用 exact。这个方向不能反：查询 token 是索引 token 的子集才只会多命中不会漏
+ * 分词（004-A 起走 {@link segSearchString}，`@node-rs/jieba` 进程内，不再起侧车进程）。
+ *
+ * 🔴 写侧一律**搜索模式**（总指挥拍板 2026-08-12）——长词再切、多留 token；
+ *    查侧用精确模式。这个方向不能反：查询 token 是索引 token 的子集才只会多命中不会漏
  *    （反过来就是静默查不全，见 fts.ts 文件头的两条召回缺口）。
  *
- * 🔴 喂料前先 {@link stripHtmlForSeg} 剥版面标记（003-E4）：群卷题面的填空线是
- *    `<span style="…border-bottom…">`、选项栅格是 `<div style="display:grid…">`，
- *    整串喂给 jieba 就把 `span`/`style`/`display`/`border` 变成了检索词。
- *    剥的是**喂料**，正本 `question.stem` 一个字不动（版面标记是源的一部分）。
+ * 🔴 喂料归一（剥版面标记 + 去 LaTeX）已经在 `segment.ts` 里做掉了，
+ *    这里传**原文**即可 —— 别在外面先 `stripHtmlForSeg` 一遍（实体会被二次解码）。
+ *    剥的始终只是**喂料**，正本 `question.stem` 一个字不动（版面标记是源的一部分）。
  */
-async function 分词(
-  payload: KbIngestPayload,
-  derived: ItemDerived[],
-  opts: SidecarOptions,
-): Promise<void> {
-  const inputs: { id: string; text: string }[] = [];
+function 分词(payload: KbIngestPayload, derived: ItemDerived[]): void {
   payload.items.forEach((item, i) => {
-    inputs.push({ id: `s${i}`, text: stripHtmlForSeg(derived[i]!.stemClean) });
-    if (item.answer !== null)
-      inputs.push({ id: `a${i}`, text: stripHtmlForSeg(item.answer) });
-    if (item.analysis !== null)
-      inputs.push({ id: `n${i}`, text: stripHtmlForSeg(item.analysis) });
-  });
-  const out = await segmentTexts(inputs, { ...opts, mode: "search" });
-  const byId = new Map(out.map((r) => [r.id, r.segmented]));
-  payload.items.forEach((_item, i) => {
     const d = derived[i]!;
-    d.stemPlainSeg = byId.get(`s${i}`) ?? "";
-    d.answerSeg = byId.get(`a${i}`) ?? "";
-    d.analysisSeg = byId.get(`n${i}`) ?? "";
+    d.stemPlainSeg = segSearchString(d.stemClean);
+    d.answerSeg = item.answer === null ? "" : segSearchString(item.answer);
+    d.analysisSeg =
+      item.analysis === null ? "" : segSearchString(item.analysis);
   });
 }
 
@@ -487,7 +470,7 @@ export async function runIngestBatch(
     if (!keyOwner.has(k)) keyOwner.set(k, item.seq);
   });
 
-  await 分词(payload, derived, options.sidecar ?? {});
+  分词(payload, derived);
   await 实算(payload, derived, options.sidecar ?? {});
   await 逐行(payload, derived, options.sidecar ?? {});
 

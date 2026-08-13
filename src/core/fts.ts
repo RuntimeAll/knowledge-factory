@@ -20,7 +20,8 @@
  *      —— 又是一次静默半失效。管道侧的机器闸在 003-C。
  * ════════════════════════════════════════════════════════════════════════════
  *
- * 分词由 Python 侧车干（`core/sidecar.ts` → jieba）。本文件只管：
+ * 分词由 `core/segment.ts` 干（`@node-rs/jieba`，进程内；004-A 起从 Python 侧车搬回
+ * node —— 查询路径上不能有"每次起一个 python 进程"）。本文件只管：
  *   writeQuestionFts()  写侧幂等投影（DELETE + INSERT）
  *   ftsQuery()          查侧：query → jieba token → 安全的 MATCH 串
  *
@@ -33,67 +34,17 @@ import { sql } from "drizzle-orm";
 import { type CoreTx } from "./db";
 // FTS5 字符串字面量转义：kp_fts 那边先写的，两张 FTS 表同一套语法，不重复造
 import { ftsStringLiteral } from "./resolve";
-import { segmentTexts, type SegmentOptions } from "./sidecar";
+import { segExact } from "./segment";
 
 // ---------------------------------------------------------------------------
-// 分词喂料的归一（🔴 剥 HTML —— 003-E4 / G-3 群卷路观察）
+// 分词喂料的归一
+//
+// 🔴 004-A 起，剥 HTML（stripHtmlForSeg）/ 去 LaTeX（deLatex）/ 分词全部搬进
+//    core/segment.ts —— 写侧与查侧共用同一份归一，本文件不再自己留一套。
+//    ~/core 的公共面没变，stripHtmlForSeg 还是从 barrel 出（只是换了产地）。
+// ⚠️ segSearch / segExact 内部**已经**调过它了：调用方别在喂分词器之前再剥一遍
+//    （剥 HTML 不幂等，实体会被二次解码；见 segment.ts 纪律②）。
 // ---------------------------------------------------------------------------
-
-/**
- * 🔴 **只认「标签形状」的 `<…>`，不认数学不等号**。
- *
- * 群卷题面里混着三种格式（备料 R2 实测）：填空线是
- * `<span style="display:inline-block;border-bottom:1px solid #000;min-width:3.4em"></span>`，
- * 选项栅格是 `<div style="display:grid;…">`。这些样式串一路喂进 jieba，
- * 检索词里就躺着 `span` / `style` / `display` / `border` / `bottom` / `1px` / `solid`
- * —— 搜「border」能搜出一堆填空题，而这些 token 不是题目的任何一部分。
- *
- * 但**不能**用 `<[^>]*>` 通杀（G-3 核查员方法论坑①，`_extract.py` 头上也写着同一条）：
- * 库里真有裸不等号的题面 ——
- *
- *   `有理数 a < 0，b < 0，c > 0，且 |a|<|c|<|b|。`
- *   `（用 < 或 > 或 = 号填空）`
- *   `1 000 < 50 653 < 1 000 000`
- *
- * `<[^>]*>` 会把 `< 0，b < 0，c >` 整段当成一个标签吃掉，题面直接丢字。
- *
- * 所以形状收得很紧：`<` 或 `</` 之后**紧跟**一个 ASCII 字母（标签名不可能以空格/数字开头
- * —— 上面那些不等号后面不是空格就是数字），且属性区间里**不许再出现 `<`**
- * （合法 HTML 属性里的 `<` 一律写成 `&lt;`；不加这条，`b<c … >` 这种跨越式误吞就还在）。
- */
-const RE_HTML_TAG = /<\/?[a-zA-Z][^<>]*>/g;
-
-/**
- * HTML 实体 → 字面字符。
- * 🔴 顺序钉死：**先剥标签、后解实体**。反过来的话 `&lt;span&gt;`（一段被转义、
- *    本该当正文读的文本）会先变成 `<span>`，再被当标签剥掉 —— 凭空吃掉正文。
- */
-const 实体表: ReadonlyArray<[RegExp, string]> = [
-  [/&nbsp;/gi, " "],
-  [/&lt;/gi, "<"],
-  [/&gt;/gi, ">"],
-  [/&quot;/gi, '"'],
-  [/&#39;/g, "'"],
-  [/&radic;/gi, "√"],
-  [/&#183;/g, "·"],
-  // 🔴 &amp; 必须最后：先解它的话 `&amp;lt;` 会变成 `&lt;` 再被解成 `<`（二次解码）
-  [/&amp;/gi, "&"],
-];
-
-/**
- * 分词喂料归一：剥 HTML 标签 + 解实体 + 折叠空白。
- *
- * 🔴 **只作用于喂料，不回写正本**。`question.stem` 存的是原文（版面标记是源的一部分，
- *    渲染要用），派生出去的检索投影才做这层归一 —— 与 `answer`/`analysis` 的分词串
- *    从来不回写正本是同一条纪律（见 {@link QuestionFtsInput}）。
- */
-export function stripHtmlForSeg(text: string | null | undefined): string {
-  let s = text ?? "";
-  s = s.replace(RE_HTML_TAG, " ");
-  for (const [re, to] of 实体表) s = s.replace(re, to);
-  // 标签变空格后会留下一串连续空白；jieba 不在意，但对账/单测读起来干净些
-  return s.replace(/[ \t]{2,}/g, " ").trim();
-}
 
 // ---------------------------------------------------------------------------
 // 写侧
@@ -154,7 +105,7 @@ export interface FtsQueryPlan {
   match: string | null;
 }
 
-export interface FtsQueryOptions extends SegmentOptions {
+export interface FtsQueryOptions {
   /** token 之间的连接词：and=全都要（默认）；or=命中任一 */
   op?: "and" | "or";
 }
@@ -178,17 +129,20 @@ export interface FtsQueryOptions extends SegmentOptions {
  *    这种"看情况"的语义不该出现在检索主路上。逐 token 引号包住 + 显式 AND，
  *    语义只有一种读法，也顺带把语法字符全灭了。
  *
- * 🔴 查侧固定用 exact 模式分词（与 sidecar 默认一致）。写侧若用 search 模式
- *    （长词再切、召回更高），查询 token 仍是索引 token 的子集，**只会多命中不会漏**；
- *    反过来（写 exact / 查 search）才会出问题。两边口径在 003-C 定死。
+ * 🔴 查侧固定 {@link segExact}（精确模式），写侧固定 `segSearch`（搜索模式）。
+ *    exact ⊆ search 恒成立，所以查询 token 必在索引里 ——「只会多命中不会漏」。
+ *    反过来（写 exact / 查 search）才会静默漏召回。两边口径在 004-A 收进 segment.ts。
  *
- * ⚠️ exact 模式的两条固有召回缺口（003-B 实测，写在这儿免得 004 当 bug 查）：
- *    a. **长词内部查不到**：索引里是 `一次方程`，查 `方程` 命中不了；
+ * ⚠️ 003-B 记过 exact 模式的两条召回缺口，004-A 已经堵上，留档免得再当 bug 查：
+ *    a. **长词内部查不到**：索引里只有 `一次方程`，查 `方程` 命中不了
+ *       → 写侧 search 模式把长词再切，`方程` 自己也进索引；
  *    b. **jieba 切法看上下文**：`因式分解得两个根` 切出 `因式分解`，
- *       而单独查 `因式` 会被切成 `因`/`式`，两边对不上。
- *    两条同根同源，解法也同一个：**写侧改用 search 模式**（长词再切，
- *    `一元一次方程` 会同时留下 `一次`/`方程`/`一次方程`）。索引略胖，召回换回来。
- *    004 定检索策略时一并拍板，本卡只把口径与旋钮都摆在明处。
+ *       单独查 `因式` 却被切成 `因`/`式`，两边对不上
+ *       → 同上，search 模式会把 `因式`/`分解` 一并留下。
+ *    再加 004-A 的双词典并集（segment.ts §双词典并集），自定义词典也不会切丢子词。
+ *
+ * 🔵 仍是 async：底下已经是进程内同步调用（node-rs jieba），Promise 壳只为不折腾
+ *    现有调用方（`await ftsQuery(...)` 一处没改）。检索管线定型时（004-B/C）再收。
  */
 export async function ftsQuery(
   query: string,
@@ -197,8 +151,7 @@ export async function ftsQuery(
   const q = (query ?? "").trim();
   if (!q) return { query: "", tokens: [], match: null };
 
-  const [seg] = await segmentTexts([{ id: "_q", text: q }], options);
-  const tokens = (seg?.segmented ?? "").split(/\s+/).filter(Boolean);
+  const tokens = segExact(q);
   if (tokens.length === 0) return { query: q, tokens: [], match: null };
 
   const joiner = options.op === "or" ? " OR " : " AND ";

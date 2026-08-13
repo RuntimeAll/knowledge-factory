@@ -27,6 +27,12 @@ data/
 /prisma/db.sqlite-journal
 db.sqlite
 
+# 本地 ONNX 句向量模型（AI:PRD-004 · 004-A）
+# 🔴 95MB 二进制，绝不进 git。换机/新 clone 跑一次重建：
+#    powershell -File scripts/fetch-embed-model.ps1
+/models/
+models/
+
 # next.js
 /.next/
 /out/

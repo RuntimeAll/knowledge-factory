@@ -21,7 +21,10 @@
  *   resolve.ts 考点解析读侧（resolve_kp 打分 + kp_context 卡片包 · AI:PRD-002）
  *   kgview.ts  KG 治理页读侧（总览统计 / 树全貌 / 引用计数 · AI:PRD-002）
  *   queue.ts   审查队列（列工单 / 裁决 / 补别名结案 · AI:PRD-002）
- *   sidecar.ts Python 侧车封装（jieba 分词 / sympy 实算 · AI:PRD-003）
+ *   sidecar.ts Python 侧车封装（sympy 实算专职 · AI:PRD-003；分词已于 004-A 移交 node）
+ *   segment.ts 🔴 分词统一层（@node-rs/jieba + 数学专名词典 · AI:PRD-004 004-A）
+ *   embed.ts   本地 ONNX 句向量（bge-small-zh-v1.5 · AI:PRD-004 004-A）
+ *   vec.ts     向量序列化 + 余弦近邻暴力扫描（AI:PRD-004 004-A）
  *   fts.ts     question_fts 写侧投影 + 查询串构造（方案甲 · AI:PRD-003）
  *   ingest-schema.ts kb-ingest/v1 契约的机读正本（zod · AI:PRD-003）
  *   ingest.ts  录题管道 runIngestBatch（两相：零写相 + 单事务相 · AI:PRD-003）
@@ -267,12 +270,71 @@ export {
 
 export {
   ftsQuery,
-  stripHtmlForSeg,
   writeQuestionFts,
   type FtsQueryOptions,
   type FtsQueryPlan,
   type QuestionFtsInput,
 } from "./fts";
+
+// ── AI:PRD-004 · 004-A 分词统一层 ───────────────────────────────────────────
+//
+// 🔴 全产品只有这一处分词。sidecar 的 segmentTexts 还在（上面那组导出），
+//    但**只作为新旧口径对照的参照物**，业务路径一个字都别调它。
+export {
+  DICT_REL_PATH,
+  deLatex,
+  dictInfo,
+  dictPath,
+  loadDict,
+  resetDict,
+  segExact,
+  segFeed,
+  segSearch,
+  segSearchBaseOnly,
+  segSearchString,
+  stripHtmlForSeg,
+  type DictInfo,
+} from "./segment";
+
+// ── AI:PRD-004 · 004-A 语义轴底座 ───────────────────────────────────────────
+export {
+  EMBED_BATCH,
+  EMBED_DIM,
+  EMBED_ERROR_CODES,
+  EMBED_MAX_TOKENS,
+  EMBED_MODEL_ID,
+  EmbedError,
+  MODEL_FILES,
+  MODEL_REL_DIR,
+  embedFeed,
+  embedModelVer,
+  embedStatus,
+  embedText,
+  embedTexts,
+  loadEmbedder,
+  modelDir,
+  resetEmbedder,
+  type EmbedErrorCode,
+  type EmbedOptions,
+  type EmbedStatus,
+} from "./embed";
+
+export {
+  VEC_ERROR_CODES,
+  VecError,
+  blobToFloat32,
+  cosine,
+  cosineTopK,
+  dot,
+  float32ToBlob,
+  invalidateVecIndex,
+  l2Normalize,
+  loadVecIndex,
+  type CosineTopKOptions,
+  type VecErrorCode,
+  type VecHit,
+  type VecIndex,
+} from "./vec";
 
 export {
   PASS,

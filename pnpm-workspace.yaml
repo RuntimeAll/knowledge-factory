@@ -2,6 +2,12 @@
 allowBuilds:
   esbuild: true
   sharp: true
+  # 🔴 false 是**刻意**的（AI:PRD-004 · 004-A）：onnxruntime-node 的 postinstall
+  # 只干一件事——去 Nuget 源下载**没打进包**的 CUDA / TensorRT EP 二进制。
+  # 我们跑的是 CPU EP，它已经躺在包里（bin/napi-v6/win32/x64/*.dll），
+  # 不跑这个脚本一样能推理（004-A 实测：加载 465ms、batch=4 推理 31ms）。
+  # 放开它 = 每次装依赖都去拉几百 MB 显卡运行时，本机还得走代理。
+  onnxruntime-node: false
 
 # 🔴 修 shadcn CLI 起不来：
 # shadcn@4 声明 zod ^3.24.1，pnpm 把它和 @modelcontextprotocol/sdk@1.30 的 zod 去重到了 3.24.1，

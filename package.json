@@ -22,8 +22,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@huggingface/tokenizers": "0.1.3",
     "@libsql/client": "0.17.4",
     "@modelcontextprotocol/server": "2.0.0",
+    "@node-rs/jieba": "2.0.1",
     "@t3-oss/env-nextjs": "0.13.11",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
@@ -31,6 +33,7 @@
     "lucide-react": "1.31.0",
     "mcp-handler": "2.1.0",
     "next": "15.5.23",
+    "onnxruntime-node": "1.27.0",
     "radix-ui": "1.6.7",
     "react": "19.2.8",
     "react-dom": "19.2.8",
