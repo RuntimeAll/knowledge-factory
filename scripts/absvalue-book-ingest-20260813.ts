@@ -83,7 +83,8 @@ const PIPELINE_REF =
 const 网盘 = {
   链接: "https://pan.baidu.com/s/1KOE1EAo81xhZrJAV0VnpGg?pwd=4nmg",
   提取码: "4nmg",
-  唯一指引: "网盘分发记录/分享链接总表.md 第 94 行（08-01；一链两册；10天×12题）",
+  唯一指引:
+    "网盘分发记录/分享链接总表.md 第 94 行（08-01；一链两册；10天×12题）",
   作废旧链接: ["e2t5", "59ng", "jhft", "6igc"],
   规范: "一册 = 一条链接 = 一个网盘文件夹分享，双号共用同一条；网盘 PDF 无水印",
 };
@@ -119,11 +120,20 @@ const 产出 = [
 // ---------------------------------------------------------------------------
 
 interface PunchDaysFile {
-  book: { title: string; book_type?: string; subject_id?: string; grade?: string };
+  book: {
+    title: string;
+    book_type?: string;
+    subject_id?: string;
+    grade?: string;
+  };
   days: {
     day: number;
     goals?: string[];
-    modules: { type?: string; title: string; items: { q: string; a: string }[] }[];
+    modules: {
+      type?: string;
+      title: string;
+      items: { q: string; a: string }[];
+    }[];
   }[];
 }
 
@@ -136,7 +146,10 @@ function 判题型(q: string): "选择" | "填空" | "解答" {
 }
 
 function 读映射表(): Record<string, string> {
-  const raw = JSON.parse(readFileSync(KP_MAP_FILE, "utf8")) as Record<string, unknown>;
+  const raw = JSON.parse(readFileSync(KP_MAP_FILE, "utf8")) as Record<
+    string,
+    unknown
+  >;
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(raw)) {
     if (k.startsWith("_")) continue;
@@ -218,10 +231,13 @@ async function main(): Promise<number> {
   for (const w of conv.warnings) say(`  提醒：${w}`);
   if (conv.unknownFields.length > 0) {
     say(`  🔴 认不出的字段 ${conv.unknownFields.length} 处：`);
-    for (const u of conv.unknownFields.slice(0, 5)) say(`      ${u.where}：${u.keys.join("、")}`);
+    for (const u of conv.unknownFields.slice(0, 5))
+      say(`      ${u.where}：${u.keys.join("、")}`);
   }
   if (全payload.items.length !== 120) {
-    say(`🔴 转出来 ${全payload.items.length} 题 ≠ 120（产线卡与大纲都写 10 天 × 12 题）—— 停手`);
+    say(
+      `🔴 转出来 ${全payload.items.length} 题 ≠ 120（产线卡与大纲都写 10 天 × 12 题）—— 停手`,
+    );
     return 1;
   }
   say();
@@ -230,7 +246,9 @@ async function main(): Promise<number> {
   const 键 = 全payload.items.map((it) => matchKeyOfStem(it.stem));
   const 键去重 = [...new Set(键)];
   if (键去重.length !== 键.length) {
-    say(`🔴 本册内部 match_key 自撞 ${键.length - 键去重.length} 处 —— 停手（产线 verify 该拦的事）`);
+    say(
+      `🔴 本册内部 match_key 自撞 ${键.length - 键去重.length} 处 —— 停手（产线 verify 该拦的事）`,
+    );
     return 1;
   }
   const 已有行 = (
@@ -243,7 +261,9 @@ async function main(): Promise<number> {
   ).rows as unknown as { id: string; mk: string; pr: string | null }[];
   const 库里 = new Map(已有行.map((r) => [r.mk, r]));
   say(细);
-  say(`预检：120 题里 ${库里.size} 道库里已有（不重投），${120 - 库里.size} 道待投`);
+  say(
+    `预检：120 题里 ${库里.size} 道库里已有（不重投），${120 - 库里.size} 道待投`,
+  );
   for (const s of new Set(已有行.map((r) => (r.pr ?? "（无）").slice(0, 60)))) {
     say(`   已有题来自：${s}…`);
   }
@@ -258,12 +278,16 @@ async function main(): Promise<number> {
     );
     for (const w of dup.warnings) say(`  提醒：${w}`);
     if (dup.similar.length > 0) {
-      say(`  语义近似 ${dup.similar.length} 处（只报不拦，同模板换数本来就该像）`);
+      say(
+        `  语义近似 ${dup.similar.length} 处（只报不拦，同模板换数本来就该像）`,
+      );
     }
     if (!dup.ok) {
       say(`🔴 预检过后仍撞 ${dup.collisions.length} 处 —— 停手查因`);
       for (const c of dup.collisions.slice(0, 10)) {
-        say(`   seq=${c.seq} ${c.stemBrief} → ${c.hits.map((x) => x.questionId).join("/")}`);
+        say(
+          `   seq=${c.seq} ${c.stemBrief} → ${c.hits.map((x) => x.questionId).join("/")}`,
+        );
       }
       return 1;
     }
@@ -273,7 +297,11 @@ async function main(): Promise<number> {
   // ── ③ 投 ────────────────────────────────────────────────────────────────
   const seq到qid = new Map<number, string>();
   if (新items.length > 0) {
-    const r = await runIngestBatch(payload, { actor: "agent", dryRun: dry, backup: false });
+    const r = await runIngestBatch(payload, {
+      actor: "agent",
+      dryRun: dry,
+      backup: false,
+    });
     say(细);
     say(
       `投料：total=${r.counts.total} accepted=${r.counts.accepted}（需人审 ${r.counts.queued}） rejected=${r.counts.rejected}` +
@@ -286,13 +314,21 @@ async function main(): Promise<number> {
       实算.set(k, (实算.get(k) ?? 0) + 1);
       if (it.questionId) seq到qid.set(it.seq, it.questionId);
     }
-    say(`实算/逐行三态分布（calc/line）：${[...实算].map(([k, v]) => `${k}=${v}`).join("  ")}`);
+    say(
+      `实算/逐行三态分布（calc/line）：${[...实算].map(([k, v]) => `${k}=${v}`).join("  ")}`,
+    );
     if (r.counts.rejected > 0) {
       say(`🔴 被拒 ${r.counts.rejected} 道（已进隔离区，原样 payload 留着）：`);
-      for (const it of r.gateReport.items.filter((x) => x.verdict === "rejected")) {
-        say(`   seq=${it.seq} [${it.failure?.code}] ${it.failure?.message ?? ""}`);
+      for (const it of r.gateReport.items.filter(
+        (x) => x.verdict === "rejected",
+      )) {
+        say(
+          `   seq=${it.seq} [${it.failure?.code}] ${it.failure?.message ?? ""}`,
+        );
       }
-      say("🔴 停手不建册：题位不齐的册子比没册子更难查（G-3：对不上数停下报告，不凑）");
+      say(
+        "🔴 停手不建册：题位不齐的册子比没册子更难查（G-3：对不上数停下报告，不凑）",
+      );
       return 1;
     }
   } else {
@@ -308,7 +344,11 @@ async function main(): Promise<number> {
 
   // ── ④ 建册 + 装题（ord = (day-1)*12 + 天内序号 = 1..120）──────────────────
   say(细);
-  const 旧 = await h.db.select().from(sku).limit(1).where(eq(sku.name, SKU_NAME));
+  const 旧 = await h.db
+    .select()
+    .from(sku)
+    .limit(1)
+    .where(eq(sku.name, SKU_NAME));
   let skuId: string;
   if (旧[0]) {
     skuId = 旧[0].id;
@@ -363,7 +403,9 @@ async function main(): Promise<number> {
     }
     const ords = new Set(items.map((x) => x.ord));
     if (items.length !== 120 || ords.size !== 120) {
-      say(`🔴 题位 ${items.length} 条 / 不同 ord ${ords.size} 个（都该是 120）—— 停手不装`);
+      say(
+        `🔴 题位 ${items.length} 条 / 不同 ord ${ords.size} 个（都该是 120）—— 停手不装`,
+      );
       return 1;
     }
     const a = await addSkuItems(skuId, items, { actor: "agent" });
@@ -392,7 +434,9 @@ async function main(): Promise<number> {
       if (!对上) 缺件 += 1;
     } catch (e) {
       缺件 += 1;
-      say(`⚠️ ${o.角色} 登记跳过（文件缺失/读不动）：${e instanceof Error ? e.message : String(e)}`);
+      say(
+        `⚠️ ${o.角色} 登记跳过（文件缺失/读不动）：${e instanceof Error ? e.message : String(e)}`,
+      );
     }
   }
 
@@ -411,7 +455,9 @@ main()
     process.exit(code);
   })
   .catch(async (e: unknown) => {
-    say(`🔴 未处理的异常：${e instanceof Error ? (e.stack ?? e.message) : String(e)}`);
+    say(
+      `🔴 未处理的异常：${e instanceof Error ? (e.stack ?? e.message) : String(e)}`,
+    );
     await closeCoreDb();
     process.exit(1);
   });

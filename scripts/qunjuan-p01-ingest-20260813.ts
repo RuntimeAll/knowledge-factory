@@ -156,7 +156,11 @@ async function 接一天(
   );
 
   // 幂等：已经建过这本天卷就整条跳过
-  const 旧 = await h.db.select().from(sku).limit(1).where(eq(sku.name, skuName));
+  const 旧 = await h.db
+    .select()
+    .from(sku)
+    .limit(1)
+    .where(eq(sku.name, skuName));
   if (旧[0]) {
     say(`  · 已有同名 SKU ${旧[0].id}，整条跳过（幂等）`);
     out.skuId = 旧[0].id;
@@ -176,7 +180,11 @@ async function 接一天(
   }
 
   // ── ② match_key 预检：哪些题库里已经有了 ────────────────────────────────
-  const 键 = rows.map((r) => matchKeyOfStem(String(r.q ?? "")));
+  // 🔴 题单是外部 JSON，`q` 一律先窄化再用（String(unknown) 会把对象变 [object Object]，
+  //    那样算出来的 match_key 全批一模一样，查重直接失灵）
+  const 键 = rows.map((r) =>
+    matchKeyOfStem(typeof r.q === "string" ? r.q : ""),
+  );
   const 键去重 = [...new Set(键)];
   if (键去重.length !== 键.length) {
     out.问题.push(
@@ -202,8 +210,12 @@ async function 接一天(
   const 库里 = new Map(已有行.map((r) => [r.mk, r]));
   out.已有 = 库里.size;
   if (库里.size > 0) {
-    const 来源 = new Set(已有行.map((r) => (r.pr ?? "（无 pipeline_ref）").slice(0, 46)));
-    say(`  · 预检：${库里.size}/${rows.length} 题库里已有 —— **不重投**，sku_item 直接引用`);
+    const 来源 = new Set(
+      已有行.map((r) => (r.pr ?? "（无 pipeline_ref）").slice(0, 46)),
+    );
+    say(
+      `  · 预检：${库里.size}/${rows.length} 题库里已有 —— **不重投**，sku_item 直接引用`,
+    );
     for (const s of 来源) say(`      已有题来自：${s}…`);
   }
 
@@ -218,7 +230,8 @@ async function 接一天(
     kpMap,
   });
   if (conv.failed.length > 0 || conv.units.length !== 1) {
-    for (const f of conv.failed) out.问题.push(`🔴 转换失败 [${f.code}] ${f.message}`);
+    for (const f of conv.failed)
+      out.问题.push(`🔴 转换失败 [${f.code}] ${f.message}`);
     if (conv.units.length !== 1)
       out.问题.push(`🔴 转出来 ${conv.units.length} 个单元（应为 1）`);
     for (const p of out.问题) say(`  ${p}`);
@@ -246,7 +259,10 @@ async function 接一天(
         `🔴 预检过后仍撞 ${dup.collisions.length} 处（预检口径与闸⑦不一致？停手查因）：` +
           dup.collisions
             .slice(0, 5)
-            .map((c) => `seq=${c.seq}→${c.hits.map((x) => x.questionId).join("/")}`)
+            .map(
+              (c) =>
+                `seq=${c.seq}→${c.hits.map((x) => x.questionId).join("/")}`,
+            )
             .join("；"),
       );
       say(`  ${out.问题[0]}`);
@@ -269,8 +285,12 @@ async function 接一天(
         (dry ? "  [dry-run]" : ` batch=${r.batchId}`),
     );
     if (r.counts.rejected > 0) {
-      for (const it of r.gateReport.items.filter((x) => x.verdict === "rejected")) {
-        out.问题.push(`🔴 seq=${it.seq} [${it.failure?.code}] ${it.failure?.message ?? ""}`);
+      for (const it of r.gateReport.items.filter(
+        (x) => x.verdict === "rejected",
+      )) {
+        out.问题.push(
+          `🔴 seq=${it.seq} [${it.failure?.code}] ${it.failure?.message ?? ""}`,
+        );
       }
       for (const p of out.问题.slice(0, 8)) say(`      ${p}`);
       return out;
@@ -293,7 +313,9 @@ async function 接一天(
     const mk = seq到键.get(it.seq)!;
     const qid = 库里.get(mk)?.id ?? seq到qid.get(it.seq);
     if (!qid) {
-      out.问题.push(`🔴 第 ${it.seq} 位没有 question id（既不在库也没投进去）—— 停手`);
+      out.问题.push(
+        `🔴 第 ${it.seq} 位没有 question id（既不在库也没投进去）—— 停手`,
+      );
       continue;
     }
     items.push({ questionId: qid, ord: Number(rows[i]?.no ?? it.seq) });
@@ -512,7 +534,9 @@ async function 建期级(结果: 天卷结果[]): Promise<number> {
     },
     actor: "agent",
   });
-  say(`  · 建册 ${s.skuId}（type=打卡，status=active，天卷从属关系记在 recipe_json.天卷）`);
+  say(
+    `  · 建册 ${s.skuId}（type=打卡，status=active，天卷从属关系记在 recipe_json.天卷）`,
+  );
   return 0;
 }
 
@@ -523,7 +547,9 @@ main()
     process.exit(code);
   })
   .catch(async (e: unknown) => {
-    say(`🔴 未处理的异常：${e instanceof Error ? (e.stack ?? e.message) : String(e)}`);
+    say(
+      `🔴 未处理的异常：${e instanceof Error ? (e.stack ?? e.message) : String(e)}`,
+    );
     closeGradingDb();
     await closeCoreDb();
     process.exit(1);

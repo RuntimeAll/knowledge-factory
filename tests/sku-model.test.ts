@@ -70,15 +70,39 @@ beforeAll(async () => {
     cpSync(真资产, join(沙盒, "assets"), { recursive: true });
 
   h = await createCoreDb(fileUrl(p));
+
+  // 🔴 副本里清空 grading_task_map（005-C 之后真库里 30 条天卷全挂上了桥）。
+  //    本文件验的是**挂桥原语本身**的红绿，前提是「圣域的 task 还没被登记过」：
+  //    ① 「拒 = 零写」那条要数得出表里一行不留；
+  //    ② 「真 task 挂得上 / 1 task = 1 天卷 / 1 册 = 1 task」三条要有**两个空闲 task**
+  //       才摆得开（挂上 task1 → 再拿 task1 挂别的册子应 TASK_TAKEN → 再拿 task2 挂同一本
+  //       册子应 SKU_TAKEN）。真库里已经没有空闲 task 了，清空副本 = 恢复这个前提。
+  //    🔴 清的是副本，真库一个字节不动；圣域（审核.db）全程只读，本来就没动过。
+  await h.client.execute("UPDATE _write_gate SET allowed=1 WHERE id=1");
+  try {
+    await h.client.execute("DELETE FROM grading_task_map");
+  } finally {
+    await h.client.execute("UPDATE _write_gate SET allowed=0 WHERE id=1");
+  }
+
+  // 🔴 只挑**没进过任何册子**的题：题[0..2] 后面会被装进单测册子，
+  //    题[3] 一直留着当「库存题」的样本（⑤ 那条要断言它的 skus 是空数组）。
+  //    005-C 把产线存量接进库并建了册，库里前几道题现在都挂在册子上了 ——
+  //    再按 `ORDER BY id LIMIT 5` 硬取，题[3] 就不是库存题了。
   const r = await h.client.execute(
-    "SELECT id, stem FROM question WHERE status IN ('pending','active') ORDER BY id LIMIT 5",
+    `SELECT id, stem FROM question q
+      WHERE q.status IN ('pending','active')
+        AND NOT EXISTS (SELECT 1 FROM sku_item si WHERE si.question_id = q.id)
+      ORDER BY q.id LIMIT 5`,
   );
   题 = (r.rows as unknown as { id: string; stem: string }[]).map((x) => ({
     id: String(x.id),
     stem: String(x.stem),
   }));
-  // 🔴 题[0..2] 会被装进册子，题[3] 一直留着当「库存题」（没进过任何册子）的样本
-  expect(题.length).toBeGreaterThanOrEqual(4);
+  expect(
+    题.length,
+    "库里没有 4 道「没进过任何册子」的题了 —— 本文件的夹具前提要重想",
+  ).toBeGreaterThanOrEqual(4);
 });
 
 afterAll(() => {
@@ -454,7 +478,11 @@ describe("③④ 模型链 propose → activate，且与录题闸② 联通", ()
       }),
     ).rejects.toMatchObject({ code: "QUESTION_NOT_FOUND" });
 
-    const 活 = await listModels({ status: "active", handle: h });
+    // 🔴 只数**本文件造的**那些：副本里带着 005-C 首铺的 22 个 active 模型，
+    //    拿全库计数当断言，等于把「库里有多少存量模型」写死进单测。
+    const 活 = (
+      await listModels({ status: "active", handle: h, limit: 500 })
+    ).filter((m) => m.name.startsWith("单测·"));
     expect(活.length).toBe(1);
   });
 });

@@ -337,7 +337,9 @@ describe("④ 群卷题单（字段名全不一样的那份）", () => {
     const r2 = convertPunchIngest(料, {
       filePath: "D:/x/题单.json",
       qtype: "填空",
-      kpMap: { "\\(\\frac{\\left|a\\right|}{a}\\) 型的计算": "符号商 |a|/a 型的计算" },
+      kpMap: {
+        "\\(\\frac{\\left|a\\right|}{a}\\) 型的计算": "符号商 |a|/a 型的计算",
+      },
     });
     const it2 = 唯一单元(r2).payload.items;
 

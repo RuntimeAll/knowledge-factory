@@ -15,9 +15,22 @@
  *           而「只重算最终答案」的闸对它完全免疫（本例里答案闸确实放行了）。
  *
  * ════════════════════════════════════════════════════════════════════════════
- * 🔴 REG-C2/C4 直接打**真库**且**零写**（dryRun）：金标要验的就是「库现在这个状态下，
- *    这份料会被怎么判」——查重闸读的是真库，拿副本验等于验了个别的库。
- *    零写这件事不靠嘴说：用例自己在跑前跑后各数一遍行，断言全等。
+ * 🔴 REG-C2/C4 跑在**「金标库」**上：真库 VACUUM INTO 出来的副本，
+ *    再把**金标好料自己那几道题**按 match_key 摘掉。零写照旧（dryRun），
+ *    且用例自己在跑前跑后各数一遍行，断言全等。
+ *
+ *    ⚠️ 原设计是直接打真库，理由是「查重闸读的是真库，拿副本验等于验了个别的库」。
+ *    这条理由 2026-08-13（005-C）**到期**了：金标的 6 道好料全都逐条注着「未入库」——
+ *    它们是从产线存量里挑的真题拷贝，而 005-C 干的正是**把产线存量接进库**
+ *    （群卷第01期 445 题 + 绝对值册 84 题）。于是查重闸（⑦，在实算闸⑧**之前**）
+ *    把 6 道好料全判 `DUPLICATE`，金标要验的判档与实算行为被整个遮住 ——
+ *    REG-C4 那条「答案对、中间行错也要拦」的核心断言直接测不到了。
+ *
+ *    所以副本里按 match_key 摘掉这几行 = 把库恢复到金标料**赖以成立的那个前提**
+ *    （「这几道题还没入库」），验的仍是同一条管道、同一份料、同一批闸。
+ *    🔴 摘的只是**好料**那几行：坏料③（seq=9）要撞的是另一道真题，它照旧在库里，
+ *    `DUPLICATE` 那条红灯仍由真数据触发，没被削掉。
+ *    🔴 摘的是副本，真库一个字节不动。
  * 🔴 REG-C3 要真写（工单是写出来的），所以它走 VACUUM INTO 副本，各住独立目录
  *    （管道会往 `<库同级>/assets/` 拷图）。
  * 🔴 金标料 = `tests/fixtures/ingest-golden-20260813.json`，全是真题拷贝、逐条注明来源。
@@ -40,6 +53,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   createCoreDb,
   getCoreDb,
+  matchKeyOfStem,
   runIngestBatch,
   type CoreDbHandle,
 } from "~/core";
@@ -124,7 +138,63 @@ async function 全表计数(h: CoreDbHandle): Promise<Record<string, number>> {
   return out;
 }
 
+/**
+ * 金标库 = 真库副本 − 金标料里**基准不指望它撞库**的那几道题（见文件头）。
+ *
+ * 🔴 判据是 `基准.code !== 'DUPLICATE'`，不是「是不是好料」：
+ *    实算组 seq=4 是**坏料**（真题面 + 故意改错的答案），基准要的是 `CALC_MISMATCH`；
+ *    可查重闸⑦ 排在实算闸⑧ **之前**，它的题面一旦进了库，红的就变成 `DUPLICATE`，
+ *    要验的答案闸压根跑不到。所以「不指望撞库的」一律恢复前提。
+ * 🔴 反过来，金标组 seq=9 的基准**就是** `DUPLICATE`（原样再投一道已入库的题）——
+ *    它要撞的那行一个字不动，那条红灯仍由真数据触发。
+ * 返回处理的行数，跑的时候打出来：一行没动 = 金标料的「未入库」注释还成立。
+ */
+async function 摘掉好料(h: CoreDbHandle): Promise<number> {
+  const keys = new Set<string>();
+  for (const 组 of [金标.金标, 金标.实算]) {
+    const items = (组.payload.items ?? []) as { seq: number; stem: string }[];
+    for (const b of 组.基准.逐题 ?? []) {
+      if (b.code === "DUPLICATE") continue; // 🔴 这条基准就是要撞，留着
+      const it = items.find((x) => x.seq === b.seq);
+      if (it) keys.add(matchKeyOfStem(it.stem));
+    }
+  }
+  if (keys.size === 0) return 0;
+  const 占位 = [...keys].map(() => "?").join(",");
+  const ids = (
+    await h.client.execute({
+      sql: `SELECT id FROM question WHERE match_key IN (${占位})`,
+      args: [...keys],
+    })
+  ).rows.map((r) => String((r as unknown as { id: string }).id));
+  if (ids.length === 0) return 0;
+
+  // 🔴 不用 DELETE，改 `status='retired'`（下架）：
+  //    ① 查重闸⑦ 与部分唯一索引 `idx_q_matchkey` 是同一条口径 ——
+  //       `WHERE match_key = ? AND status IN ('pending','active')` ——
+  //       下架的题**天然不参与查重**，正是我们要的「这几道题还没入库」的效果；
+  //    ② DELETE 要顺着 sku_item / question_figure / cause_example… 一路拆外键，
+  //       拆漏一张表就是 FOREIGN KEY failed，而且这份清单会随 schema 长 ——
+  //       夹具不该背这个维护负担。
+  // 🔴 副本上也有静息闸（裸写会被触发器 ABORT）——这里是**造夹具**不是业务写，
+  //    照 tests/core.test.ts 的既有做法把闸掰开、做完立刻关回去。
+  //    关回去很要紧：C1(e) 就是查 `_write_gate.allowed`，敞着闸的副本自己就是红的。
+  await h.client.execute("UPDATE _write_gate SET allowed=1 WHERE id=1");
+  try {
+    for (const id of ids) {
+      await h.client.execute({
+        sql: "UPDATE question SET status = 'retired' WHERE id = ?",
+        args: [id],
+      });
+    }
+  } finally {
+    await h.client.execute("UPDATE _write_gate SET allowed=0 WHERE id=1");
+  }
+  return ids.length;
+}
+
 let 真库: CoreDbHandle;
+let 金标库: CoreDbHandle;
 
 beforeAll(async () => {
   expect(
@@ -132,6 +202,11 @@ beforeAll(async () => {
     `真库不存在：${真库路径}（先跑 pnpm db:migrate）`,
   ).toBe(true);
   真库 = await getCoreDb();
+  金标库 = await 造副本("replay");
+  const 摘 = await 摘掉好料(金标库);
+  // 🔴 摘 0 行 = 金标好料一道都不在库里（前提本来就成立），也是合法状态；
+  //    这里只把数字打出来，不断言 —— 断言它反而会随「存量接没接进来」漂。
+  process.stdout.write(`  [金标库] 摘掉已入库的好料 ${摘} 行（真库不动）\n`);
 });
 
 afterAll(() => {
@@ -201,13 +276,13 @@ describe("REG-C5 真库检索投影干净（真库 · 只读）", () => {
 // REG-C2
 // ---------------------------------------------------------------------------
 
-describe("REG-C2 金标 payload 重放（10 题含 4 坏料，真库 · 零写）", () => {
+describe("REG-C2 金标 payload 重放（10 题含 4 坏料，金标库 · 零写）", () => {
   it("counts 与逐题 verdict/code 精确等于基准，且库一个字节没动", async () => {
-    const 前 = await 全表计数(真库);
+    const 前 = await 全表计数(金标库);
 
     const r = await runIngestBatch(金标.金标.payload, {
       actor: "system",
-      handle: 真库,
+      handle: 金标库,
       dryRun: true,
     });
 
@@ -241,7 +316,7 @@ describe("REG-C2 金标 payload 重放（10 题含 4 坏料，真库 · 零写�
     expect(r.batchId).toBe(null);
 
     // 🔴 零写自证：dryRun 说自己不写，那就当场数一遍
-    expect(await 全表计数(真库)).toEqual(前);
+    expect(await 全表计数(金标库)).toEqual(前);
   }, 120_000);
 });
 
@@ -249,13 +324,13 @@ describe("REG-C2 金标 payload 重放（10 题含 4 坏料，真库 · 零写�
 // REG-C4
 // ---------------------------------------------------------------------------
 
-describe("REG-C4 实算闸样题（真库 · 零写）", () => {
+describe("REG-C4 实算闸样题（金标库 · 零写）", () => {
   it("3 道计算题实算 + 逐行恒等全绿；答案错被拦；🔴 答案对但中间行错也被拦", async () => {
-    const 前 = await 全表计数(真库);
+    const 前 = await 全表计数(金标库);
 
     const r = await runIngestBatch(金标.实算.payload, {
       actor: "system",
-      handle: 真库,
+      handle: 金标库,
       dryRun: true,
     });
 
@@ -283,7 +358,7 @@ describe("REG-C4 实算闸样题（真库 · 零写）", () => {
     expect(过程错.failure?.message).toContain("-59"); // 它实际算出来的值
     expect(过程错.failure?.message).toContain("49"); // 而原式是 49
 
-    expect(await 全表计数(真库)).toEqual(前);
+    expect(await 全表计数(金标库)).toEqual(前);
   }, 120_000);
 });
 

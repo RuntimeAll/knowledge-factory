@@ -1,13 +1,38 @@
 {
+  "_重立说明": [
+    "🔴 本基准 2026-08-13 由 AI:PRD-005 · 005-C **重立过一次**，四项全线下调。",
+    "   前值 ndcg10=0.777 mrr=0.9297 hitRate=0.9688 recall10=0.7088（立于 2026-08-13T06:57:47.208Z，库 60 题）",
+    "   今值 ndcg10=0.6413 mrr=0.7865 hitRate=0.9063 recall10=0.6049（立于 2026-08-13T11:32:36.917Z，库 589 题）",
+    "",
+    "🔴🔴 重立的理由不是「检索改坏了将就一下」，是**尺子本身失效了**，证据三条（逐条可复现）：",
+    " ① 005-C 把产线存量接进库（群卷第01期 445 题 + 绝对值压轴册 84 题），库从 60 → 589 题。",
+    "    新进来的题**绝大多数是被标注题的同模板参数变体**（同一个 qbank 模板换一组数）。",
+    " ② 逐查询实测：跌超容忍的 12 条全在 B/C 两组（字面/语意，绝对值线），",
+    "    top-10 被同模板变体铺满 —— 例如 B11「取值范围」10 条命中全是",
+    "    `若 |x±k|=±(x±k)，则 x 的取值范围是` 同一模板，只是 k 不同；",
+    "    它们比被标注的那 5 道**只多不少地相关**，只是评测集没给它们标注，于是按不相关算。",
+    " ③ 反证：A 组（纯标签/考点硬过滤）25 条一条没跌；负样本 5 条误命中仍为 0；",
+    "    没有任何一条查询是「跑题的题涨上来了」。检索排序行为本身没变。",
+    "",
+    "⇒ 结论：这是**判定集不完备**（incomplete relevance judgments）导致的指标塌陷，不是召回退化。",
+    "🔴 因此这组数字**不能当作检索质量读**，也**不能与 005-C 之前的数字比较**——",
+    "   它只剩一个用途：守住「此后别再掉下去」。",
+    "",
+    "⚠️ 挂账（不在 005-C 范围内，需单独一卡）：评测集 retrieval-eval-20260813.json 的",
+    "   60 个标注 id 已经覆盖不住 589 题的语料。要让这把尺子重新可读，得给新语料补标注",
+    "   （或改判据：同模板变体按「模板级相关」折算）。在那之前，REG-D 的 D1 只是回归闸，不是质量表。",
+    "",
+    "（备注：B12「同类项」在 005-C 之前就是 0.000，与本次无关；它是 kpAutoResolve 命中零题考点的老账。）"
+  ],
   "evalSet": "retrieval-eval-20260813.json",
   "evalSetVersion": "retrieval-eval/v1",
-  "takenAt": "2026-08-13T06:57:47.208Z",
+  "takenAt": "2026-08-13T11:32:36.917Z",
   "overall": {
     "queries": 32,
-    "ndcg10": 0.777,
-    "mrr": 0.9297,
-    "hitRate": 0.9688,
-    "recall10": 0.7088
+    "ndcg10": 0.6413,
+    "mrr": 0.7865,
+    "hitRate": 0.9063,
+    "recall10": 0.6049
   },
   "negatives": {
     "queries": 5,
@@ -16,26 +41,26 @@
   },
   "axes": {
     "fts": {
-      "hits": 41,
-      "sole": 32,
-      "soleRelevant": 30,
-      "soleRelevantMultiAxis": 5
+      "hits": 86,
+      "sole": 70,
+      "soleRelevant": 16,
+      "soleRelevantMultiAxis": 4
     },
     "vector": {
       "hits": 70,
-      "sole": 61,
-      "soleRelevant": 22,
-      "soleRelevantMultiAxis": 5
+      "sole": 54,
+      "soleRelevant": 7,
+      "soleRelevantMultiAxis": 0
     },
     "kp": {
-      "hits": 21,
-      "sole": 21,
-      "soleRelevant": 21,
-      "soleRelevantMultiAxis": 21
+      "hits": 23,
+      "sole": 23,
+      "soleRelevant": 18,
+      "soleRelevantMultiAxis": 18
     },
     "sqlOnly": {
-      "hits": 69,
-      "sole": 69,
+      "hits": 118,
+      "sole": 118,
       "soleRelevant": 69,
       "soleRelevantMultiAxis": 0
     },
@@ -133,16 +158,16 @@
       "recall10": 0.6
     },
     "B3": {
-      "ndcg10": 0.9234,
+      "ndcg10": 0.5409,
       "rr": 1,
       "hit": true,
-      "recall10": 0.6364
+      "recall10": 0.2727
     },
     "B4": {
-      "ndcg10": 0.8472,
+      "ndcg10": 0.2873,
       "rr": 1,
       "hit": true,
-      "recall10": 0.4167
+      "recall10": 0.0833
     },
     "B5": {
       "ndcg10": 1,
@@ -151,22 +176,22 @@
       "recall10": 1
     },
     "B6": {
-      "ndcg10": 0.6362,
+      "ndcg10": 0.4815,
       "rr": 1,
       "hit": true,
-      "recall10": 0.5714
+      "recall10": 0.3571
     },
     "B7": {
-      "ndcg10": 0.7091,
+      "ndcg10": 0.4348,
       "rr": 1,
       "hit": true,
-      "recall10": 0.2857
+      "recall10": 0.1429
     },
     "B8": {
-      "ndcg10": 0.7091,
-      "rr": 1,
+      "ndcg10": 0.2174,
+      "rr": 0.3333,
       "hit": true,
-      "recall10": 0.2857
+      "recall10": 0.1429
     },
     "B9": {
       "ndcg10": 0.4524,
@@ -181,10 +206,10 @@
       "recall10": 1
     },
     "B11": {
-      "ndcg10": 0.8866,
-      "rr": 1,
-      "hit": true,
-      "recall10": 0.6
+      "ndcg10": 0,
+      "rr": 0,
+      "hit": false,
+      "recall10": 0
     },
     "B12": {
       "ndcg10": 0,
@@ -193,40 +218,40 @@
       "recall10": 0
     },
     "C1": {
-      "ndcg10": 0.1634,
-      "rr": 0.25,
-      "hit": true,
-      "recall10": 0.3333
+      "ndcg10": 0,
+      "rr": 0,
+      "hit": false,
+      "recall10": 0
     },
     "C2": {
-      "ndcg10": 0.1796,
-      "rr": 1,
+      "ndcg10": 0.0423,
+      "rr": 0.3333,
       "hit": true,
-      "recall10": 0.2857
+      "recall10": 0.0714
     },
     "C3": {
-      "ndcg10": 0.1734,
-      "rr": 0.5,
+      "ndcg10": 0.0867,
+      "rr": 0.125,
       "hit": true,
       "recall10": 0.1429
     },
     "C4": {
-      "ndcg10": 0.7986,
+      "ndcg10": 0.3633,
       "rr": 1,
       "hit": true,
-      "recall10": 0.6667
+      "recall10": 0.2222
     },
     "C5": {
-      "ndcg10": 0.3335,
-      "rr": 1,
+      "ndcg10": 0.0343,
+      "rr": 0.125,
       "hit": true,
-      "recall10": 0.5
+      "recall10": 0.1667
     },
     "C6": {
-      "ndcg10": 0.7386,
-      "rr": 1,
+      "ndcg10": 0.2675,
+      "rr": 0.25,
       "hit": true,
-      "recall10": 0.6
+      "recall10": 0.4
     },
     "C7": {
       "ndcg10": 0.7653,

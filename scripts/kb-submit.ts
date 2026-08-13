@@ -111,7 +111,9 @@ function parseArgs(argv: string[]): Cli {
         const p = next();
         const raw: unknown = JSON.parse(readFileSync(p, "utf8"));
         if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
-          throw new Error(`--kp-map 要一个 {"产线说法":"词表 ref"} 的 JSON 对象：${p}`);
+          throw new Error(
+            `--kp-map 要一个 {"产线说法":"词表 ref"} 的 JSON 对象：${p}`,
+          );
         }
         const map: Record<string, string> = {};
         for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {

@@ -241,30 +241,47 @@ async function checkC1(
   let warn = false;
 
   // --- (a) 每张核心业务表的每行都得在某条 audit_log.row_refs_json 里 -----------
+  //
+  // 🔴 口径没变，算法换了（005-C）：原写法是**每张表**一条相关子查询
+  //    `NOT EXISTS (SELECT 1 FROM audit_log, json_each(...) WHERE …)` ——
+  //    那等于「业务行数 × 审计 refs 数」的笛卡尔积，而且 json_each 是表值函数、
+  //    没有索引可用。库小时看不出来（几百行、几秒），005-C 灌进 529 道题 + 580 个
+  //    题位之后单张 question_tag 就要 18s，整轮对账 46s，直接顶破测试 30s 闸 ——
+  //    **红的是算法不是数据**。
+  //    现在改成两趟线性：先一次把 audit_log 的 rowRefs 摊平成 (table,id) 集合
+  //    （6.5k 行、0.02s），再逐表扫 id 查集合。判据、样本、口径一个字没动。
+  const 覆盖 = new Set<string>();
+  const 覆盖键 = (table: string, id: string | number): string =>
+    `${table} ${String(id)}`;
+  for (const r of await q<{ t: string | null; id: string | number | null }>(
+    h,
+    `SELECT json_extract(j.value,'$.table') AS t, json_extract(j.value,'$.id') AS id
+       FROM audit_log a, json_each(COALESCE(a.row_refs_json,'[]')) j`,
+  )) {
+    if (r.t !== null && r.id !== null) 覆盖.add(覆盖键(r.t, r.id));
+  }
+
   let uncoveredTotal = 0;
   let scannedTables = 0;
   for (const { table, idExpr } of AUDITED_TABLES) {
-    const n = await count(h, `SELECT COUNT(*) AS c FROM ${table}`);
-    if (n === 0) continue; // 空表跳过
+    const rows = await q<{ rid: string | number }>(
+      h,
+      `SELECT ${idExpr} AS rid FROM ${table} t`,
+    );
+    if (rows.length === 0) continue; // 空表跳过
     scannedTables += 1;
-    const missWhere =
-      `FROM ${table} t WHERE NOT EXISTS (` +
-      `SELECT 1 FROM audit_log a, json_each(COALESCE(a.row_refs_json,'[]')) j ` +
-      `WHERE json_extract(j.value,'$.table') = ? AND json_extract(j.value,'$.id') = ${idExpr})`;
-    const miss = await count(h, `SELECT COUNT(*) AS c ${missWhere}`, [table]);
-    if (miss > 0) {
+    const missIds = rows
+      .filter((r) => !覆盖.has(覆盖键(table, r.rid)))
+      .map((r) => String(r.rid));
+    if (missIds.length > 0) {
       red = true;
-      uncoveredTotal += miss;
-      const ids = (
-        await q<{ rid: string }>(
-          h,
-          `SELECT ${idExpr} AS rid ${missWhere} LIMIT ${SAMPLE}`,
-          [table],
-        )
-      ).map((r) => String(r.rid));
+      uncoveredTotal += missIds.length;
       details.push(
-        sampleLine(`(a) ${table} 有行查不到审计覆盖`, ids, miss) +
-          "（有人绕过 core 写了库，或写侧漏报 rowRefs）",
+        sampleLine(
+          `(a) ${table} 有行查不到审计覆盖`,
+          missIds.slice(0, SAMPLE),
+          missIds.length,
+        ) + "（有人绕过 core 写了库，或写侧漏报 rowRefs）",
       );
     }
   }

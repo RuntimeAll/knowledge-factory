@@ -230,9 +230,13 @@ describe("① SQL 硬过滤：候选集是「能不能要」的问题，答案�
     expect(少一条.hits.map((x) => x.questionId)).not.toContain(排掉);
     expect(少一条.query.excludeCount).toBe(1);
     // 稳定序：去掉头一条，剩下的顺序原样
-    expect(少一条.hits.map((x) => x.questionId)).toEqual(
-      全.hits.slice(1).map((x) => x.questionId),
-    );
+    // 🔴 只比**前 n-1 条**，不比整串：limit 一旦被撑满（005-C 之后「计算」题
+    //    早就超过 100 道），排掉一条会从 limit 线以下**补进来一条**，
+    //    于是 少一条 有 100 条而 全.slice(1) 只有 99 条 —— 那是分页的正常行为，
+    //    不是顺序乱了。比前缀才是在验「顺序不动」这件事本身。
+    expect(
+      少一条.hits.slice(0, 全.hits.length - 1).map((x) => x.questionId),
+    ).toEqual(全.hits.slice(1).map((x) => x.questionId));
   });
 
   it("入参不合法当场拒（难度区间反了）——不许静默当成没传", async () => {
@@ -343,14 +347,25 @@ describe.skipIf(!装了.ok)(`③ 向量轴金标${跳过理由}`, () => {
       expect(r.hits[i - 1]!.score).toBeGreaterThanOrEqual(r.hits[i]!.score);
     }
 
-    // 🔴 金标：这两道「同一类：已知绝对值求原数」必须排在最前
+    // 🔴 金标：最近的一道必须是同一类那道；**整个 top-5 都得落在同一个考点上**
     //    （只钉序与下限，不钉小数——分数是模型的事，序才是能力的事）
-    const 前二 = r.hits.slice(0, 2).map((x) => x.stemBrief);
-    expect(前二[0]).toContain("|x+3|=|5-x|");
-    expect(前二[1]).toContain("|5-x|=|-6|");
+    //
+    // ⚠️ 2026-08-13（005-C）改过一次判据，原文是「第 2 名必须是 |5-x|=|-6|」。
+    //    005-C 把绝对值压轴册 day4-10 那 84 题接进库之后，`若 |x|=3/4，则 x=____。`
+    //    以 0.9521 插到了第 2 名，把 |5-x|=|-6| 挤到第 3（0.9432）——
+    //    🔴 这**不是**检索退化：新来的那道同样是「已知绝对值求原数」，而且确实更像。
+    //    「第 2 名是哪一道」这种钉法，只要库里再进一道同类题就会红，红的是库存不是能力。
+    //    换成「top-5 全部同考点」是**更强**的断言（原来只查了第 1 名的考点），
+    //    而且不随库存漂：语义轴真退化时，top-5 里混进别的考点，照样当场红。
+    expect(r.hits[0]!.stemBrief).toContain("|x+3|=|5-x|");
     expect(r.hits[0]!.score).toBeGreaterThan(0.9);
     expect(r.hits[1]!.score).toBeGreaterThan(0.85);
-    expect(r.hits[0]!.kps[0]?.name).toBe("已知绝对值求原数");
+    for (const [i, hit] of r.hits.entries()) {
+      expect(
+        hit.kps[0]?.name,
+        `第 ${i + 1} 名 ${hit.stemBrief} 跑到别的考点上了`,
+      ).toBe("已知绝对值求原数");
+    }
   });
 
   it("findSimilar 查无此题 → QUESTION_NOT_FOUND，不是空结果", async () => {

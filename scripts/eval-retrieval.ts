@@ -48,6 +48,7 @@ import { join } from "node:path";
 import {
   closeCoreDb,
   getCoreDb,
+  getQuestion,
   logMetric,
   searchQuestions,
   type HitSources,
@@ -337,31 +338,35 @@ async function 跑全量(): Promise<{ 表: 总表; 明细: 单条结果[] }> {
 
 /**
  * 评测集里的每个 questionId 都得在库里。
- * 🔴 用 searchQuestions 全量拉一次（statuses/solutionGrade 全开）而不是裸 SQL：
- *    脚本也走同一个公共面，省得再开一条读库的路。
+ * 🔴 走公共面 `getQuestion`（不裸 SQL）：脚本与产品读的是同一条路。
+ *
+ * ⚠️ 2026-08-13（005-C）换过一次做法。原来是 `searchQuestions` 全量拉一次
+ *    （limit 上限 200）再看 id 在不在结果里，并且自带一句「题量涨过 200 就得改成分页拉」——
+ *    005-C 把产线存量接进库（60 → 589 题），这句预言当场兑现，脚本直接抛错。
+ *    改成**按评测集里的 id 逐个点名查**（60 个 id，60 次主键查询）：
+ *    它问的本来就是「这个 id 在不在库里」，不需要先把整个库搬到内存里；
+ *    而且此后库长到几万题也不用再回来改。
  */
 async function 校验题id(set: 评测集): Promise<void> {
-  const 全库 = await searchQuestions(
-    {
-      statuses: ["pending", "active", "quarantine", "rejected", "retired"],
-      solutionGrade: ["calc_verified", "analysis_only", "no_solution"],
-      limit: 200,
-    },
-    { metric: false },
-  );
-  const 在库 = new Set(全库.hits.map((h) => h.questionId));
-  const 坏的: string[] = [];
+  const 待查 = new Set<string>();
+  const 出处 = new Map<string, string[]>();
   for (const q of set.queries) {
     for (const r of q.relevant) {
-      if (!在库.has(r.questionId)) 坏的.push(`${q.id} → ${r.questionId}`);
+      待查.add(r.questionId);
+      出处.set(r.questionId, [...(出处.get(r.questionId) ?? []), q.id]);
     }
   }
-  if (全库.total > 全库.hits.length) {
-    throw new Error(
-      `校验题 id：库里有 ${全库.total} 题但一次只拉回 ${全库.hits.length} 条（limit 上限 200），` +
-        "题量涨过 200 了，本函数得改成分页拉。",
-    );
+
+  const 坏的: string[] = [];
+  for (const id of 待查) {
+    try {
+      await getQuestion(id); // getQuestion 本来就不落 metric，没有 metric 开关
+    } catch {
+      // getQuestion 查无此题即抛 QUESTION_NOT_FOUND —— 这里只关心「在不在」
+      坏的.push(`${(出处.get(id) ?? []).join("/")} → ${id}`);
+    }
   }
+
   if (坏的.length > 0) {
     throw new Error(
       `评测集里有 ${坏的.length} 个 questionId 不在库里（写错一个 id = 永远算漏召回，会静默压低基线）：\n  ` +

@@ -661,7 +661,12 @@ function 搬题单(
     // kpMap：产线说法 → 词表 ref 的显式映射（先 anchor 后 kp_group，见 ConvertOptions.kpMap）
     const 查表 = (s: string | null): string | undefined =>
       s !== null && ctx.opts.kpMap ? ctx.opts.kpMap[s] : undefined;
-    const 映射键 = 查表(anchor) !== undefined ? anchor : 查表(kp_group) !== undefined ? kp_group : null;
+    const 映射键 =
+      查表(anchor) !== undefined
+        ? anchor
+        : 查表(kp_group) !== undefined
+          ? kp_group
+          : null;
     const 映射值 = 查表(anchor) ?? 查表(kp_group);
 
     const kpRefs =
