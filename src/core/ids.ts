@@ -20,6 +20,7 @@ import { ulid } from "ulid";
  * | em       | exam_model      |
  * | ec       | error_cause     |
  * | sku      | sku             |
+ * | skuout   | sku_output      |
  * | asset    | asset           |
  * | doc      | source_doc      |
  * | page     | source_page     |
@@ -36,6 +37,9 @@ export const ID_PREFIXES = [
   "q",
   "em",
   "ec",
+  // 🔴 `skuout` 排在 `sku` 前面：ID_RE 的交替分支按序尝试，长的在前少一次回溯
+  //    （JS 正则会回溯，两种顺序都判得对，但长前短后读起来才不用想第二遍）
+  "skuout",
   "sku",
   "asset",
   "doc",
@@ -60,6 +64,7 @@ export const ID_PREFIX_TABLE: Record<IdPrefix, string> = {
   q: "question",
   em: "exam_model",
   ec: "error_cause",
+  skuout: "sku_output",
   sku: "sku",
   asset: "asset",
   doc: "source_doc",

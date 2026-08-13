@@ -33,6 +33,10 @@
  *   ingest.ts  录题管道 runIngestBatch（两相：零写相 + 单事务相 · AI:PRD-003）
  *   review.ts  审查队列三条处置链（图片审 / 草稿转正 / 隔离改判 · AI:PRD-003 003-D）
  *   assets.ts  资产读侧（hash → 登记行 + 落地路径 + Content-Type · AI:PRD-003 003-D）
+ *   convert-punch.ts 产线出料 → kb-ingest/v1 转换器（纯函数 · AI:PRD-005 005-B）
+ *   dedup.ts   出册前置闸 assertNoSoldDuplicates（撞了带出是哪本册子 · AI:PRD-005）
+ *   sku.ts     SKU 登记原语（建册/装题/登记产出/改态 + 通向圣域的两座桥 · AI:PRD-005）
+ *   model.ts   考察模型 提议/转正/驳回（exam_model + kind='模型转正' 工单 · AI:PRD-005）
  *   gates/     闸（骨架来自 001；十道录题闸在 AI:PRD-003 落地，逐闸一文件）
  *   backup.ts  VACUUM INTO 快照（+异地副本）
  *   grading.ts 🔴 圣域 审核.db **只读**连接（三道锁，见文件头）
@@ -494,6 +498,100 @@ export {
   type AssetReadOptions,
   type AssetRecord,
 } from "./assets";
+
+// ── AI:PRD-005 · 005-B 产线接入 ─────────────────────────────────────────────
+//
+// 🔴 转换器（产线出料 → kb-ingest/v1）是**纯函数**：不碰库、不写盘。
+//    它的产物还要走 runIngestBatch 的十道闸 —— 转换只负责把料摆成闸看得懂的样子。
+export {
+  CONVERT_ERROR_CODES,
+  ConvertError,
+  PUNCH_CONTRACT,
+  PUNCH_FORMS,
+  convertPunchIngest,
+  detectPunchForm,
+  type ConvertFailure,
+  type ConvertOptions,
+  type ConvertResult,
+  type ConvertSkip,
+  type ConvertedUnit,
+  type ConvertErrorCode,
+  type PunchForm,
+  type UnknownField,
+} from "./convert-punch";
+
+/**
+ * 出册前置闸：这批题**是不是已经卖过了**（撞了带出是哪本册子）。
+ * 🔴 与录题闸⑦查重不同的是**归因**：闸⑦说「撞了 q_01KZ…」，这里说「撞了《绝对值突破》第 37 题，在售」。
+ */
+export {
+  SIMILAR_REPORT_AT,
+  assertNoSoldDuplicates,
+  matchKeyOfStem,
+  type AssertSoldOptions,
+  type DupHit,
+  type SkuOwner,
+  type SoldCollision,
+  type SoldDupItem,
+  type SoldDupResult,
+  type SoldSimilar,
+} from "./dedup";
+
+export {
+  SKU_ERROR_CODES,
+  SKU_OUTPUT_KINDS,
+  SKU_STATUSES,
+  SKU_TYPES,
+  SkuError,
+  addSkuItems,
+  getSku,
+  linkGradingBatch,
+  listSkus,
+  mapGradingTask,
+  registerSku,
+  registerSkuOutput,
+  setSkuStatus,
+  type AddSkuItemsResult,
+  type LinkGradingBatchResult,
+  type ListSkusOptions,
+  type MapGradingTaskResult,
+  type RegisterSkuInput,
+  type RegisterSkuOutputInput,
+  type RegisterSkuOutputResult,
+  type RegisterSkuResult,
+  type SetSkuStatusResult,
+  type SkuBrief,
+  type SkuCard,
+  type SkuErrorCode,
+  type SkuItemInput,
+  type SkuItemView,
+  type SkuOutputKind,
+  type SkuOutputView,
+  type SkuStatus,
+  type SkuType,
+} from "./sku";
+
+export {
+  MODEL_ERROR_CODES,
+  MODEL_QUEUE_KIND,
+  MODEL_STATUSES,
+  ModelError,
+  activateModel,
+  getModel,
+  listModels,
+  proposeModel,
+  rejectModel,
+  resolveKpRef,
+  type ListModelsOptions,
+  type ModelBrief,
+  type ModelCard,
+  type ModelErrorCode,
+  type ModelStatus,
+  type ModelVerdictResult,
+  type ProposeModelInput,
+  type ProposeModelResult,
+  type ResolvedKpRef,
+} from "./model";
 
 /**
  * 十道录题闸的公共面（逐闸一文件，`gates/ingest-*.gate.ts`）。
