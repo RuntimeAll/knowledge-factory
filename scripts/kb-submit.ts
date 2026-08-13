@@ -20,6 +20,10 @@
  *   --kp <名或id>          考点兜底（可重复给）：题级/册级都没考点时用它
  *   --kp-map <json路径>    群卷题单专用：anchor/kp_group 说法 → 词表 ref 的显式映射表
  *                          （见 ConvertOptions.kpMap；表里没有的照原样送闸③，不代替闸）
+ *   --model-map <json路径> 产线说法 → exam_model id 的显式映射表：命中即把 prov 从
+ *                          pipeline **升格**为 model（modelId + pipelineRef 并存，
+ *                          生成题就此带上血缘上游）。🔴 不代替闸②：模型查无此行 /
+ *                          不是 active 照样红（见 ConvertOptions.modelMap）
  *   --title <s>            覆盖 sourceDoc.title（群卷题单没有册头时用得上）
  *   --kind <k>             覆盖 sourceDoc.kind（册子|群卷|试卷|讲义|其他）
  *   --qtype <t>            群卷题单的默认题型（计算/填空/…）
@@ -66,6 +70,33 @@ interface Cli {
   opts: ConvertOptions;
 }
 
+/**
+ * 读一张 `{"产线说法":"目标 ref"}` 的映射表（`--kp-map` / `--model-map` 同一把尺子）。
+ * 🔴 `_` 开头的键当注释跳过（表里那几段 `_说明` / `_版本`）；值必须是非空串，
+ *    空串/数字/嵌套一律当场报错 —— 映射表出错要在读表这一刻炸，不能等到闸上才发现。
+ */
+function 读映射表(
+  p: string,
+  flag: string,
+  值是什么: string,
+): Record<string, string> {
+  const raw: unknown = JSON.parse(readFileSync(p, "utf8"));
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    throw new Error(
+      `${flag} 要一个 {"产线说法":"${值是什么}"} 的 JSON 对象：${p}`,
+    );
+  }
+  const map: Record<string, string> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (k.startsWith("_")) continue; // `_说明` 这类注释键
+    if (typeof v !== "string" || v.trim() === "") {
+      throw new Error(`${flag} 的「${k}」不是非空字符串（${p}）`);
+    }
+    map[k] = v;
+  }
+  return map;
+}
+
 function parseArgs(argv: string[]): Cli {
   const cli: Cli = {
     file: "",
@@ -107,25 +138,12 @@ function parseArgs(argv: string[]): Cli {
       case "--kp":
         kps.push(next());
         break;
-      case "--kp-map": {
-        const p = next();
-        const raw: unknown = JSON.parse(readFileSync(p, "utf8"));
-        if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
-          throw new Error(
-            `--kp-map 要一个 {"产线说法":"词表 ref"} 的 JSON 对象：${p}`,
-          );
-        }
-        const map: Record<string, string> = {};
-        for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
-          if (k.startsWith("_")) continue; // `_说明` 这类注释键
-          if (typeof v !== "string" || v.trim() === "") {
-            throw new Error(`--kp-map 的「${k}」不是非空字符串（${p}）`);
-          }
-          map[k] = v;
-        }
-        cli.opts.kpMap = map;
+      case "--kp-map":
+        cli.opts.kpMap = 读映射表(next(), "--kp-map", "词表 ref");
         break;
-      }
+      case "--model-map":
+        cli.opts.modelMap = 读映射表(next(), "--model-map", "exam_model id");
+        break;
       case "--title":
         cli.opts.sourceDoc = { ...cli.opts.sourceDoc, title: next() };
         break;

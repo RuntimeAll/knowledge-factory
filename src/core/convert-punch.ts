@@ -160,6 +160,28 @@ export interface ConvertOptions {
    * 而不是在这里"猜一个最像的"。
    */
   kpMap?: Readonly<Record<string, string>>;
+  /**
+   * 🔴 产线说法 → `exam_model.id` 的**显式映射表**（AI:PRD-005 · 005-D）。
+   *
+   * 命中一条，这道题的 provenance 就从 `pipeline` **升格**成 `model`：
+   *
+   * ```jsonc
+   * { "type": "model", "modelId": "em_01KZ…", "pipelineRef": "…/qbank.py@第02期" }
+   * ```
+   *
+   * 两件事一起留住：`modelId` 说「哪个考察模型生的」（血缘上游 → dsl_ref → 生成器文件），
+   * `pipelineRef` 说「哪个脚本的哪一版跑出来的」（出事按批召回）。schema 允许并存，
+   * question 表也是两列分别落 —— 不必二选一。
+   *
+   * 查表口径与 {@link kpMap} **逐字一致**（同一批产线说法，两张表分别指向词表与模型库）：
+   *   - 群卷题单：先查 `anchor`，没命中再查 `kp_group`；
+   *   - 册（对象根/数组根）：按题级/册级**考点原文**查（映射成词表 ref 之前的那个说法）。
+   *
+   * 🔴 **映射表不代替闸②**：这里只负责把 `modelId` 摆进 payload，
+   *    模型查无此行 / 不是 `active`，闸② 照样红（`PROV_MODEL_NOT_FOUND` /
+   *    `PROV_MODEL_NOT_ACTIVE`）—— 转换层永远不查库、不做「这模型能不能用」的判断。
+   */
+  modelMap?: Readonly<Record<string, string>>;
   /** 群卷题单的位置补丁（题单本身不带 day/section） */
   punch?: { day: number; section?: string };
   /** 题单形态的默认题型（题单没有题型字段） */
@@ -302,6 +324,30 @@ function 映射考点(ctx: 搬运上下文, refs: string[]): string[] {
     );
     return hit;
   });
+}
+
+/**
+ * modelMap 查表：产线说法 → `exam_model.id`（见 {@link ConvertOptions.modelMap}）。
+ *
+ * 按 `keys` 给的**优先序**逐个查，第一个命中就用它（题单是 anchor→kp_group，
+ * 册是题级考点→册级考点，与 kpMap 同序）。一条都没命中返回 null ⇒ 这题照旧 `pipeline`。
+ *
+ * 🔴 不查库。模型在不在、是不是 active，是闸② 的活（见 gates/ingest-provenance.gate.ts）。
+ */
+function 映射模型(ctx: 搬运上下文, keys: (string | null)[]): string | null {
+  const m = ctx.opts.modelMap;
+  if (!m) return null;
+  for (const k of keys) {
+    if (k === null) continue;
+    const hit = m[k];
+    if (hit === undefined || hit.trim() === "") continue;
+    ctx.normalizations.add(
+      `provenance 经 modelMap 升格为 model：「${k}」→ ${hit}` +
+        "（prov.type 由 pipeline 改判 model，pipelineRef 一并留着；模型在不在/是不是 active 由闸② 判）",
+    );
+    return hit.trim();
+  }
+  return null;
 }
 
 /** 收未知键（🔴 纪律②的实现） */
@@ -516,6 +562,8 @@ function 搬一册(
         `题级/册级都没有考点，用外面给的兜底考点：${kpRefs.join("、")}`,
       );
     }
+    // 🔴 modelMap 查的是**映射成词表 ref 之前**的产线原话（同 kpMap 的键域）
+    const 模型id = 映射模型(ctx, [...kpRefs, 非空字符串(raw.section)]);
     // 🔴 册路与题单路同一张 kpMap：册的「模块标题」与群卷的 anchor 本来就是同一批说法
     //    （群卷脚本 import 原册 qbank.py），两处走不同的表迟早分家。
     kpRefs = 映射考点(ctx, kpRefs);
@@ -556,7 +604,9 @@ function 搬一册(
       })),
       ...(tags.length > 0 ? { tags } : {}),
       prov: {
-        type: "pipeline",
+        // 🔴 modelMap 命中 = 升格 model（modelId + pipelineRef 并存，见 ConvertOptions.modelMap）
+        type: 模型id ? "model" : "pipeline",
+        ...(模型id ? { modelId: 模型id } : {}),
         pipelineRef: 推pipelineRef(ctx, {
           form: "册",
           源目录,
@@ -669,6 +719,9 @@ function 搬题单(
           : null;
     const 映射值 = 查表(anchor) ?? 查表(kp_group);
 
+    // 🔴 modelMap 与 kpMap 同一批键、同一个查表序（先 anchor 后 kp_group）
+    const 模型id = 映射模型(ctx, [anchor, kp_group]);
+
     const kpRefs =
       (ctx.opts.kps?.length ?? 0) > 0
         ? ctx.opts.kps!
@@ -705,7 +758,9 @@ function 搬题单(
       })),
       tags,
       prov: {
-        type: "pipeline",
+        // 🔴 modelMap 同 kpMap 的查表序（先 anchor 后 kp_group）：命中即升格 model
+        type: 模型id ? "model" : "pipeline",
+        ...(模型id ? { modelId: 模型id } : {}),
         pipelineRef: 推pipelineRef(ctx, {
           form: "题单",
           filePath: ctx.opts.filePath ?? null,
