@@ -26,7 +26,7 @@
  *   调用方接住它就该**降级为纯 FTS**（C3 的处置口径原话），而不是照常出结果。
  */
 import { getCoreDb, type CoreDbHandle } from "./db";
-import { EMBED_DIM, embedModelVer } from "./embed";
+import { EMBED_DIM, embedModelVer, embedStatus } from "./embed";
 
 // ---------------------------------------------------------------------------
 // 契约
@@ -309,4 +309,87 @@ export async function cosineTopK(
           : 0,
   );
   return hits.slice(0, limit);
+}
+
+// ---------------------------------------------------------------------------
+// 语意轴可用性（🔴 对账 C3 的**查询侧**那一半 · AI:PRD-004 · 004-B）
+// ---------------------------------------------------------------------------
+
+export interface VecAxisStatus {
+  ok: boolean;
+  /** 库里唯一的 embed_model_ver（ok 时非 null） */
+  modelVer: string | null;
+  /** ok=false 时的人话（已经是可以直接进 warnings 的成品句子） */
+  reason?: string;
+}
+
+/**
+ * 语意轴现在能不能用（**一条极廉价的 SQL** + 模型装没装）。
+ *
+ * 🔴 为什么不直接依赖 {@link loadVecIndex} 自己抛 VecError：那是「撞上了才知道」，
+ *    而检索/解析要的是「进门就知道该不该走这条轴」——降级必须**明示在结果里**
+ *    （warnings 里一句人话），不是 catch 一个异常然后当没事发生。
+ *    两层都留着：这里是前置闸，VecError 是兜底（并发回填可能在两次调用之间改状态）。
+ *
+ * 🔴 它**不抛**，只回结论。调用方拿 ok=false 就降级为纯 FTS / 关掉近邻投票，
+ *    并把 reason 原样带给用的人。
+ */
+export async function vecAxisStatus(
+  handle?: CoreDbHandle,
+): Promise<VecAxisStatus> {
+  const 装了 = embedStatus();
+  if (!装了.ok) {
+    return {
+      ok: false,
+      modelVer: null,
+      reason:
+        "语意轴已降级为纯 FTS：本地句向量模型没装" +
+        "（重建：powershell -File scripts/fetch-embed-model.ps1）。",
+    };
+  }
+
+  let configured: string;
+  try {
+    configured = embedModelVer();
+  } catch (e) {
+    return {
+      ok: false,
+      modelVer: null,
+      reason: `语意轴已降级为纯 FTS：${e instanceof Error ? e.message : String(e)}`,
+    };
+  }
+
+  const h = handle ?? (await getCoreDb());
+  const vers = (
+    await h.client.execute(
+      "SELECT DISTINCT embed_model_ver AS v FROM question_vec ORDER BY v",
+    )
+  ).rows.map((r) => String((r as unknown as { v: string }).v));
+
+  if (vers.length === 0) {
+    return {
+      ok: false,
+      modelVer: null,
+      reason: "语意轴已降级为纯 FTS：question_vec 一条向量都没有（还没回填）。",
+    };
+  }
+  if (vers.length > 1) {
+    return {
+      ok: false,
+      modelVer: null,
+      reason:
+        `语意轴已降级：向量版本混杂（对账 C3）——question_vec 里同时躺着 ${vers.join("、")}。` +
+        "两个向量空间混排，近邻在数学上无意义（而表面上完全正常）。全量重算完才能恢复。",
+    };
+  }
+  if (vers[0] !== configured) {
+    return {
+      ok: false,
+      modelVer: null,
+      reason:
+        `语意轴已降级：向量版本与配置不符（对账 C3）——库内 ${vers[0]}，` +
+        `当前 EMBED_MODEL_VER=${configured}。要么配置改了没重算，要么重算跑了一半。`,
+    };
+  }
+  return { ok: true, modelVer: vers[0] };
 }

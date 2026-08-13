@@ -47,5 +47,21 @@ export default defineConfig({
       "tests/**/*.{test,spec}.{ts,tsx}",
     ],
     env: readDotEnv(fileURLToPath(new URL("./.env", import.meta.url))),
+
+    /**
+     * 🔴 vitest 默认 5s 是给**纯单测**定的，本仓早就不是那种测试了：
+     *   - 对账六项（integrityCheck）要在一个真库副本上扫全表 + 重算审计链，单条 ~4s；
+     *   - 每个 describe 起手一次 `VACUUM INTO` 造副本（1.5MB 库，~0.3s）；
+     *   - 004-A 起还要真载一个 95MB 的 ONNX 句向量模型（每个 worker 进程一次，~0.5s）。
+     * 多个测试文件并行跑时这些开销互相叠加，于是「本来 4.6s 的那条」偶发 5s 超时 ——
+     * 而它是**被别的文件挤慢的**，不是自己变慢了（单跑必过，实测过）。
+     *
+     * 靠调小并发或者把慢用例改瘦都是在治症状：这些用例慢是因为它们干的是真活
+     * （真库、真模型、真对账）。把闸放到 30s，让「超时」重新变成一个**真信号**
+     * ——超了就是真卡住了，而不是"今天机器忙"。
+     */
+    testTimeout: 30_000,
+    /** beforeAll 里造副本 + 预热模型，同理 */
+    hookTimeout: 30_000,
   },
 });

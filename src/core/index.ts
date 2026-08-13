@@ -25,6 +25,8 @@
  *   segment.ts 🔴 分词统一层（@node-rs/jieba + 数学专名词典 · AI:PRD-004 004-A）
  *   embed.ts   本地 ONNX 句向量（bge-small-zh-v1.5 · AI:PRD-004 004-A）
  *   vec.ts     向量序列化 + 余弦近邻暴力扫描（AI:PRD-004 004-A）
+ *   retrieval.ts 🔴 三路检索唯一入口（SQL 硬过滤 → FTS+向量召回 → RRF k=60）
+ *                + getQuestion / findSimilarQuestions / checkDuplicate（004-B）
  *   fts.ts     question_fts 写侧投影 + 查询串构造（方案甲 · AI:PRD-003）
  *   ingest-schema.ts kb-ingest/v1 契约的机读正本（zod · AI:PRD-003）
  *   ingest.ts  录题管道 runIngestBatch（两相：零写相 + 单事务相 · AI:PRD-003）
@@ -330,11 +332,57 @@ export {
   invalidateVecIndex,
   l2Normalize,
   loadVecIndex,
+  vecAxisStatus,
   type CosineTopKOptions,
+  type VecAxisStatus,
   type VecErrorCode,
   type VecHit,
   type VecIndex,
 } from "./vec";
+
+// ── AI:PRD-004 · 004-B 三路检索管线 ─────────────────────────────────────────
+//
+// 🔴 检索只有这一个入口：MCP 的 search_questions 与题库检索页（004-C）
+//    调的是同一个 searchQuestions。页面一套、工具一套 = 两套口径，
+//    而「页面看得见的题 agent 查不到」是最难查的一类故障。
+export {
+  DEFAULT_SEARCH_LIMIT,
+  DEFAULT_SOLUTION_GRADES,
+  DEFAULT_STATUSES,
+  FTS_SCAN_CAP,
+  QUESTION_STATUSES,
+  RETRIEVAL_ERROR_CODES,
+  RRF_K,
+  STEM_BRIEF_CHARS,
+  RetrievalError,
+  checkDuplicate,
+  findSimilarQuestions,
+  getQuestion,
+  rrfFuse,
+  searchParamsSchema,
+  searchQuestions,
+  stemBrief,
+  type AxisHit,
+  type CheckDuplicateOptions,
+  type DuplicateExactHit,
+  type DuplicateResult,
+  type FusedRow,
+  type GetQuestionOptions,
+  type HitSources,
+  type QuestionCard,
+  type QuestionFigureView,
+  type QuestionKpBrief,
+  type QuestionProvenance,
+  type RetrievalErrorCode,
+  type SearchAxes,
+  type SearchHit,
+  type SearchOptions,
+  type SearchParams,
+  type SearchResult,
+  type SimilarHit,
+  type SimilarOptions,
+  type SimilarResult,
+} from "./retrieval";
 
 export {
   PASS,
