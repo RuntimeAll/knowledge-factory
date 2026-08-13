@@ -3,6 +3,7 @@
  *   · 三个系统工具 health / integrity_check / backup_now（AI:PRD-001 · WP5）
  *   · 两个考点工具 resolve_kp / kp_context（AI:PRD-002 · 002-C）
  *   · 三个录题工具 kb_ingest / propose_question / get_ingest_batch（AI:PRD-003 · 003-D）
+ *   · 两个检索工具 search_questions / get_question（AI:PRD-004 · 004-B）
  *
  * 为什么和 route.ts 分家：route.ts 是「注册表」，只负责把工具挂到 mcp-handler 上；
  * 真正的入参 schema、错误分类、返回外壳全在这儿 —— 这样单测能直接调函数，
@@ -32,8 +33,10 @@ import {
   KgError,
   KpNotFoundError,
   QueueError,
+  RetrievalError,
   backupNow,
   getIngestBatch,
+  getQuestion,
   health,
   ingestPayloadSchema,
   integrityCheck,
@@ -43,6 +46,8 @@ import {
   proposeQuestion,
   resolveKp,
   runIngestBatch,
+  searchParamsSchema,
+  searchQuestions,
   sourceDocSchema,
   type BackupResult,
   type HealthReport,
@@ -53,7 +58,10 @@ import {
   type KpContextCard,
   type PrecheckRed,
   type ProposeQuestionResult,
+  type QuestionCard,
   type ResolveKpResult,
+  type SearchHit,
+  type SearchResult,
 } from "~/core";
 
 // ---------------------------------------------------------------------------
@@ -98,7 +106,9 @@ export type ToolName =
   | "kp_context"
   | "kb_ingest"
   | "propose_question"
-  | "get_ingest_batch";
+  | "get_ingest_batch"
+  | "search_questions"
+  | "get_question";
 
 export const TOOL_NAMES: readonly ToolName[] = [
   "health",
@@ -109,6 +119,8 @@ export const TOOL_NAMES: readonly ToolName[] = [
   "kb_ingest",
   "propose_question",
   "get_ingest_batch",
+  "search_questions",
+  "get_question",
 ];
 
 /**
@@ -120,6 +132,10 @@ export const TOOL_NAMES: readonly ToolName[] = [
  *   KP_NOT_FOUND    🆕 考点 id 库里没有（多半是编的）——错误体里带 candidates
  *   INVALID_INPUT   🆕 入参没过校验（空查询串 / 契约结构错）——改参数再来
  *   NOT_FOUND       🆕 指名道姓要的那行东西库里没有（batch_id 写错之类）
+ *   QUESTION_NOT_FOUND 🆕 题 id 库里没有。🔴 与 KP_NOT_FOUND 不同，它**给不出 candidates**：
+ *                   考点 id 里常能读出人话（`kp_绝对值`→"绝对值"）所以猜得出近似的，
+ *                   题 id 是纯 ULID，一个语义字符都没有，硬猜只会误导 ——
+ *                   如实留空 + 在 message 里指路（改调 search_questions）。
  *   INTERNAL        没归到上面任何一类的意外
  */
 export const TOOL_ERROR_CODES = [
@@ -128,6 +144,7 @@ export const TOOL_ERROR_CODES = [
   "DB_BUSY",
   "IO_ERROR",
   "KP_NOT_FOUND",
+  "QUESTION_NOT_FOUND",
   "INVALID_INPUT",
   "NOT_FOUND",
   "INTERNAL",
@@ -235,6 +252,27 @@ export const getIngestBatchInput = z.object({
     .describe("批 id（形如 batch_01J…），来自 kb_ingest 的返回。"),
 });
 
+// ── AI:PRD-004 · 004-B 检索两工具 ──────────────────────────────────────────
+
+/**
+ * 检索入参 = core 契约正本（`retrieval.ts` 的 zod）**原样**，一个字段都不在这儿抄。
+ *
+ * 🔴 与 kb_ingest 同一条纪律：抄出来的第二份迟早跟正本漂，
+ *    而"工具 schema 说能传、core 不认"这种漂移只有 agent 撞上了才发现。
+ */
+export const searchQuestionsInput = searchParamsSchema;
+
+export const getQuestionInput = z.object({
+  question_id: z
+    .string()
+    .trim()
+    .min(1)
+    .describe(
+      "题 id（形如 q_01KZ…）。🔴 必须来自 search_questions 的返回，不许自己编——" +
+        "题 id 是纯 ULID，编错了系统连「最像的候选」都给不出（只能让你重新查一遍）。",
+    ),
+});
+
 export type HealthArgs = z.infer<typeof healthInput>;
 export type IntegrityCheckArgs = z.infer<typeof integrityCheckInput>;
 export type BackupNowArgs = z.infer<typeof backupNowInput>;
@@ -243,6 +281,8 @@ export type KpContextArgs = z.infer<typeof kpContextInput>;
 export type KbIngestArgs = z.infer<typeof kbIngestInput>;
 export type ProposeQuestionArgs = z.infer<typeof proposeQuestionInput>;
 export type GetIngestBatchArgs = z.infer<typeof getIngestBatchInput>;
+export type SearchQuestionsArgs = z.infer<typeof searchQuestionsInput>;
+export type GetQuestionArgs = z.infer<typeof getQuestionInput>;
 
 // ---------------------------------------------------------------------------
 // 错误分类
@@ -292,6 +332,22 @@ export function classifyToolError(tool: ToolName, e: unknown): ToolErr {
       code: "INVALID_INPUT",
       message: `${tool} 契约不合格[${e.code}]：${e.message}`,
       recoverable: true,
+    };
+  }
+  // 🔴 检索侧的两个稳定码直接映射；QUESTION_NOT_FOUND 恒带一个**空** candidates，
+  //    这样 agent 的处理分支与 KP_NOT_FOUND 一致（都读 candidates），
+  //    而"空"本身就是如实的信息：题 id 无从模糊匹配，只能回去重查。
+  if (e instanceof RetrievalError) {
+    return {
+      ok: false,
+      tool,
+      code:
+        e.code === "QUESTION_NOT_FOUND"
+          ? "QUESTION_NOT_FOUND"
+          : "INVALID_INPUT",
+      message: `${tool} 失败[${e.code}]：${e.message}`,
+      recoverable: true,
+      ...(e.code === "QUESTION_NOT_FOUND" ? { candidates: [] } : {}),
     };
   }
   if (e instanceof QueueError) {
@@ -541,6 +597,89 @@ export function runGetIngestBatch(
     }
     return rec;
   });
+}
+
+// ---------------------------------------------------------------------------
+// 检索两工具（AI:PRD-004 · 004-B）
+// ---------------------------------------------------------------------------
+
+/**
+ * wire 上的一条命中（**瘦身版**）。
+ *
+ * 🔴 为什么不把 core 的 SearchHit 原样吐出去：命中列表是给 agent「挑」用的，
+ *    一次 20 条 × 全文，对话窗口直接被题面淹没。这里只留「够不够格点开看」
+ *    所需的字段，全文一律走 get_question —— 与 kb_ingest「小结上 wire、
+ *    全账留库里」是同一条纪律。
+ */
+export interface SearchQuestionsBrief {
+  questionId: string;
+  stemBrief: string;
+  qtype: string | null;
+  difficulty: number | null;
+  solutionGrade: string;
+  status: string;
+  /** 考点名（主考点在前，带 ★ 标） */
+  kps: string[];
+  rrfScore: number;
+  /** 🔴 命中来源：哪条轴、第几名（"为什么它在这儿"看得见） */
+  sources: SearchHit["sources"];
+}
+
+export interface SearchQuestionsData {
+  query: SearchResult["query"];
+  total: number;
+  candidateCount: number;
+  axes: SearchResult["axes"];
+  degraded: boolean;
+  warnings: string[];
+  ms: number;
+  hits: SearchQuestionsBrief[];
+  /** 🔴 明确告诉 agent 全文在哪 —— 不然它只会以为「就这些了」 */
+  fullText: string;
+}
+
+function 瘦身(h: SearchHit): SearchQuestionsBrief {
+  return {
+    questionId: h.questionId,
+    stemBrief: h.stemBrief,
+    qtype: h.qtype,
+    difficulty: h.difficulty,
+    solutionGrade: h.solutionGrade,
+    status: h.status,
+    kps: h.kps.map((k) => (k.isPrimary ? `★${k.name}` : k.name)),
+    rrfScore: h.rrfScore,
+    sources: h.sources,
+  };
+}
+
+/** 三路检索（题库的唯一查询入口）。 */
+export function runSearchQuestions(
+  args: SearchQuestionsArgs,
+): Promise<ToolPayload<SearchQuestionsData>> {
+  return run("search_questions", async () => {
+    const r = await searchQuestions(args);
+    return {
+      query: r.query,
+      total: r.total,
+      candidateCount: r.candidateCount,
+      axes: r.axes,
+      degraded: r.degraded,
+      warnings: r.warnings,
+      ms: r.ms,
+      hits: r.hits.map(瘦身),
+      fullText:
+        r.hits.length > 0
+          ? `题面/答案/解析全文走 get_question({question_id:"${r.hits[0]!.questionId}"})`
+          : "本次零命中：放宽条件（去掉难度/题型）或换个说法再查；keywords 走字面、semanticQuery 走语意，两个都给会自动 RRF 融合。",
+    };
+  });
+}
+
+/** 一道题的全量卡片。 */
+export function runGetQuestion(
+  args: GetQuestionArgs,
+): Promise<ToolPayload<QuestionCard>> {
+  return run("get_question", () => getQuestion(args.question_id));
 }
 
 // ---------------------------------------------------------------------------

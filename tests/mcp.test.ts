@@ -28,10 +28,12 @@ import {
   classifyToolError,
   payloadToText,
   runBackupNow,
+  runGetQuestion,
   runHealth,
   runIntegrityCheck,
   runKpContext,
   runResolveKp,
+  runSearchQuestions,
   type ToolPayload,
 } from "~/app/api/mcp/tools";
 
@@ -96,7 +98,7 @@ interface ListedTool {
 }
 
 describe("MCP 壳 · 注册表", () => {
-  it("route 导出 GET/POST（同一个 handler），tools/list 回八个工具", async () => {
+  it("route 导出 GET/POST（同一个 handler），tools/list 回十个工具", async () => {
     expect(typeof route.GET).toBe("function");
     expect(typeof route.POST).toBe("function");
     expect(route.GET).toBe(route.POST); // 2.x 一个 handler 通吃，不再分 SSE/message 两条路
@@ -110,6 +112,7 @@ describe("MCP 壳 · 注册表", () => {
     const tools = r.result?.tools ?? [];
 
     // 🔴 基线随卡增长：001 三个系统工具 + 002-C 两个考点工具 + 003-D 三个录题工具
+    //    + 004-B 两个检索工具 = 10
     expect(tools.map((t) => t.name)).toEqual([
       "health",
       "integrity_check",
@@ -119,6 +122,8 @@ describe("MCP 壳 · 注册表", () => {
       "kb_ingest",
       "propose_question",
       "get_ingest_batch",
+      "search_questions",
+      "get_question",
     ]);
     // 描述是给 agent 看的，不许空
     for (const t of tools) expect(t.description ?? "").not.toBe("");
@@ -145,6 +150,32 @@ describe("MCP 壳 · 注册表", () => {
       "source",
       "items",
     ]);
+
+    // 🔴 同一条漂移闸盯着检索：search_questions 的入参 schema 是 core 的
+    //    searchParamsSchema 长出来的，不是这儿抄的第二份。
+    //    字段少一个 = 有人在 core 加了参数却没让工具吃到（agent 传了会被静默忽略）。
+    const search = tools.find((t) => t.name === "search_questions");
+    expect(Object.keys(search?.inputSchema?.properties ?? {})).toEqual([
+      "kpIds",
+      "primaryOnly",
+      "difficulty",
+      "qtype",
+      "solutionGrade",
+      "editionScope",
+      "keywords",
+      "semanticQuery",
+      "excludeQuestionIds",
+      "statuses",
+      "limit",
+    ]);
+    // 🔴 全可选：一个参数都不给 = 「把库里能出题的题按稳定序列给我」，是合法查询
+    expect(search?.inputSchema?.required ?? []).toEqual([]);
+    expect(
+      Object.keys(
+        tools.find((t) => t.name === "get_question")?.inputSchema?.properties ??
+          {},
+      ),
+    ).toEqual(["question_id"]);
   });
 });
 
@@ -221,6 +252,79 @@ describe("MCP 壳 · 考点两工具（AI:PRD-002 · 002-C）", () => {
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.code).toBe("INVALID_INPUT");
+  });
+});
+
+describe("MCP 壳 · 检索两工具（AI:PRD-004 · 004-B）", () => {
+  it("search_questions：命中带**来源标注**，wire 上是瘦身版 + 指路全文", async () => {
+    const r = await runSearchQuestions({ keywords: "最小值", limit: 3 });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.tool).toBe("search_questions");
+    expect(r.data.hits.length).toBeGreaterThan(0);
+    expect(r.data.axes.fts.active).toBe(true);
+    expect(r.data.axes.fts.op).toBe("and");
+
+    const hit = r.data.hits[0]!;
+    // 🔴 来源标注是这个工具的主要价值之一：agent 挑题时看得见"为什么它在这儿"
+    expect(hit.sources.fts?.rank).toBe(1);
+    // 主考点带 ★
+    expect(hit.kps.some((k) => k.startsWith("★"))).toBe(true);
+    // 🔴 瘦身：wire 上不驮全文（stemBrief 有、answer/analysis 一个字都没有）
+    expect(hit.stemBrief.length).toBeGreaterThan(0);
+    expect(hit).not.toHaveProperty("stem");
+    expect(hit).not.toHaveProperty("answer");
+    expect(hit).not.toHaveProperty("analysis");
+    // 明确告诉 agent 全文去哪儿取
+    expect(r.data.fullText).toContain("get_question");
+    expect(r.data.fullText).toContain(hit.questionId);
+  });
+
+  it("零命中不是失败：ok:true + 一句怎么放宽的人话", async () => {
+    const r = await runSearchQuestions({ keywords: "洛必达法则" });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.data.hits).toEqual([]);
+    expect(r.data.total).toBe(0);
+    expect(r.data.fullText).toContain("零命中");
+  });
+
+  it("get_question：全文卡片，答案解析都在", async () => {
+    const s = await runSearchQuestions({ keywords: "最小值", limit: 1 });
+    expect(s.ok).toBe(true);
+    if (!s.ok) return;
+    const id = s.data.hits[0]!.questionId;
+
+    const r = await runGetQuestion({ question_id: id });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.data.id).toBe(id);
+    expect(r.data.stem.length).toBeGreaterThan(0);
+    expect(r.data.kps.filter((k) => k.isPrimary).length).toBe(1);
+    expect(r.data.provenance.type).toBeTruthy();
+  });
+
+  it("🔴 编造的 question_id → QUESTION_NOT_FOUND / recoverable / candidates **空**", async () => {
+    const r = await runGetQuestion({ question_id: "q_我编的" });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.code).toBe("QUESTION_NOT_FOUND");
+    expect(r.recoverable).toBe(true);
+    // 🔴 与 KP_NOT_FOUND 的关键差别：题 id 是纯 ULID，猜不出近似的，
+    //    所以如实给空数组 + 在 message 里指路，而不是硬凑几个"最像的题"
+    expect(r.candidates).toEqual([]);
+    expect(r.message).toContain("search_questions");
+    // 空 candidates 也要能原样穿过 JSON 序列化
+    const parsed = JSON.parse(payloadToText(r)) as { candidates: unknown[] };
+    expect(parsed.candidates).toEqual([]);
+  });
+
+  it("入参不合法 → INVALID_INPUT（RetrievalError 翻得成工具码）", async () => {
+    const r = await runSearchQuestions({ difficulty: { min: 5, max: 1 } });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.code).toBe("INVALID_INPUT");
+    expect(r.recoverable).toBe(true);
   });
 });
 

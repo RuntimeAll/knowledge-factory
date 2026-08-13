@@ -21,6 +21,8 @@
  *
  * 🔴 端口不写死在代码里：冒烟用 `pnpm dev -- -p 3210`，正式端口等调度中心分配。
  * 🔴 本文件只做注册；入参校验、错误契约、返回外壳全在 ./tools.ts。
+ * 🔴 工具数随卡增长：001 三个系统工具 + 002 两个考点工具 + 003 三个录题工具
+ *    + 004-B 两个检索工具 = 10（tests/mcp.test.ts 有一条名单断言当漂移闸）。
  * 🔴 不做鉴权（本地内网单人用；真要上外网再挂 withMcpAuth，那是另一张卡的事）。
  */
 import type { CallToolResult } from "@modelcontextprotocol/server";
@@ -30,6 +32,7 @@ import pkg from "../../../../package.json";
 import {
   backupNowInput,
   getIngestBatchInput,
+  getQuestionInput,
   healthInput,
   integrityCheckInput,
   kbIngestInput,
@@ -39,12 +42,15 @@ import {
   resolveKpInput,
   runBackupNow,
   runGetIngestBatch,
+  runGetQuestion,
   runHealth,
   runIntegrityCheck,
   runKbIngest,
   runKpContext,
   runProposeQuestion,
   runResolveKp,
+  runSearchQuestions,
+  searchQuestionsInput,
   type ToolPayload,
 } from "./tools";
 
@@ -199,6 +205,53 @@ const handler = createMcpHandler(
         inputSchema: getIngestBatchInput,
       },
       async (args) => toResult(await runGetIngestBatch(args)),
+    );
+
+    // ── 检索两工具（AI:PRD-004 · 004-B）──────────────────────────────────────
+
+    server.registerTool(
+      "search_questions",
+      {
+        title: "查题库（三路检索唯一入口）",
+        description:
+          "🔴 **出题 / 组卷 / 排重之前先查库**——先检索后动手，别凭印象编题，也别翻文件夹。" +
+          "三条轴可任意组合：" +
+          "①标签硬过滤（kpIds/difficulty/qtype/solutionGrade/editionScope/statuses/excludeQuestionIds），" +
+          "②keywords 走**字面**（jieba 分词后逐词 AND；全词一条都不中会自动退成 OR 再查一次，结果标 degraded），" +
+          "③semanticQuery 走**语意**（句向量近邻，能吃「含字母的绝对值怎么讨论」这种说不出关键词的问法）。" +
+          "②③ 都给时按 RRF(k=60) 融合，且**只在①的候选集内**排名。" +
+          "🔴 kpIds 一律先 resolve_kp 查真 id（merged 旧 id 会自动折叠到活跃落点）。" +
+          "🔴 默认排除 solution_grade='no_solution'（连解析都没有的题），要看得显式传。" +
+          "返回 { ok, data:{ query(参数回显), total, candidateCount, " +
+          "axes:{sql:{count},fts:{active,count,degraded,op,tokens},vector:{active,count,modelVer}}, " +
+          "degraded, warnings, ms, " +
+          "hits:[{questionId,stemBrief,qtype,difficulty,solutionGrade,status,kps(★=主考点),rrfScore," +
+          "sources:{fts?:{rank,score},vector?:{rank,score},sqlOnly?}}], fullText } }。" +
+          "🔴 每条命中都带 **sources 来源标注**：哪条轴召回的、排第几——挑题时看得见理由。" +
+          "🔴 hits 是**摘要**（题面截断、无答案解析）；全文用 get_question 取。" +
+          "🔴 warnings 里出现「语意轴已降级」= 向量版本混杂/模型没装（对账 C3），" +
+          "这次只有 FTS 在干活，结果照常可用但少一条轴——别当成没发生。",
+        inputSchema: searchQuestionsInput,
+      },
+      async (args) => toResult(await runSearchQuestions(args)),
+    );
+
+    server.registerTool(
+      "get_question",
+      {
+        title: "取一道题的全量卡片",
+        description:
+          "按 question_id 取**全文**：题面/答案/解析正本 + 考点(带主标) + 自由标签 + " +
+          "配图(资产 hash 与审核态) + provenance 四型细节(scan 的源文档与页码 / model 的考察模型 / " +
+          "pipeline 的产线标识 / manual 的录入人，外加录题批次) + 有没有向量。" +
+          "search_questions 只给摘要，要读原文、要核出处、要看配图审没审，就调它。" +
+          "返回 { ok, data:{ id, stem, answer, analysis, qtype, difficulty, solutionGrade, status, " +
+          "reviewRequired, matchKey, editionScope, kps[], tags[], figures[], provenance, hasVector, createdAt, updatedAt } }。" +
+          "🔴 id 写错回 ok:false / code=QUESTION_NOT_FOUND，且 **candidates 是空的**——" +
+          "题 id 是纯 ULID，猜不出近似的（这点和 kp_context 不同）。照 message 说的回去调 search_questions。",
+        inputSchema: getQuestionInput,
+      },
+      async (args) => toResult(await runGetQuestion(args)),
     );
   },
   {
