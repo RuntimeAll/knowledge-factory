@@ -1,0 +1,268 @@
+{
+  "evalSet": "retrieval-eval-20260813.json",
+  "evalSetVersion": "retrieval-eval/v1",
+  "takenAt": "2026-08-13T06:57:47.208Z",
+  "overall": {
+    "queries": 32,
+    "ndcg10": 0.777,
+    "mrr": 0.9297,
+    "hitRate": 0.9688,
+    "recall10": 0.7088
+  },
+  "negatives": {
+    "queries": 5,
+    "falseHits": 0,
+    "dirtyQueries": []
+  },
+  "axes": {
+    "fts": {
+      "hits": 41,
+      "sole": 32,
+      "soleRelevant": 30,
+      "soleRelevantMultiAxis": 5
+    },
+    "vector": {
+      "hits": 70,
+      "sole": 61,
+      "soleRelevant": 22,
+      "soleRelevantMultiAxis": 5
+    },
+    "kp": {
+      "hits": 21,
+      "sole": 21,
+      "soleRelevant": 21,
+      "soleRelevantMultiAxis": 21
+    },
+    "sqlOnly": {
+      "hits": 69,
+      "sole": 69,
+      "soleRelevant": 69,
+      "soleRelevantMultiAxis": 0
+    },
+    "multiAxisQueries": 7
+  },
+  "perQuery": {
+    "A1": {
+      "ndcg10": 1,
+      "rr": 1,
+      "hit": true,
+      "recall10": 1
+    },
+    "A2": {
+      "ndcg10": 1,
+      "rr": 1,
+      "hit": true,
+      "recall10": 1
+    },
+    "A3": {
+      "ndcg10": 0.9957,
+      "rr": 1,
+      "hit": true,
+      "recall10": 1
+    },
+    "A4": {
+      "ndcg10": 1,
+      "rr": 1,
+      "hit": true,
+      "recall10": 1
+    },
+    "A5": {
+      "ndcg10": 0.9413,
+      "rr": 1,
+      "hit": true,
+      "recall10": 1
+    },
+    "A6": {
+      "ndcg10": 1,
+      "rr": 1,
+      "hit": true,
+      "recall10": 1
+    },
+    "A7": {
+      "ndcg10": 1,
+      "rr": 1,
+      "hit": true,
+      "recall10": 1
+    },
+    "A8": {
+      "ndcg10": 1,
+      "rr": 1,
+      "hit": true,
+      "recall10": 1
+    },
+    "A9": {
+      "ndcg10": 0.9576,
+      "rr": 1,
+      "hit": true,
+      "recall10": 0.7143
+    },
+    "A10": {
+      "ndcg10": 1,
+      "rr": 1,
+      "hit": true,
+      "recall10": 1
+    },
+    "A11": {
+      "ndcg10": 1,
+      "rr": 1,
+      "hit": true,
+      "recall10": 1
+    },
+    "A12": {
+      "ndcg10": 0.9896,
+      "rr": 1,
+      "hit": true,
+      "recall10": 1
+    },
+    "A13": {
+      "ndcg10": 1,
+      "rr": 1,
+      "hit": true,
+      "recall10": 1
+    },
+    "B1": {
+      "ndcg10": 0.7782,
+      "rr": 1,
+      "hit": true,
+      "recall10": 0.375
+    },
+    "B2": {
+      "ndcg10": 0.8866,
+      "rr": 1,
+      "hit": true,
+      "recall10": 0.6
+    },
+    "B3": {
+      "ndcg10": 0.9234,
+      "rr": 1,
+      "hit": true,
+      "recall10": 0.6364
+    },
+    "B4": {
+      "ndcg10": 0.8472,
+      "rr": 1,
+      "hit": true,
+      "recall10": 0.4167
+    },
+    "B5": {
+      "ndcg10": 1,
+      "rr": 1,
+      "hit": true,
+      "recall10": 1
+    },
+    "B6": {
+      "ndcg10": 0.6362,
+      "rr": 1,
+      "hit": true,
+      "recall10": 0.5714
+    },
+    "B7": {
+      "ndcg10": 0.7091,
+      "rr": 1,
+      "hit": true,
+      "recall10": 0.2857
+    },
+    "B8": {
+      "ndcg10": 0.7091,
+      "rr": 1,
+      "hit": true,
+      "recall10": 0.2857
+    },
+    "B9": {
+      "ndcg10": 0.4524,
+      "rr": 1,
+      "hit": true,
+      "recall10": 0.6667
+    },
+    "B10": {
+      "ndcg10": 1,
+      "rr": 1,
+      "hit": true,
+      "recall10": 1
+    },
+    "B11": {
+      "ndcg10": 0.8866,
+      "rr": 1,
+      "hit": true,
+      "recall10": 0.6
+    },
+    "B12": {
+      "ndcg10": 0,
+      "rr": 0,
+      "hit": false,
+      "recall10": 0
+    },
+    "C1": {
+      "ndcg10": 0.1634,
+      "rr": 0.25,
+      "hit": true,
+      "recall10": 0.3333
+    },
+    "C2": {
+      "ndcg10": 0.1796,
+      "rr": 1,
+      "hit": true,
+      "recall10": 0.2857
+    },
+    "C3": {
+      "ndcg10": 0.1734,
+      "rr": 0.5,
+      "hit": true,
+      "recall10": 0.1429
+    },
+    "C4": {
+      "ndcg10": 0.7986,
+      "rr": 1,
+      "hit": true,
+      "recall10": 0.6667
+    },
+    "C5": {
+      "ndcg10": 0.3335,
+      "rr": 1,
+      "hit": true,
+      "recall10": 0.5
+    },
+    "C6": {
+      "ndcg10": 0.7386,
+      "rr": 1,
+      "hit": true,
+      "recall10": 0.6
+    },
+    "C7": {
+      "ndcg10": 0.7653,
+      "rr": 1,
+      "hit": true,
+      "recall10": 1
+    },
+    "N1": {
+      "ndcg10": 0,
+      "rr": 0,
+      "hit": false,
+      "recall10": 0
+    },
+    "N2": {
+      "ndcg10": 0,
+      "rr": 0,
+      "hit": false,
+      "recall10": 0
+    },
+    "N3": {
+      "ndcg10": 0,
+      "rr": 0,
+      "hit": false,
+      "recall10": 0
+    },
+    "N4": {
+      "ndcg10": 0,
+      "rr": 0,
+      "hit": false,
+      "recall10": 0
+    },
+    "N5": {
+      "ndcg10": 0,
+      "rr": 0,
+      "hit": false,
+      "recall10": 0
+    }
+  }
+}

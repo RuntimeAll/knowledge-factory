@@ -1,7 +1,7 @@
 ﻿<#
 .SYNOPSIS
-  一键全量回归（AI:PRD-001 · WP7 / AI:PRD-002 · 002-E / AI:PRD-003 · 003-E）——
-  回归清单 A 组 + B 组 + C 组的正式载体。
+  一键全量回归（AI:PRD-001 · WP7 / AI:PRD-002 · 002-E / AI:PRD-003 · 003-E /
+  AI:PRD-004 · 004-D）—— 回归清单 A 组 + B 组 + C 组 + D 组的正式载体。
 
 .DESCRIPTION
   按序跑完所有关卡，逐关打 [PASS]/[FAIL]，**任一关红了也继续跑完**（一次跑完
@@ -20,13 +20,22 @@
     REG-TEST 单测全量        vitest（全量基线）
     REG-B    KG 金标         tests/kg-golden.test.ts 单跑（B1~B4）
     REG-C    录题管道        闸单测 + 管道端到端 + 金标重放 + 队列三链（C1~C4）
+    REG-D    检索            评测集不低于基线 + 命中来源标注 + FTS 注入安全（D1~D3）
     REG-A4   备份快照有效    backup-verify.ts 出新快照 + 独立只读复算
 
-  🔴 REG-B / REG-C 单独成关而不是「TEST 里已经跑过了」：触发矩阵里它们各自有一条 ——
+  🔴 REG-B / REG-C / REG-D 单独成关而不是「TEST 里已经跑过了」：触发矩阵里
+     它们各自有一条 ——
      「KG 数据（导底/重整/合并）→ B 全 + A1②」、
-     「core/gates 或 ingest → C 全 + A1 + G1」。
-     改了那一片要能 `-Only B` / `-Only C` 只跑对应金标，十几秒出结论，
+     「core/gates 或 ingest → C 全 + A1 + G1」、
+     「🔴 retrieval / 分词 / embedding → **D 全 + B1 + A1③（embed 版本单一性）**」。
+     改了那一片要能 `-Only B` / `-Only C` / `-Only D` 只跑对应金标，十几秒出结论，
      不必每次都陪跑整轮单测。
+     （D 组还有一条独有的触发面：**评测集或基准文件本身被改动** —— 那等于改了尺子，
+       必须当场 `-Only D` 跑一遍看尺子还准不准。）
+
+  🔴 D1 的基准（tests/fixtures/eval-baseline-20260813.json）**入 git**。
+     它红了的正确反应是查检索改动，不是回来 `--baseline` 重立基准把红旗按灭；
+     真要重立（比如库里新灌了一批题），重立那次得单独 commit 并说明原因。
 
   🔴 每月一次的「真库全恢复演练」(restore-drill --yes) **不在本脚本里**，
      它会真删库文件，必须人守着跑 —— 结尾 NOTE 只提示，不代劳。
@@ -198,6 +207,55 @@ $gates = @(
   },
 
   [pscustomobject]@{
+    Id     = 'REG-D'
+    Name   = '检索（D1 评测集不低于基线 / D2 命中来源标注 / D3 FTS 注入安全）'
+    Action = {
+      # 🔴 三小关一起跑才叫 D 组（回归清单 D 组三条）：
+      #    D1 = 37 条真实查询（32 正 + 5 负）过评测集，四个总指标与 git 里的基准比，
+      #         任一跌破容忍 0.02 或负样本变脏 → 脚本自己退 1 并写 metric_event；
+      #    D2 = 拿**最近 20 条真实检索打点**重放，断言每条命中都带 sources 来源标注、
+      #         且语意轴贡献计数从打点里取得出来（语意轴退出判据的取数面得一直活着）；
+      #    D3 = FTS 注入用例（MATCH 语法字符进不来），挂 vitest 过滤单跑。
+      # 🔴 D1/D2 打**真库**且零写（评测全程 metric:false）：评测不许污染真查询日志，
+      #    否则下一轮评测集会从自己的回声里抽料。
+      $bad = @()
+
+      Write-Host '  -> D1 评测集回归（scripts/eval-retrieval.ts，对基准无下降）'
+      & pnpm exec tsx --env-file=.env scripts/eval-retrieval.ts | Write-Host
+      if ($LASTEXITCODE -eq 1) {
+        $bad += 'D1 指标跌破容忍（已写 metric_event kind=eval_regression_red，逐项 Δ 见上面输出）——先弄清检索是改对了还是改坏了，别重立基准把红旗按灭'
+      }
+      elseif ($LASTEXITCODE -eq 2) {
+        $bad += 'D1 找不到基准文件 tests/fixtures/eval-baseline-20260813.json —— 先跑一次 scripts/eval-retrieval.ts --baseline'
+      }
+      elseif ($LASTEXITCODE -ne 0) {
+        $bad += "D1 评测脚本自身出错（退出码 $LASTEXITCODE）"
+      }
+
+      Write-Host '  -> D2 最近 20 条真检索打点重放：每条命中带 sources + 语意轴贡献计数可取'
+      & pnpm exec tsx --env-file=.env scripts/eval-retrieval.ts --audit-sources --n 20 | Write-Host
+      if ($LASTEXITCODE -ne 0) { $bad += 'D2 来源标注审计红了（哪条见上面输出）' }
+
+      # 🔴 过滤器用纯 ASCII 的 MATCH：中文参数经 PS5.1 传给原生 exe 要过 ANSI 代码页，
+      #    没必要在闸上赌编码。空跑（一条都没选中）也判红 —— 常绿的闸等于没有闸。
+      Write-Host '  -> D3 FTS 注入用例（vitest -t MATCH）'
+      $out = & pnpm exec vitest run tests/retrieval.test.ts -t MATCH
+      $code = $LASTEXITCODE
+      $text = ($out | Out-String)
+      Write-Host $text.TrimEnd()
+      if ($code -ne 0) {
+        $bad += 'D3 FTS 注入用例红了（拼串禁令的机器背书失效）'
+      }
+      elseif ($text -notmatch 'Tests\s+1 passed') {
+        $bad += 'D3 过滤器没恰好选中 1 条用例（名字改了/用例被删了）—— 空跑判红，不许假绿'
+      }
+
+      if ($bad.Count -gt 0) { return ($bad -join '；') }
+      return $null
+    }
+  },
+
+  [pscustomobject]@{
     Id     = 'REG-A4'
     Name   = '备份快照有效（出新快照 + 独立只读复算）'
     Action = {
@@ -232,7 +290,7 @@ try {
 
   $bar = '=' * 78
   Write-Host $bar
-  Write-Host "全量回归 · AI:PRD-001 + AI:PRD-002 + AI:PRD-003（A/B/C 三组）"
+  Write-Host "全量回归 · AI:PRD-001 + AI:PRD-002 + AI:PRD-003 + AI:PRD-004（A/B/C/D 四组）"
   Write-Host "  仓根  ：$root"
   Write-Host "  开始  ：$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
   Write-Host "  关卡  ：$($selected.Count) 关（$(($selected | ForEach-Object { $_.Id }) -join '、')）"

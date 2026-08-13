@@ -1,0 +1,665 @@
+{
+  "_": "检索评测集（AI:PRD-004 · 004-D，REG-D1 的料）。跑法：pnpm exec tsx --env-file=.env scripts/eval-retrieval.ts",
+  "version": "retrieval-eval/v1",
+  "builtAt": "2026-08-13",
+  "librarySnapshot": {
+    "questions": 60,
+    "note": "绝对值线 44（打卡册 day1-3 + 化简去号专项）/ 计算线 10（有理数加减 3 + 含绝对值混合 2 + 合并同类项 5）/ 实数线 6（整数立方根速算 3 + 平方根双值辨析 3）。difficulty 全 NULL。"
+  },
+  "禁令": [
+    "🔴 M0·Q9：每条查询必须有真实出处（source 字段逐条注明），三个合法来源=①metric_event 已落的真查询 ②生产场景真用词（考点名/别名词表/出册找题的真实说法）③002/003 验收实测用过的查询。为凑数发明的词一条都没有。",
+    "🔴 难度轴整体绕开：库里 difficulty 全 NULL（打档是后续的活），任何 difficulty 过滤都会零命中——那是数据没到位不是检索错了。总指挥拍板不为评测造难度数据，所以本评测集一条 difficulty 查询都没有；验收 4-1 原话里的「档3」改用『考点+题型』组合替代。",
+    "🔴 评测跑的是 searchQuestions(metric:false)：评测本身不许污染真查询日志（不然下一轮评测集又从自己的回声里抽料）。"
+  ],
+  "判定口径": {
+    "judgedBy": "规则+人工：候选池由脚本给全（60 题全量题面已逐题读过），相关档由人读题面判",
+    "grade2": "题面主体就是这件事——拿到手不用改就能用",
+    "grade1": "解这道题必须做这个动作 / 是同一个模型的另一种问法，但不是题的主体——做专项时要它，做正题时排后面",
+    "grade0": "不在 relevant 列表里 = 不相关（返回它只会稀释 top-N）",
+    "🔴 防自证": "「考点词查询」（B 组的落靶类、C 组的语意类）**绝不拿 question_kp 挂载当判定依据**——那会让考点轴永远满分自证。这些查询的相关集合一律横跨多个考点，是逐题读题面判出来的（judgeNote 写明依据）。A 组是 kp 硬过滤查询，语义上就是「挂在这个考点下的题」，所以判定限定在该考点内，但仍逐题读题面分 2/1 档（同挂一个 kp ≠ 同等相关，见 A3/A5）。",
+    "IDCG 口径": "理想排序取自**全部已判相关**（不只是系统返回的那些）⇒ 召不回来的相关题会实实在在压低 NDCG。B1/B7/B9/B12 就是靠这条把召回缺口量出来的。"
+  },
+  "queries": [
+    {
+      "id": "A1",
+      "scenario": "页面真查",
+      "source": "metric_event#100/#101/#102（2026-08-13T14:31:09，检索页考点侧栏点开「绝对值的化简与去号」）",
+      "query": { "kpIds": ["kp_01KZV2HDVDXXVB6W8C9K2R6A2Y"], "limit": 10 },
+      "judgedBy": "规则+人工",
+      "judgeNote": "逐题读题面：三题主体都是「已知 a、b、c 的符号与大小关系 → 逐项判正负 → 脱去绝对值号合并同类项」，正是本考点的动作，全 2。库内其余 57 题读下来没有第四道以『化简含多个绝对值的代数式』为主体的题（|x+2|=-x-2 那两道是判 x 的范围，不是化简式子），故相关集合封闭为 3 条。",
+      "relevant": [
+        { "questionId": "q_01KZVF46KBKBTWEAYK207HGTZA", "grade": 2 },
+        { "questionId": "q_01KZVF46KEXEA6F3229RQ8TXR4", "grade": 2 },
+        { "questionId": "q_01KZVFBGNZZCZY86M9YXFRHHYS", "grade": 2 }
+      ]
+    },
+    {
+      "id": "A2",
+      "scenario": "出册选题（打卡册每天版式要一道选择题收尾）",
+      "source": "生产场景真用词：考点名取自 kp 表『绝对值的性质与非负性』；「每天 1 道选择」是打卡册既有版式（每日打卡 skill 的日页结构）",
+      "query": {
+        "kpIds": ["kp_01KZV2HDVDSXAYHFZP6VJX41FD"],
+        "qtype": ["选择"],
+        "limit": 10
+      },
+      "judgedBy": "规则+人工",
+      "judgeNote": "读题面：四道选择题都靠「非负数之和为 0 ⇒ 每一项都为 0」破题（其中两道写成『(a+4)² 与 |b-2| 互为相反数』，是同一件事的另一种说法），同型同解法，全 2。同考点下的填空/解答题按 qtype 条件正当落选，不计入相关集合——本条查的就是『选择题』这件事，把它们判成相关等于否定 qtype 条件本身。",
+      "relevant": [
+        { "questionId": "q_01KZVF40T8GRKF73QX8PZR3H3S", "grade": 2 },
+        { "questionId": "q_01KZVF40TPSVS8ECSNMRZ0TDF4", "grade": 2 },
+        { "questionId": "q_01KZVF40V47AE8KQD965GG7QVY", "grade": 2 },
+        { "questionId": "q_01KZVF43JF01JRSB0EW162MGDC", "grade": 2 }
+      ]
+    },
+    {
+      "id": "A3",
+      "scenario": "考点索引对照（出绝对值打卡前按考点点存量）",
+      "source": "003 验收实录 §3-1 的 12 个考点名之一『已知绝对值求原数』（种子集入库时用的就是这个名）",
+      "query": { "kpIds": ["kp_01KZV2HDVDN3FEMCMNF3MNT15W"], "limit": 10 },
+      "judgedBy": "规则+人工",
+      "judgeNote": "读题面分档，不按挂载一刀切：前六题（|x-3|=5 / |a|=5,|b|=1/5 / |3x|=12 / |5-x|=|-6| / |x+3|=|5-x| / |x|=|-8|）都是『给绝对值等式，反解出原数的所有取值』，是本考点的正题，给 2；后两题（绝对值不大于 5.4 / 4.5 的整数有几个）问的是**计数**不是求原数，只是同一节的邻题，给 1。🔴 这一条就是在钉「同挂一个 kp ≠ 同等相关」——若哪天排序把两道计数题顶到前面，NDCG 会掉。",
+      "relevant": [
+        { "questionId": "q_01KZVF40T06F21857EWW015M89", "grade": 2 },
+        { "questionId": "q_01KZVF40T4G17TPRTCWM64MK1R", "grade": 2 },
+        { "questionId": "q_01KZVF40TJFEZV21GG0JKKVYW4", "grade": 2 },
+        { "questionId": "q_01KZVF40TKSQ2P86QSTE1S0MY1", "grade": 2 },
+        { "questionId": "q_01KZVF40V08B66KNJSD1WZDB4E", "grade": 2 },
+        { "questionId": "q_01KZVF43JB0SG4129RHESC0WAZ", "grade": 2 },
+        { "questionId": "q_01KZVF40V1S3NVGJSWX0A2D9DW", "grade": 1 },
+        { "questionId": "q_01KZVF43JCKW1PQ4HC164BGWEA", "grade": 1 }
+      ]
+    },
+    {
+      "id": "A4",
+      "scenario": "专项出题前查存量（符号商专项）",
+      "source": "生产场景真用词：别名词表 kp_alias『符号商』『|a|/a 型』『符号商定号』三条同指一个考点",
+      "query": { "kpIds": ["kp_01KZV2HDVDYVTXYVZ935AMY95P"], "limit": 10 },
+      "judgedBy": "规则+人工",
+      "judgeNote": "六题读下来全是「由 a、b、c 的正负定 |a|/a 各项取 ±1 再求和」，同型同解法，题面复杂度也在一个量级（两元/三元只是项数差别），无强弱之分，一律 2。",
+      "relevant": [
+        { "questionId": "q_01KZVF40TFKV5AEB6D9QF9K5XJ", "grade": 2 },
+        { "questionId": "q_01KZVF40TH5JQ4CX5R69FXKMR7", "grade": 2 },
+        { "questionId": "q_01KZVF40TYB04EF7Z40STT2CXR", "grade": 2 },
+        { "questionId": "q_01KZVF40TZK5BVZQM54P86EWRA", "grade": 2 },
+        { "questionId": "q_01KZVF40VCT4RWWK84MKG2SHFV", "grade": 2 },
+        { "questionId": "q_01KZVF40VDT7RFM75E318HB37C", "grade": 2 }
+      ]
+    },
+    {
+      "id": "A5",
+      "scenario": "出『绝对值最值』专项",
+      "source": "生产场景真用词：别名词表『绝对值最值』『距离和最值』『利用绝对值求最值』",
+      "query": { "kpIds": ["kp_01KZV2HDVDHCCRRWAHVSTSECKM"], "limit": 10 },
+      "judgedBy": "规则+人工",
+      "judgeNote": "读题面：前三题问的就是最小值/最大值本身（|x+4|+|x+1|+|x-6| 取最小、|x+1|-|x-3| 取最大、|x+5|+|x-2| 的最小值），给 2；|x-2|+|x+1|=7 用的是同一个『距离和』模型但问的是解方程不是最值，做最值专项时它是配菜不是主菜，给 1。",
+      "relevant": [
+        { "questionId": "q_01KZVF40TSZE44GQKD6GC7G56T", "grade": 2 },
+        { "questionId": "q_01KZVF40V60Q6YBDB4N36QNR6F", "grade": 2 },
+        { "questionId": "q_01KZVF40V7H2ADMHNZ23A8WAA8", "grade": 2 },
+        { "questionId": "q_01KZVF40TT1JSQAB5WVRS73Z1C", "grade": 1 }
+      ]
+    },
+    {
+      "id": "A6",
+      "scenario": "出整式计算打卡（一天 5 题纯化简）",
+      "source": "002 验收实录 §2-2：`resolve_kp('合并同类项')` → 1 候选 confidence=1.00 via=exact-name",
+      "query": {
+        "kpIds": ["kp_01KZV2HDVDJY3KCMKTYYX43BAN"],
+        "qtype": ["计算"],
+        "limit": 10
+      },
+      "judgedBy": "规则+人工",
+      "judgeNote": "五题都是裸表达式求最简（含一道 a²/ab/b² 的二次同类项），读题面即定：全是『把同类项并起来』的纯计算，打卡册一天正好五道，全 2。",
+      "relevant": [
+        { "questionId": "q_01KZVF43JGW25N66FWNQJ9ZS56", "grade": 2 },
+        { "questionId": "q_01KZVF43JHCMS8MRTCEZGZP7B6", "grade": 2 },
+        { "questionId": "q_01KZVF43JJM7PFCTM2A08PEFC8", "grade": 2 },
+        { "questionId": "q_01KZVF43JKNAY7S5ZRCZNBDWEF", "grade": 2 },
+        { "questionId": "q_01KZVF43JNH629TRQ5A1RK7GWN", "grade": 2 }
+      ]
+    },
+    {
+      "id": "A7",
+      "scenario": "群卷实数线找同类（第 01 期第二天已出三题，找有没有第四道）",
+      "source": "003 验收实录 §3-4（群卷第 01 期第二天 15 题三线各 5，其一即立方根线）+ 别名词表『华罗庚法』『立方根速算』",
+      "query": { "kpIds": ["kp_01KZV2HDVE7J0XCC8CG17ZZW26"], "limit": 10 },
+      "judgedBy": "规则+人工",
+      "judgeNote": "三题都是『已知某数是整数的立方 → 按位数定位 → 看个位定个位 → 划去后三位定十位』的华罗庚速算流程题（其中一道还把错误说法拿出来让学生辨），全 2。库内确实没有第四道——这条查询的真实用途就是问这个。",
+      "relevant": [
+        { "questionId": "q_01KZVF452AMRS0SAT3RN35RB14", "grade": 2 },
+        { "questionId": "q_01KZVF452C3TMENJ687RESHB41", "grade": 2 },
+        { "questionId": "q_01KZVF452DQX1SEPMETZR8XMB4", "grade": 2 }
+      ]
+    },
+    {
+      "id": "A8",
+      "scenario": "群卷实数线找同类（平方根双值辨析）",
+      "source": "003 验收实录 §3-4 群卷三线之一 + 别名词表『双值与单值』『平方根双值』『根的取值判定』",
+      "query": { "kpIds": ["kp_01KZV2HDVECJBBTEVRGT0C2R9E"], "limit": 10 },
+      "judgedBy": "规则+人工",
+      "judgeNote": "三题都靠同一条辨析破题：平方根两个值、算术平方根一个值、立方根一个值（负数也有），据此定 a/b/c 各有几种取值再组合求和，全 2。",
+      "relevant": [
+        { "questionId": "q_01KZVF452FQB4CTTDVQ6ZQ6WH8", "grade": 2 },
+        { "questionId": "q_01KZVF452GYRK7MBX1TTDBMNGQ", "grade": 2 },
+        { "questionId": "q_01KZVF452HDP39ZM5GMN096GKY", "grade": 2 }
+      ]
+    },
+    {
+      "id": "A9",
+      "scenario": "出『|x|=a 型』整节打卡（相邻两考点一起取）",
+      "source": "生产场景真用词：打卡册 day1-2 的节结构就是『已知绝对值求原数 + 绝对值中的分类讨论』连排（003 §3-1 入库的正是这册）",
+      "query": {
+        "kpIds": [
+          "kp_01KZV2HDVDBMZCNX2Z4SKMSRBJ",
+          "kp_01KZV2HDVDN3FEMCMNF3MNT15W"
+        ],
+        "limit": 20
+      },
+      "judgedBy": "规则+人工",
+      "judgeNote": "any-of 语义：两个考点的题都该出现在同一结果里（漏掉哪边都是硬伤）。分档沿用 A3 的读题面口径——六道求原数正题与六道分类讨论题给 2，两道『绝对值不大于 x 的整数有几个』计数题给 1。",
+      "relevant": [
+        { "questionId": "q_01KZVF40TDV4DJDTEPX185YG16", "grade": 2 },
+        { "questionId": "q_01KZVF40TEJ9464Q8K0TW2B3E3", "grade": 2 },
+        { "questionId": "q_01KZVF40TWHB34M72VDKDXDY1N", "grade": 2 },
+        { "questionId": "q_01KZVF40TXQ6TS5CGX6HA2HEH8", "grade": 2 },
+        { "questionId": "q_01KZVF40V9SEH0VRH63QT1GFAH", "grade": 2 },
+        { "questionId": "q_01KZVF40VB4BZG40C0Z43VFV0R", "grade": 2 },
+        { "questionId": "q_01KZVF40T06F21857EWW015M89", "grade": 2 },
+        { "questionId": "q_01KZVF40T4G17TPRTCWM64MK1R", "grade": 2 },
+        { "questionId": "q_01KZVF40TJFEZV21GG0JKKVYW4", "grade": 2 },
+        { "questionId": "q_01KZVF40TKSQ2P86QSTE1S0MY1", "grade": 2 },
+        { "questionId": "q_01KZVF40V08B66KNJSD1WZDB4E", "grade": 2 },
+        { "questionId": "q_01KZVF43JB0SG4129RHESC0WAZ", "grade": 2 },
+        { "questionId": "q_01KZVF40V1S3NVGJSWX0A2D9DW", "grade": 1 },
+        { "questionId": "q_01KZVF43JCKW1PQ4HC164BGWEA", "grade": 1 }
+      ]
+    },
+    {
+      "id": "A10",
+      "scenario": "只认主考点的窄查（挑『纯分类讨论』题，不要副挂来的邻题）",
+      "source": "生产场景真用词：别名词表『绝对值分类讨论』『分类讨论思想』；primaryOnly 是检索页的既有开关",
+      "query": {
+        "kpIds": ["kp_01KZV2HDVDBMZCNX2Z4SKMSRBJ"],
+        "primaryOnly": true,
+        "limit": 10
+      },
+      "judgedBy": "规则+人工",
+      "judgeNote": "六题读题面都要先分字母正负、逐组合算、再汇总多解（含两道『|x+2|=-x-2 ⇒ x≤-2』的单向判范围型，它们是分类讨论的最小形态），全 2。🔴 当下 question_kp 每题只挂一个主考点，所以 primaryOnly 开与不开应同结果——本条钉的是『这个开关不改结果』这个事实，哪天副挂上来了它会先红。",
+      "relevant": [
+        { "questionId": "q_01KZVF40TDV4DJDTEPX185YG16", "grade": 2 },
+        { "questionId": "q_01KZVF40TEJ9464Q8K0TW2B3E3", "grade": 2 },
+        { "questionId": "q_01KZVF40TWHB34M72VDKDXDY1N", "grade": 2 },
+        { "questionId": "q_01KZVF40TXQ6TS5CGX6HA2HEH8", "grade": 2 },
+        { "questionId": "q_01KZVF40V9SEH0VRH63QT1GFAH", "grade": 2 },
+        { "questionId": "q_01KZVF40VB4BZG40C0Z43VFV0R", "grade": 2 }
+      ]
+    },
+    {
+      "id": "A11",
+      "scenario": "出有理数计算打卡（一天 5 题纯数值）",
+      "source": "生产场景真用词：考点名『有理数的加减混合运算』『含绝对值的有理数混合运算』取自 kp 表；别名『加减混合』『带绝对值的计算』",
+      "query": {
+        "kpIds": [
+          "kp_01KZV2HDVEVZVKT3R83JZCSQWJ",
+          "kp_01KZV2HDVE28P0JJA3JE41WDCY"
+        ],
+        "qtype": ["计算"],
+        "limit": 10
+      },
+      "judgedBy": "规则+人工",
+      "judgeNote": "五题读题面全是纯数值加减（23-(-5)-14 一类），其中两道先脱 |-3|、|-23| 的号再算，正好是打卡一天的量，全 2。",
+      "relevant": [
+        { "questionId": "q_01KZVF43J3VJ382X71J40ABPYP", "grade": 2 },
+        { "questionId": "q_01KZVF43J52K7TCMVRZS6X8Y48", "grade": 2 },
+        { "questionId": "q_01KZVF43J7WQPNNCG354Q5CGZJ", "grade": 2 },
+        { "questionId": "q_01KZVF43J9X3SWKWPRTEV31NZV", "grade": 2 },
+        { "questionId": "q_01KZVF43JA5QESHZS5N3MCRXMQ", "grade": 2 }
+      ]
+    },
+    {
+      "id": "A12",
+      "scenario": "出册排重（这两道上一期已经用过，本期不能再出）",
+      "source": "生产场景真用词：A/B 双号不重题是打卡线既有纪律（每日打卡 skill §AB 隔离）；excludeQuestionIds 就是为这条主路留的口",
+      "query": {
+        "kpIds": ["kp_01KZV2HDVDN3FEMCMNF3MNT15W"],
+        "excludeQuestionIds": [
+          "q_01KZVF40T06F21857EWW015M89",
+          "q_01KZVF40T4G17TPRTCWM64MK1R"
+        ],
+        "limit": 10
+      },
+      "judgedBy": "规则+人工",
+      "judgeNote": "判定与 A3 同源（同一个考点、同一套读题面分档），只是把上期已用的两道从相关集合里剔掉。🔴 反向也有牙：排掉的题若还出现在结果里，它们算不相关命中，NDCG 会因此下降——这正是排重闸失效时该有的反应。",
+      "relevant": [
+        { "questionId": "q_01KZVF40TJFEZV21GG0JKKVYW4", "grade": 2 },
+        { "questionId": "q_01KZVF40TKSQ2P86QSTE1S0MY1", "grade": 2 },
+        { "questionId": "q_01KZVF40V08B66KNJSD1WZDB4E", "grade": 2 },
+        { "questionId": "q_01KZVF43JB0SG4129RHESC0WAZ", "grade": 2 },
+        { "questionId": "q_01KZVF40V1S3NVGJSWX0A2D9DW", "grade": 1 },
+        { "questionId": "q_01KZVF43JCKW1PQ4HC164BGWEA", "grade": 1 }
+      ]
+    },
+    {
+      "id": "A13",
+      "scenario": "数轴距离专项（找带数轴语境的题）",
+      "source": "生产场景真用词：别名词表『数轴两点间距离』『绝对值的几何意义』",
+      "query": { "kpIds": ["kp_01KZV2HDVDVP8JDBFR0GV4ZTEH"], "limit": 10 },
+      "judgedBy": "规则+人工",
+      "judgeNote": "两题读题面：一题直接问『数轴上表示 5 与 -2 的两点距离』并要求反推到 5 距离为 3 的点，一题把 |x-4|+|x+2|=6 翻译成『到 -2 与 4 的距离之和』求整数解，都是几何意义的正题，全 2。距离和最值那四道虽然也是数轴模型，但挂在别的考点、按本条『考点条件』的语义不该出，故不计入。",
+      "relevant": [
+        { "questionId": "q_01KZVF40TBZNC94V9NA8Q7RP13", "grade": 2 },
+        { "questionId": "q_01KZVF40TCAXHTKXGFWWE1JQ6H", "grade": 2 }
+      ]
+    },
+    {
+      "id": "B1",
+      "scenario": "页面真查（检索框敲『化简』）",
+      "source": "metric_event#103（2026-08-13T14:31:45，keywords=\"化简\"，kpAutoResolve=true，fts and 命中 3）",
+      "query": { "keywords": "化简", "kpAutoResolve": true, "limit": 10 },
+      "judgedBy": "规则+人工",
+      "judgeNote": "🔴 判定依据=读题面本身，不看挂载（『化简』在 kp_alias 里只是前缀命中 0.9，落靶轴本就不会开，所以这里也没有可自证的挂载）。三道『化简：|a+c|−|b+c|+|a−b|』题题面明写化简且主体就是化简，给 2；五道合并同类项题题面是裸表达式（-21x+19y+21x-27y 之类）不含『化简』二字，但题目要求就是化到最简，出『化简』册时必然要它们，给 1。⇒ 相关 8 条里字面只够得着 3 条，剩下 5 条是**量出来的召回缺口**，不是判错。",
+      "relevant": [
+        { "questionId": "q_01KZVF46KBKBTWEAYK207HGTZA", "grade": 2 },
+        { "questionId": "q_01KZVF46KEXEA6F3229RQ8TXR4", "grade": 2 },
+        { "questionId": "q_01KZVFBGNZZCZY86M9YXFRHHYS", "grade": 2 },
+        { "questionId": "q_01KZVF43JGW25N66FWNQJ9ZS56", "grade": 1 },
+        { "questionId": "q_01KZVF43JHCMS8MRTCEZGZP7B6", "grade": 1 },
+        { "questionId": "q_01KZVF43JJM7PFCTM2A08PEFC8", "grade": 1 },
+        { "questionId": "q_01KZVF43JKNAY7S5ZRCZNBDWEF", "grade": 1 },
+        { "questionId": "q_01KZVF43JNH629TRQ5A1RK7GWN", "grade": 1 }
+      ]
+    },
+    {
+      "id": "B2",
+      "scenario": "页面真查 / agent 找题（考点用词，题面里根本不出现这四个字）",
+      "source": "metric_event#106（2026-08-13T14:31:58，keywords=\"去绝对值\"，落靶到『绝对值的化简与去号』via=exact-alias，kpAuto 召回 3）",
+      "query": { "keywords": "去绝对值", "kpAutoResolve": true, "limit": 10 },
+      "judgedBy": "规则+人工",
+      "judgeNote": "🔴 不拿落靶考点的挂载当判定：先读全库 60 道题面，挑『主体或关键一步是脱去绝对值号』的。三道化简题（|a+c|−|b+c|+|a−b| 等）整题就是逐段判号再脱号，给 2；|x+2|=-x-2 与 |x-5|=x-5 是『绝对值等于其相反数/本身 ⇒ 内部 ≤0 / ≥0』，脱号是唯一动作但题只有一步，给 1。符号商六题虽然也要定号，但主体是 |a|/a 的取值公式而不是脱号本身，不计入——边界如实划在这儿。",
+      "relevant": [
+        { "questionId": "q_01KZVF46KBKBTWEAYK207HGTZA", "grade": 2 },
+        { "questionId": "q_01KZVF46KEXEA6F3229RQ8TXR4", "grade": 2 },
+        { "questionId": "q_01KZVFBGNZZCZY86M9YXFRHHYS", "grade": 2 },
+        { "questionId": "q_01KZVF40TEJ9464Q8K0TW2B3E3", "grade": 1 },
+        { "questionId": "q_01KZVF40VB4BZG40C0Z43VFV0R", "grade": 1 }
+      ]
+    },
+    {
+      "id": "B3",
+      "scenario": "出最值专项时按题面用词找题",
+      "source": "生产场景真用词：专项名叫『利用绝对值求最值』（别名词表有），但人在检索框里打的是题面用词『最小值』",
+      "query": { "keywords": "最小值", "kpAutoResolve": false, "limit": 10 },
+      "judgedBy": "规则+人工",
+      "judgeNote": "读题面：七题问『最小值是多少 / 取最小时 x 是几』（|x-2|、1+|x-3|、|4-a|+2、|2x-3|、|x+7|+5、三项距离和、|x+5|+|x-2|），给 2；四道『最大值』题（5-|a-1|、3-|2x-3|、7-|-3-a|、|x+1|-|x-3|）是同一个模型的反向问法，做最值专项一定一起收，给 1。🔴 判定横跨『绝对值的性质与非负性』和『绝对值表距离求最值』两个考点——对『找最值题』这个需求它们是一回事，挂载不参与判定。",
+      "relevant": [
+        { "questionId": "q_01KZVF40T55YAXQK6KK317K89D", "grade": 2 },
+        { "questionId": "q_01KZVF40TM2QHTQESSG9ZP7K8W", "grade": 2 },
+        { "questionId": "q_01KZVF40TNEGBP849Y4F2T9R37", "grade": 2 },
+        { "questionId": "q_01KZVF40V1A8S5TW7MMGW36G18", "grade": 2 },
+        { "questionId": "q_01KZVF43JD0M6V4D0F769W2WH0", "grade": 2 },
+        { "questionId": "q_01KZVF40TSZE44GQKD6GC7G56T", "grade": 2 },
+        { "questionId": "q_01KZVF40V7H2ADMHNZ23A8WAA8", "grade": 2 },
+        { "questionId": "q_01KZVF40T72N4DFZMSWKV6R2FT", "grade": 1 },
+        { "questionId": "q_01KZVF40V3WYY5MNV5WCBT0MD2", "grade": 1 },
+        { "questionId": "q_01KZVF43JE2SKS63APK6WNZ78A", "grade": 1 },
+        { "questionId": "q_01KZVF40V60Q6YBDB4N36QNR6F", "grade": 1 }
+      ]
+    },
+    {
+      "id": "B4",
+      "scenario": "出最值专项的另一半（最大值那一档）",
+      "source": "生产场景真用词：同 B3，最值专项两个方向各查一次是既有做法",
+      "query": { "keywords": "最大值", "kpAutoResolve": false, "limit": 10 },
+      "judgedBy": "规则+人工",
+      "judgeNote": "读题面：五题题面明问最大值（5-|a-1| / 3-|2x-3| / 7-|-3-a| / |x+1|-|x-3| / 『求 x-y 的最大值』），给 2；七道最小值题是反向同型，给 1。🔴 注意最后一题（|x|=3,|y|=2 求 x-y 最大值）挂的是『绝对值中的分类讨论』，与最值考点无关——它凭题面进相关集合，正是防自证判定的样子。",
+      "relevant": [
+        { "questionId": "q_01KZVF40T72N4DFZMSWKV6R2FT", "grade": 2 },
+        { "questionId": "q_01KZVF40V3WYY5MNV5WCBT0MD2", "grade": 2 },
+        { "questionId": "q_01KZVF43JE2SKS63APK6WNZ78A", "grade": 2 },
+        { "questionId": "q_01KZVF40V60Q6YBDB4N36QNR6F", "grade": 2 },
+        { "questionId": "q_01KZVF40TWHB34M72VDKDXDY1N", "grade": 2 },
+        { "questionId": "q_01KZVF40T55YAXQK6KK317K89D", "grade": 1 },
+        { "questionId": "q_01KZVF40TM2QHTQESSG9ZP7K8W", "grade": 1 },
+        { "questionId": "q_01KZVF40TNEGBP849Y4F2T9R37", "grade": 1 },
+        { "questionId": "q_01KZVF40V1A8S5TW7MMGW36G18", "grade": 1 },
+        { "questionId": "q_01KZVF43JD0M6V4D0F769W2WH0", "grade": 1 },
+        { "questionId": "q_01KZVF40TSZE44GQKD6GC7G56T", "grade": 1 },
+        { "questionId": "q_01KZVF40V7H2ADMHNZ23A8WAA8", "grade": 1 }
+      ]
+    },
+    {
+      "id": "B5",
+      "scenario": "出题前对考点索引（考点名直接当关键词打）",
+      "source": "002 验收实录 §2-2：`resolve_kp('合并同类项')` exact-name 1.00 —— 人在检索框里也是原样打这五个字",
+      "query": { "keywords": "合并同类项", "kpAutoResolve": true, "limit": 10 },
+      "judgedBy": "规则+人工",
+      "judgeNote": "读题面：五题都是把同类项并起来化到最简的纯计算，除此之外全库没有第六道整式化简题（含 a²/ab/b² 的那道仍是合并同类项，只是次数高一档），全 2。🔴 这五个字任何题面里都没有 ⇒ 纯字面必零命中；相关集合是读题面定的，落靶轴能不能召回它们是**被考的对象**，不是判定的依据。",
+      "relevant": [
+        { "questionId": "q_01KZVF43JGW25N66FWNQJ9ZS56", "grade": 2 },
+        { "questionId": "q_01KZVF43JHCMS8MRTCEZGZP7B6", "grade": 2 },
+        { "questionId": "q_01KZVF43JJM7PFCTM2A08PEFC8", "grade": 2 },
+        { "questionId": "q_01KZVF43JKNAY7S5ZRCZNBDWEF", "grade": 2 },
+        { "questionId": "q_01KZVF43JNH629TRQ5A1RK7GWN", "grade": 2 }
+      ]
+    },
+    {
+      "id": "B6",
+      "scenario": "出题前对考点索引（册名式别名，一词四考点）",
+      "source": "002 验收实录 §2-2/§2-4（`resolve_kp('绝对值压轴')` → 4 候选全 1.00 exact-alias）+ kp_alias 表四条同名别名",
+      "query": { "keywords": "绝对值压轴", "kpAutoResolve": true, "limit": 20 },
+      "judgedBy": "规则+人工",
+      "judgeNote": "🔴 判定绝不抄那四个落靶考点的挂载，而是逐题读题面判『够不够压轴』：多项距离和求最值 4 道（三项和、|x-2|+|x+1|=7、|x+1|-|x-3|、|x+5|+|x-2|）、三绝对值嵌套化简 3 道、需要多解讨论的 4 道（|x|=3,|y|=6 且 x>y 一类）给 2；|x+2|=-x-2 与 |x-5|=x-5 一步判范围，虽同挂『分类讨论』但明显是基础题，给 1；三元 |x-3|+|y+5|+|z-8|=0 的两问解答题挂在『非负性』（不在任何落靶考点内），但它就是打卡册压轴位的题，给 1。第四个落靶考点『数轴动点与定值距离』库内零题，本查询召不回东西——落靶只加召回不减结果，故不影响其余。",
+      "relevant": [
+        { "questionId": "q_01KZVF40TSZE44GQKD6GC7G56T", "grade": 2 },
+        { "questionId": "q_01KZVF40TT1JSQAB5WVRS73Z1C", "grade": 2 },
+        { "questionId": "q_01KZVF40V60Q6YBDB4N36QNR6F", "grade": 2 },
+        { "questionId": "q_01KZVF40V7H2ADMHNZ23A8WAA8", "grade": 2 },
+        { "questionId": "q_01KZVF46KBKBTWEAYK207HGTZA", "grade": 2 },
+        { "questionId": "q_01KZVF46KEXEA6F3229RQ8TXR4", "grade": 2 },
+        { "questionId": "q_01KZVFBGNZZCZY86M9YXFRHHYS", "grade": 2 },
+        { "questionId": "q_01KZVF40TDV4DJDTEPX185YG16", "grade": 2 },
+        { "questionId": "q_01KZVF40TWHB34M72VDKDXDY1N", "grade": 2 },
+        { "questionId": "q_01KZVF40TXQ6TS5CGX6HA2HEH8", "grade": 2 },
+        { "questionId": "q_01KZVF40V9SEH0VRH63QT1GFAH", "grade": 2 },
+        { "questionId": "q_01KZVF40TEJ9464Q8K0TW2B3E3", "grade": 1 },
+        { "questionId": "q_01KZVF40VB4BZG40C0Z43VFV0R", "grade": 1 },
+        { "questionId": "q_01KZVF40T9JWECZEK0F0R67PYG", "grade": 1 }
+      ]
+    },
+    {
+      "id": "B7",
+      "scenario": "找数轴题（含配图那道）",
+      "source": "生产场景真用词：别名词表『数轴定号』『数轴两点间距离』『数轴动点』；出数轴专项时人打的就是『数轴』二字",
+      "query": { "keywords": "数轴", "kpAutoResolve": false, "limit": 10 },
+      "judgedBy": "规则+人工",
+      "judgeNote": "读题面：只有两题题面真出现『数轴』（一题是数轴上两点距离，一题带数轴三点配图），给 2；另外五题（|x-4|+|x+2|=6、三项距离和最小、|x+5|+|x-2|、|x+1|-|x-3|、|x-2|+|x+1|=7）解法就是『在数轴上看距离』，做数轴专项时非要不可，但题面一个『数轴』都不提，给 1。🔴 这条专门量『题面用词 ≠ 解法模型』这道缺口——它是语意轴该不该留下的直接证据。",
+      "relevant": [
+        { "questionId": "q_01KZVF40TBZNC94V9NA8Q7RP13", "grade": 2 },
+        { "questionId": "q_01KZVFBGNZZCZY86M9YXFRHHYS", "grade": 2 },
+        { "questionId": "q_01KZVF40TCAXHTKXGFWWE1JQ6H", "grade": 1 },
+        { "questionId": "q_01KZVF40TSZE44GQKD6GC7G56T", "grade": 1 },
+        { "questionId": "q_01KZVF40V7H2ADMHNZ23A8WAA8", "grade": 1 },
+        { "questionId": "q_01KZVF40V60Q6YBDB4N36QNR6F", "grade": 1 },
+        { "questionId": "q_01KZVF40TT1JSQAB5WVRS73Z1C", "grade": 1 }
+      ]
+    },
+    {
+      "id": "B8",
+      "scenario": "出册排重（要新出一道『互为相反数』型题，先查库里有没有）",
+      "source": "生产场景真用词：别名词表『互为相反数（和为零型）』『和为零则各项为零』",
+      "query": { "keywords": "互为相反数", "kpAutoResolve": false, "limit": 10 },
+      "judgedBy": "规则+人工",
+      "judgeNote": "读题面：两题明写『(a+4)² 与 |b-2| 互为相反数』，给 2；五道 |…|+|…|=0 型题在数学上就是『两个非负数互为相反数』的另一种写法（答案里也是这么讲的），排重时必须一起看否则会出重复题，给 1。判定不看挂载——这七题恰好同挂『非负性』，但那是巧合，判定依据是『两个非负量的和为零』这个数学事实本身。",
+      "relevant": [
+        { "questionId": "q_01KZVF40TPSVS8ECSNMRZ0TDF4", "grade": 2 },
+        { "questionId": "q_01KZVF43JF01JRSB0EW162MGDC", "grade": 2 },
+        { "questionId": "q_01KZVF40T8GRKF73QX8PZR3H3S", "grade": 1 },
+        { "questionId": "q_01KZVF40T9JWECZEK0F0R67PYG", "grade": 1 },
+        { "questionId": "q_01KZVF40TR8QXR91X8DFM3QY57", "grade": 1 },
+        { "questionId": "q_01KZVF40V3MRQA65KDNGCM68DH", "grade": 1 },
+        { "questionId": "q_01KZVF40V47AE8KQD965GG7QVY", "grade": 1 }
+      ]
+    },
+    {
+      "id": "B9",
+      "scenario": "群卷实数线找同类（按题面用词查）",
+      "source": "004-B 实测口径（core/retrieval.ts 文件头记的『立方根』那条实测：考点存在但零题、字面能查到 4 道真题）+ 别名词表『立方根』",
+      "query": { "keywords": "立方根", "kpAutoResolve": true, "limit": 10 },
+      "judgedBy": "规则+人工",
+      "judgeNote": "读题面分档：三道华罗庚速算题主体就是求整数立方根（题面写作 3√50653 之类），给 2；三道平方根双值辨析题里立方根只是 a/b/c 三要素之一（『c 是 −1 的立方根』），主体是双值/单值辨析，给 1。🔴 结果会很有意思：字面命中的恰恰以三道 grade1 为主、两道 grade2 反而落在字面之外——这正是『题面写符号不写词』造成的错排，评测集要如实记下来。",
+      "relevant": [
+        { "questionId": "q_01KZVF452AMRS0SAT3RN35RB14", "grade": 2 },
+        { "questionId": "q_01KZVF452C3TMENJ687RESHB41", "grade": 2 },
+        { "questionId": "q_01KZVF452DQX1SEPMETZR8XMB4", "grade": 2 },
+        { "questionId": "q_01KZVF452FQB4CTTDVQ6ZQ6WH8", "grade": 1 },
+        { "questionId": "q_01KZVF452GYRK7MBX1TTDBMNGQ", "grade": 1 },
+        { "questionId": "q_01KZVF452HDP39ZM5GMN096GKY", "grade": 1 }
+      ]
+    },
+    {
+      "id": "B10",
+      "scenario": "群卷实数线找同类（平方根那一半）",
+      "source": "生产场景真用词：别名词表『平方根』『算术平方根』；003 §3-4 群卷实数线",
+      "query": { "keywords": "平方根", "kpAutoResolve": false, "limit": 10 },
+      "judgedBy": "规则+人工",
+      "judgeNote": "读题面：三题都以『√16 的平方根 / √81 的算术平方根 / x 的平方根』开题，平方根是主角，全 2。三道华罗庚立方根速算题题面里没有平方根、解法也不涉及，不相关（不进列表）——这条同时在验『查平方根别把立方根题一并端上来』。",
+      "relevant": [
+        { "questionId": "q_01KZVF452FQB4CTTDVQ6ZQ6WH8", "grade": 2 },
+        { "questionId": "q_01KZVF452GYRK7MBX1TTDBMNGQ", "grade": 2 },
+        { "questionId": "q_01KZVF452HDP39ZM5GMN096GKY", "grade": 2 }
+      ]
+    },
+    {
+      "id": "B11",
+      "scenario": "找同类（想再出一道『求 x 的取值范围』型填空）",
+      "source": "生产场景真用词：题面用词直取（打卡册这一型的问法固定是『x 的取值范围是____』）",
+      "query": { "keywords": "取值范围", "kpAutoResolve": false, "limit": 10 },
+      "judgedBy": "规则+人工",
+      "judgeNote": "读题面：三题明问『x 的取值范围是____』，给 2；另两题实质同问但措辞不同——『求出所有符合条件的整数 x』（是范围的离散版）与『当 x 在何范围时有最大值』，给 1。",
+      "relevant": [
+        { "questionId": "q_01KZVF40TEJ9464Q8K0TW2B3E3", "grade": 2 },
+        { "questionId": "q_01KZVF40VB4BZG40C0Z43VFV0R", "grade": 2 },
+        { "questionId": "q_01KZVF40V7H2ADMHNZ23A8WAA8", "grade": 2 },
+        { "questionId": "q_01KZVF40TCAXHTKXGFWWE1JQ6H", "grade": 1 },
+        { "questionId": "q_01KZVF40V60Q6YBDB4N36QNR6F", "grade": 1 }
+      ]
+    },
+    {
+      "id": "B12",
+      "scenario": "出整式册时按最顺口的说法查（老师嘴里就叫『同类项』，不会打全『合并同类项』）",
+      "source": "生产场景真用词：kp_alias 里有『同类项合并』『同类项判定』两条别名，人的口头简称是『同类项』",
+      "query": { "keywords": "同类项", "kpAutoResolve": true, "limit": 10 },
+      "judgedBy": "规则+人工",
+      "judgeNote": "读题面：五题都是把同类项合并到最简的纯计算，『同类项』正是老师会在检索框里打的词，全 2。🔴 本条**已知当前实现零命中**——『同类项』在 kp_alias 里只是『同类项合并/同类项判定』的前缀（confidence 0.9），而落靶只认 1.0 故不开轴；题面是裸表达式，字面也无。它留在评测集里不是凑数，是给这条召回缺口一个常驻读数（NDCG=0）：将来若补别名或调宽落靶阈值，基线会自己往上走；若有人顺手把阈值调松却带坏了别处，其他条会掉下来抵消——这正是评测集该有的样子。",
+      "relevant": [
+        { "questionId": "q_01KZVF43JGW25N66FWNQJ9ZS56", "grade": 2 },
+        { "questionId": "q_01KZVF43JHCMS8MRTCEZGZP7B6", "grade": 2 },
+        { "questionId": "q_01KZVF43JJM7PFCTM2A08PEFC8", "grade": 2 },
+        { "questionId": "q_01KZVF43JKNAY7S5ZRCZNBDWEF", "grade": 2 },
+        { "questionId": "q_01KZVF43JNH629TRQ5A1RK7GWN", "grade": 2 }
+      ]
+    },
+    {
+      "id": "C1",
+      "scenario": "004-B 冒烟真查（字面 + 语意双轴 RRF）",
+      "source": "metric_event#97（2026-08-13T13:38:06，keywords=\"绝对值\" + semanticQuery=\"含字母的绝对值怎么分类讨论正负\"）",
+      "query": {
+        "keywords": "绝对值",
+        "semanticQuery": "含字母的绝对值怎么分类讨论正负",
+        "limit": 10
+      },
+      "judgedBy": "规则+人工",
+      "judgeNote": "需求=『含字母的绝对值，按正负分类讨论』。读题面：六道 |x|=a、|y|=b 型多解题必须分 x、y 各自正负再逐组合算，是需求的正中心，给 2；六道符号商题（|a|/a 型）与三道化简去号题也都要按字母正负定号，但前者主体是符号商取值公式、后者已给定符号不需要『讨论』，给 1。🔴 这十五题横跨三个考点，是逐题读题面判的——不是从任何考点挂载抄来的。",
+      "relevant": [
+        { "questionId": "q_01KZVF40TDV4DJDTEPX185YG16", "grade": 2 },
+        { "questionId": "q_01KZVF40TEJ9464Q8K0TW2B3E3", "grade": 2 },
+        { "questionId": "q_01KZVF40TWHB34M72VDKDXDY1N", "grade": 2 },
+        { "questionId": "q_01KZVF40TXQ6TS5CGX6HA2HEH8", "grade": 2 },
+        { "questionId": "q_01KZVF40V9SEH0VRH63QT1GFAH", "grade": 2 },
+        { "questionId": "q_01KZVF40VB4BZG40C0Z43VFV0R", "grade": 2 },
+        { "questionId": "q_01KZVF40TFKV5AEB6D9QF9K5XJ", "grade": 1 },
+        { "questionId": "q_01KZVF40TH5JQ4CX5R69FXKMR7", "grade": 1 },
+        { "questionId": "q_01KZVF40TYB04EF7Z40STT2CXR", "grade": 1 },
+        { "questionId": "q_01KZVF40TZK5BVZQM54P86EWRA", "grade": 1 },
+        { "questionId": "q_01KZVF40VCT4RWWK84MKG2SHFV", "grade": 1 },
+        { "questionId": "q_01KZVF40VDT7RFM75E318HB37C", "grade": 1 },
+        { "questionId": "q_01KZVF46KBKBTWEAYK207HGTZA", "grade": 1 },
+        { "questionId": "q_01KZVF46KEXEA6F3229RQ8TXR4", "grade": 1 },
+        { "questionId": "q_01KZVFBGNZZCZY86M9YXFRHHYS", "grade": 1 }
+      ]
+    },
+    {
+      "id": "C2",
+      "scenario": "页面真查（语意轴单独跑）",
+      "source": "metric_event#104（2026-08-13T14:31:48，semanticQuery=\"绝对值方程怎么解\"，向量轴 60 候选全排）",
+      "query": { "semanticQuery": "绝对值方程怎么解", "limit": 10 },
+      "judgedBy": "规则+人工",
+      "judgeNote": "需求=『解含绝对值的方程』。读题面：七题是标准的绝对值方程（|x-3|=5、|3x|=12、|5-x|=|-6|、|x+3|=|5-x|、|x|=|-8|、|x-2|+|x+1|=7、|x-4|+|x+2|=6），给 2；七题是『先由绝对值等式定出字母取值、再算代数式』或『由 |x+2|=-x-2 反推范围』，解方程是其中一步而不是终点，给 1。",
+      "relevant": [
+        { "questionId": "q_01KZVF40T06F21857EWW015M89", "grade": 2 },
+        { "questionId": "q_01KZVF40TJFEZV21GG0JKKVYW4", "grade": 2 },
+        { "questionId": "q_01KZVF40TKSQ2P86QSTE1S0MY1", "grade": 2 },
+        { "questionId": "q_01KZVF40V08B66KNJSD1WZDB4E", "grade": 2 },
+        { "questionId": "q_01KZVF43JB0SG4129RHESC0WAZ", "grade": 2 },
+        { "questionId": "q_01KZVF40TT1JSQAB5WVRS73Z1C", "grade": 2 },
+        { "questionId": "q_01KZVF40TCAXHTKXGFWWE1JQ6H", "grade": 2 },
+        { "questionId": "q_01KZVF40T4G17TPRTCWM64MK1R", "grade": 1 },
+        { "questionId": "q_01KZVF40TEJ9464Q8K0TW2B3E3", "grade": 1 },
+        { "questionId": "q_01KZVF40VB4BZG40C0Z43VFV0R", "grade": 1 },
+        { "questionId": "q_01KZVF40TDV4DJDTEPX185YG16", "grade": 1 },
+        { "questionId": "q_01KZVF40TWHB34M72VDKDXDY1N", "grade": 1 },
+        { "questionId": "q_01KZVF40TXQ6TS5CGX6HA2HEH8", "grade": 1 },
+        { "questionId": "q_01KZVF40V9SEH0VRH63QT1GFAH", "grade": 1 }
+      ]
+    },
+    {
+      "id": "C3",
+      "scenario": "找同类（说不出关键词的问法：想找『和为零型』的题）",
+      "source": "生产场景真用词：别名词表里这个考点的别名就叫『和为零则各项为零』——老师口头正是这么讲的，检索框里也会这么打",
+      "query": {
+        "semanticQuery": "三个非负数加起来等于零，那每个都必须是零",
+        "limit": 10
+      },
+      "judgedBy": "规则+人工",
+      "judgeNote": "读题面：七题都靠『若干非负量之和为 0 ⇒ 每项为 0』破题——五题写成 |…|+|…|=0（含一道三元的），两题写成『(a+4)² 与 |b-2| 互为相反数』（移项后就是平方 + 绝对值 = 0），是同一个模型的两种外衣，全 2。项数是两项还是三项不影响相关性（需求问的是模型不是项数）。",
+      "relevant": [
+        { "questionId": "q_01KZVF40T8GRKF73QX8PZR3H3S", "grade": 2 },
+        { "questionId": "q_01KZVF40T9JWECZEK0F0R67PYG", "grade": 2 },
+        { "questionId": "q_01KZVF40TR8QXR91X8DFM3QY57", "grade": 2 },
+        { "questionId": "q_01KZVF40V3MRQA65KDNGCM68DH", "grade": 2 },
+        { "questionId": "q_01KZVF40V47AE8KQD965GG7QVY", "grade": 2 },
+        { "questionId": "q_01KZVF40TPSVS8ECSNMRZ0TDF4", "grade": 2 },
+        { "questionId": "q_01KZVF43JF01JRSB0EW162MGDC", "grade": 2 }
+      ]
+    },
+    {
+      "id": "C4",
+      "scenario": "找同类（符号商，人不会打考点名只会描述现象）",
+      "source": "生产场景真用词：别名词表『符号商定号』；老师原话就是『|a|/a 到底是 1 还是 -1』",
+      "query": {
+        "semanticQuery": "怎么判断 |a|/a 到底是 1 还是 -1",
+        "limit": 10
+      },
+      "judgedBy": "规则+人工",
+      "judgeNote": "读题面：六题主体就是由 a、b、c 的正负定 |a|/a 各项取 ±1 再求和（含 abc>0、abc<0、ab<0 三种给法），给 2；三道化简去号题也是『按符号定号再脱号』，动作同源但形态是化简代数式而不是求符号商的值，给 1。",
+      "relevant": [
+        { "questionId": "q_01KZVF40TFKV5AEB6D9QF9K5XJ", "grade": 2 },
+        { "questionId": "q_01KZVF40TH5JQ4CX5R69FXKMR7", "grade": 2 },
+        { "questionId": "q_01KZVF40TYB04EF7Z40STT2CXR", "grade": 2 },
+        { "questionId": "q_01KZVF40TZK5BVZQM54P86EWRA", "grade": 2 },
+        { "questionId": "q_01KZVF40VCT4RWWK84MKG2SHFV", "grade": 2 },
+        { "questionId": "q_01KZVF40VDT7RFM75E318HB37C", "grade": 2 },
+        { "questionId": "q_01KZVF46KBKBTWEAYK207HGTZA", "grade": 1 },
+        { "questionId": "q_01KZVF46KEXEA6F3229RQ8TXR4", "grade": 1 },
+        { "questionId": "q_01KZVFBGNZZCZY86M9YXFRHHYS", "grade": 1 }
+      ]
+    },
+    {
+      "id": "C5",
+      "scenario": "找同类（距离和模型，用大白话描述）",
+      "source": "生产场景真用词：别名词表『距离和最值』『绝对值表距离』——展开成人话就是这句",
+      "query": {
+        "semanticQuery": "数轴上到两个定点的距离之和最小",
+        "limit": 10
+      },
+      "judgedBy": "规则+人工",
+      "judgeNote": "读题面：五题都是『把 |x-a|+|x-b| 读成 x 到 a、b 的距离之和』再谈最值或解方程（三项和那道是同模型的加长版），给 2；『数轴上表示 5 与 -2 的两点距离』是这套读法的基础一步但不涉及最值，给 1。",
+      "relevant": [
+        { "questionId": "q_01KZVF40TSZE44GQKD6GC7G56T", "grade": 2 },
+        { "questionId": "q_01KZVF40V7H2ADMHNZ23A8WAA8", "grade": 2 },
+        { "questionId": "q_01KZVF40V60Q6YBDB4N36QNR6F", "grade": 2 },
+        { "questionId": "q_01KZVF40TT1JSQAB5WVRS73Z1C", "grade": 2 },
+        { "questionId": "q_01KZVF40TCAXHTKXGFWWE1JQ6H", "grade": 2 },
+        { "questionId": "q_01KZVF40TBZNC94V9NA8Q7RP13", "grade": 1 }
+      ]
+    },
+    {
+      "id": "C6",
+      "scenario": "找同类（多解讨论型，用题干结构描述）",
+      "source": "生产场景真用词：备课/出册时描述题型的原话（『给两个绝对值加一个大小关系，求代数式』是打卡册 day2 的固定题型）",
+      "query": {
+        "semanticQuery": "已知两个字母的绝对值和它们的大小关系，求一个代数式的值",
+        "limit": 10
+      },
+      "judgedBy": "规则+人工",
+      "judgeNote": "读题面：四题结构完全对上（|x|=3,|y|=6 且 x>y 求 2x-y；|x|=4,|y|=7 且 x<y 求 3x-2y；|x|=3,|y|=2 且 xy<0；|a|=5,|b|=2 且 |a+b|=a+b），给 2；|a|=5,|b|=1/5 且 a<0<b 那题给了绝对值与符号关系，但问的是 a、b 本身不是代数式，给 1。",
+      "relevant": [
+        { "questionId": "q_01KZVF40TDV4DJDTEPX185YG16", "grade": 2 },
+        { "questionId": "q_01KZVF40V9SEH0VRH63QT1GFAH", "grade": 2 },
+        { "questionId": "q_01KZVF40TWHB34M72VDKDXDY1N", "grade": 2 },
+        { "questionId": "q_01KZVF40TXQ6TS5CGX6HA2HEH8", "grade": 2 },
+        { "questionId": "q_01KZVF40T4G17TPRTCWM64MK1R", "grade": 1 }
+      ]
+    },
+    {
+      "id": "C7",
+      "scenario": "群卷实数线找同类（字面 + 语意双轴）",
+      "source": "003 验收实录 §3-4 群卷第 01 期第二天立方根线 + 别名词表『立方根速算』『华罗庚法求整数立方根』",
+      "query": {
+        "keywords": "立方",
+        "semanticQuery": "怎么快速开一个大整数的立方根",
+        "limit": 10
+      },
+      "judgedBy": "规则+人工",
+      "judgeNote": "需求=『大整数开立方的速算法』。读题面：三道华罗庚题就是这个流程本身（定位数→定个位→定十位），给 2；三道平方根双值题里出现的立方根都是小数字直接开（−1、−27、−8），跟『快速开大整数』不是一回事，但同属实数开方线、做群卷时会顺带看，给 1。",
+      "relevant": [
+        { "questionId": "q_01KZVF452AMRS0SAT3RN35RB14", "grade": 2 },
+        { "questionId": "q_01KZVF452C3TMENJ687RESHB41", "grade": 2 },
+        { "questionId": "q_01KZVF452DQX1SEPMETZR8XMB4", "grade": 2 },
+        { "questionId": "q_01KZVF452FQB4CTTDVQ6ZQ6WH8", "grade": 1 },
+        { "questionId": "q_01KZVF452GYRK7MBX1TTDBMNGQ", "grade": 1 },
+        { "questionId": "q_01KZVF452HDP39ZM5GMN096GKY", "grade": 1 }
+      ]
+    },
+    {
+      "id": "N1",
+      "negative": true,
+      "scenario": "跨学段误查（库里只有七上代数三线，一道几何题都没有）",
+      "source": "生产场景真用词：几何专项是真实存在的需求，但那批题还没进这个库——人先查一下是正常动作",
+      "query": { "keywords": "三角形", "kpAutoResolve": false, "limit": 10 },
+      "judgedBy": "规则+人工",
+      "judgeNote": "60 题逐题读过，没有一道涉及三角形。期望零命中；返回任何一条都是误命中（说明字面轴在往回硬凑）。",
+      "relevant": []
+    },
+    {
+      "id": "N2",
+      "negative": true,
+      "scenario": "查一个库里有考点、但身上一道题都没挂的词",
+      "source": "生产场景真用词：kp 表里『勾股定理』是真考点（415 个考点里的一个），只是零题——KG 先行于题库是本产品的常态",
+      "query": { "keywords": "勾股定理", "kpAutoResolve": true, "limit": 10 },
+      "judgedBy": "规则+人工",
+      "judgeNote": "期望零命中，而且要零得『干净』：落靶会成功（考点名精确命中 1.0），但该考点零题 ⇒ 考点轴召回 0，字面也无。🔴 这条钉的是『落靶只加召回、绝不减也绝不凭空造』——若哪天它返回了东西，说明落靶开始拿相邻考点的题充数了。",
+      "relevant": []
+    },
+    {
+      "id": "N3",
+      "negative": true,
+      "scenario": "按考点 id 硬过滤到一个零题考点（组卷脚本按 kp 遍历时的常见情形）",
+      "source": "生产场景真用词：kp_01KZV2HDVJ68S8JR4D8YSG3BFX =『一元二次方程根的判别式』，415 个真考点之一，当下零题",
+      "query": { "kpIds": ["kp_01KZV2HDVJ68S8JR4D8YSG3BFX"], "limit": 10 },
+      "judgedBy": "规则+人工",
+      "judgeNote": "期望候选集为空、零命中。🔴 关键是**不许静默降级**：硬过滤查不到就该老老实实回零条，绝不许『放宽一下给点相近的』——组卷脚本拿到那些题会直接印进册子。",
+      "relevant": []
+    },
+    {
+      "id": "N4",
+      "negative": true,
+      "scenario": "跨学段误查（八下/九上内容）",
+      "source": "生产场景真用词：二次函数专项是排在后面的真实产线计划，题还没进库",
+      "query": { "keywords": "二次函数", "kpAutoResolve": false, "limit": 10 },
+      "judgedBy": "规则+人工",
+      "judgeNote": "60 题里没有任何函数题。期望零命中。",
+      "relevant": []
+    },
+    {
+      "id": "N5",
+      "negative": true,
+      "scenario": "跨学段误查（统计概率线）",
+      "source": "生产场景真用词：概率是 kp 树里的真分支（『概率的定义』等），题一道没有",
+      "query": { "keywords": "概率", "kpAutoResolve": false, "limit": 10 },
+      "judgedBy": "规则+人工",
+      "judgeNote": "60 题里没有任何统计概率题。期望零命中。",
+      "relevant": []
+    }
+  ]
+}
