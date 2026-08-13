@@ -2,8 +2,15 @@
  * 题目详情（AI:PRD-004 · 004-C）—— getQuestion 全量卡片的可视化
  *
  * 检索页给的是**摘要**（题面截断、无答案解析），这页是那道题的正本：
- * 三段原文 / 考点（链到考点卡）/ 自由标签 / 配图（含审核态）/ provenance 四型细节 /
- * 录题批次 / 判档与实算徽章。
+ * 三段原文 / 考点（链到考点卡）/ 自由标签 / 配图（含审核态）/ **族谱**（AI:PRD-005 · 005-D）/
+ * provenance 四型细节 / 录题批次 / 判档与实算徽章。
+ *
+ * ── 族谱这一节回答的是「这题跟别的题什么关系」 ─────────────────────────────
+ *   母题 →（归纳）→ 考察模型（dsl_ref 指着真生成器）→（生成）→ 变式 A/B/C…
+ *   变式侧看：我由哪个模型生成、那个模型的母题是谁、我的兄弟有哪些；
+ *   母题侧看：由我归纳出了哪个模型、它派生了哪些变式。
+ *   🔴 模型已经在出题、却说不出母题时，这一节直接写红字（不藏着）——
+ *      和 REG-E3 的那条断言是同一条口径，只是一个给人看、一个给机器跑。
  *
  * ── 🔴 三段原文一律等宽原样，不渲染公式 ─────────────────────────────────────
  *   题面是 LaTeX 混排，这页的读者是**要核对的人**：他要看的是"库里到底存了什么字"，
@@ -22,7 +29,10 @@ import { notFound } from "next/navigation";
 import { Chip, PageHead, Panel, Row } from "~/components/kit";
 import {
   RetrievalError,
+  getLineage,
   getQuestion,
+  type LineageQuestion,
+  type LineageView,
   type QuestionCard,
   type QuestionProvenance,
 } from "~/core";
@@ -182,6 +192,168 @@ function 出处({ p }: { p: QuestionProvenance }) {
 }
 
 // ---------------------------------------------------------------------------
+// 族谱（AI:PRD-005 · 005-D）
+// ---------------------------------------------------------------------------
+
+/** 族谱里的一条题链接（摘要 + 状态徽章；点进去就是那道题的正本） */
+function 族谱题({ q, 我 }: { q: LineageQuestion; 我?: boolean }) {
+  if (q.status === "missing") {
+    // 🔴 origin 指了个查无此行的 id —— 明说，不静默略过
+    return (
+      <li className="text-pen text-[12.5px] leading-[1.9]">
+        <span className="font-mono text-[11.5px]">{q.questionId}</span>{" "}
+        {q.stemBrief}
+      </li>
+    );
+  }
+  return (
+    <li className="text-[12.5px] leading-[1.9]">
+      {我 ? (
+        <Chip tone="g">本题</Chip>
+      ) : (
+        <Link
+          href={`/q/${q.questionId}`}
+          className="text-acc-deep mr-1.5 underline"
+        >
+          看 →
+        </Link>
+      )}
+      <span>{q.stemBrief}</span>
+      {q.qtype ? <span className="text-mut ml-1.5">{q.qtype}</span> : null}
+      {q.status === "active" ? null : (
+        <span className="text-mut ml-1.5">[{q.status}]</span>
+      )}
+    </li>
+  );
+}
+
+/** 模型抬头：名字 + 态 + 归位考点 + dsl_ref（🔴 一路能指回真生成器文件） */
+function 模型抬头({
+  m,
+}: {
+  m: {
+    modelId: string;
+    name: string;
+    status: string;
+    dslRef: string | null;
+    kpId: string;
+    kpName: string | null;
+  };
+}) {
+  return (
+    <div className="text-[12.5px]">
+      <b>{m.name}</b>
+      <Chip tone={m.status === "active" ? "g" : "a"}>{m.status}</Chip>
+      <Link
+        href={`/kg/kp/${m.kpId}`}
+        className="text-acc-deep ml-1.5 underline"
+      >
+        {m.kpName ?? m.kpId} →
+      </Link>
+      <div className="text-mut mt-0.5 font-mono text-[11px] break-all">
+        {m.dslRef ?? "🔴 没有 dsl_ref —— 说不出「哪个脚本真会出这类题」"}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 变式族谱：母题 → 模型 → 变式，两个方向都摆出来。
+ *
+ * 🔴 一道题两边都可能占（拿变式再归纳出新模型），所以不是二选一 —— 有哪半就显哪半。
+ * 🔴 「模型有生成题却没有母题」不藏着：那一格直接写红字。REG-E3 盯的就是它。
+ */
+function 族谱({ lin, meId }: { lin: LineageView; meId: string }) {
+  if (!lin.bornOf && lin.originOf.length === 0) return null;
+  return (
+    <div className="mt-3.5">
+      <Panel title="族谱（母题 → 考察模型 → 变式）">
+        {lin.bornOf ? (
+          <div className="mb-3">
+            <div className="text-mut mb-1 text-[11.5px]">
+              本题是<b>变式</b>：由下面这个考察模型生成
+            </div>
+            <模型抬头 m={lin.bornOf} />
+
+            <div className="mt-2 text-[12.5px]">
+              <span className="text-mut">
+                ↑ 该模型的母题（从哪几道真题归纳出来）：
+              </span>
+              {lin.bornOf.origins.length === 0 ? (
+                <div className="text-pen mt-0.5 text-[12.5px]">
+                  🔴 一道都没记 ——
+                  族谱在这儿断了：这个模型已经在出题，却说不出自己
+                  照着什么归纳的。补法：core 的 setModelOrigins(modelId, [母题
+                  qid])。
+                </div>
+              ) : (
+                <ul className="mt-0.5 ml-4 list-disc">
+                  {lin.bornOf.origins.map((q) => (
+                    <族谱题 key={q.questionId} q={q} />
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <div className="mt-2 text-[12.5px]">
+              <span className="text-mut">
+                → 同模型的兄弟变式（共 {lin.bornOf.siblingTotal} 道
+                {lin.bornOf.siblingTotal > lin.bornOf.siblings.length
+                  ? `，列前 ${lin.bornOf.siblings.length} 道`
+                  : ""}
+                ）：
+              </span>
+              {lin.bornOf.siblings.length === 0 ? (
+                <span className="text-mut ml-1">
+                  就它一道（这个模型目前只生成过本题）
+                </span>
+              ) : (
+                <ul className="mt-0.5 ml-4 list-disc">
+                  {lin.bornOf.siblings.map((q) => (
+                    <族谱题 key={q.questionId} q={q} />
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        ) : null}
+
+        {lin.originOf.map((m) => (
+          <div key={m.modelId} className="mt-3 first:mt-0">
+            <div className="text-mut mb-1 text-[11.5px]">
+              本题是<b>母题</b>：由它归纳出了下面这个考察模型
+            </div>
+            <模型抬头 m={m} />
+            <div className="mt-2 text-[12.5px]">
+              <span className="text-mut">
+                ↓ 该模型派生的变式（共 {m.derivedTotal} 道
+                {m.derivedTotal > m.derived.length
+                  ? `，列前 ${m.derived.length} 道`
+                  : ""}
+                ）：
+              </span>
+              {m.derived.length === 0 ? (
+                <span className="text-mut ml-1">还没生成过题</span>
+              ) : (
+                <ul className="mt-0.5 ml-4 list-disc">
+                  {m.derived.map((q) => (
+                    <族谱题
+                      key={q.questionId}
+                      q={q}
+                      我={q.questionId === meId}
+                    />
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        ))}
+      </Panel>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // 页
 // ---------------------------------------------------------------------------
 
@@ -203,6 +375,13 @@ export default async function QuestionPage({
     }
     throw e;
   }
+
+  // 🔴 族谱只读、与主查询无关：它挂了不该把整页拖垮（页面主角是题的正本）
+  const lin: LineageView = await getLineage(id).catch(() => ({
+    questionId: id,
+    bornOf: null,
+    originOf: [],
+  }));
 
   const 实算过 = card.solutionGrade === "calc_verified";
 
@@ -365,6 +544,9 @@ export default async function QuestionPage({
           )}
         </Panel>
       </div>
+
+      {/* ── 族谱 ───────────────────────────────────────────────────────── */}
+      <族谱 lin={lin} meId={card.id} />
 
       {/* ── 出处 ───────────────────────────────────────────────────────── */}
       <div className="mt-3.5">
