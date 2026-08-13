@@ -1,7 +1,7 @@
 ﻿<#
 .SYNOPSIS
   一键全量回归（AI:PRD-001 · WP7 / AI:PRD-002 · 002-E / AI:PRD-003 · 003-E /
-  AI:PRD-004 · 004-D）—— 回归清单 A 组 + B 组 + C 组 + D 组的正式载体。
+  AI:PRD-004 · 004-D / AI:PRD-005 · 005-D）—— 回归清单 A~E 五组的正式载体。
 
 .DESCRIPTION
   按序跑完所有关卡，逐关打 [PASS]/[FAIL]，**任一关红了也继续跑完**（一次跑完
@@ -22,6 +22,7 @@
     REG-C    录题+产线接入   闸单测 + 管道端到端 + 金标重放 + 队列三链（C1~C4）
                              + 产线转换器 + SKU/模型链（C5~C6，AI:PRD-005）
     REG-D    检索            评测集不低于基线 + 命中来源标注 + FTS 注入安全（D1~D3）
+    REG-E    产线流程与族谱  出册干跑全链 + 已售题拦截归因 + 变式族谱完整（E1~E3）
     REG-A4   备份快照有效    backup-verify.ts 出新快照 + 独立只读复算
 
   🔴 REG-B / REG-C / REG-D 单独成关而不是「TEST 里已经跑过了」：触发矩阵里
@@ -33,6 +34,18 @@
      不必每次都陪跑整轮单测。
      （D 组还有一条独有的触发面：**评测集或基准文件本身被改动** —— 那等于改了尺子，
        必须当场 `-Only D` 跑一遍看尺子还准不准。）
+
+  🔴 REG-E 的触发面（AI:PRD-005 · 005-D，三条）：
+     ① **转换器 / kb-submit CLI / 出册前置闸（convert-punch、dedup、kb-submit.ts）改动**
+        → E 全 + C 全（E1 走的正是「转换 → 排重 → 登记 dry-run」那条链）；
+     ② **dicts/ 两张映射表改动**（考点表、模型表）→ E 全。改映射表 = 改「产线说法指向谁」，
+        指错了不会报错、只会悄悄挂到别的考点/别的模型上，只有 E1 那条
+        「20 题必须全部带 modelId」的断言抓得住；
+     ③ **exam_model / question.model_id / origin_qids_json 的数据变动**
+        （新登记模型、拿模型出题入库、setModelOrigins）→ **E 全 + A1**。
+        🔴 尤其是「拿一个新模型生成题并入库」：E3b 会当场问它「母题呢」。
+     另有一条被动触发：**E1 夹具红了**。夹具永不入库，它撞库 = 库里灌进了同题
+     （或查重的尺子变了）—— 去查那批题，别回来换夹具。
 
   🔴 D1 的基准（tests/fixtures/eval-baseline-20260813.json）**入 git**。
      它红了的正确反应是查检索改动，不是回来 `--baseline` 重立基准把红旗按灭；
@@ -165,7 +178,7 @@ $gates = @(
 
   [pscustomobject]@{
     Id     = 'REG-TEST'
-    Name   = '单测全量（vitest，309 例基线）'
+    Name   = '单测全量（vitest，314 例基线）'
     Action = {
       & pnpm test | Write-Host
       if ($LASTEXITCODE -ne 0) { return "vitest 退出码 $LASTEXITCODE（有用例挂了）" }
@@ -261,6 +274,25 @@ $gates = @(
   },
 
   [pscustomobject]@{
+    Id     = 'REG-E'
+    Name   = '产线流程与族谱（E1 出册干跑 / E2 已售题拦截归因 / E3 变式族谱完整）'
+    Action = {
+      # 🔴 三关一个文件（tests/lineage-flow.test.ts），全部打**真库**且零写：
+      #    E1 = recipe→选题→全库排重断言→登记 dry-run 四步全链绿（夹具永不入库）；
+      #    E2 = 新册料里混进一道已售天卷真题 ⇒ 必拦，且回执指名「哪本册子第几题」；
+      #    E3 = 变式↔母题双向可达 + **全库口径**「模型有生成题就必须有血缘上游」。
+      # 🔴 E3 放在这儿而不是塞进对账六项：对账是 M1 §5「孤儿对账」的机读镜像
+      #    （integrity.ts 文件头写着「不多不少」），而 E3 问的是工艺纪律有没有被遵守
+      #    （数据完全自洽，只是有人拿说不出母题的模型出了题）。理由全文见测试文件头。
+      & pnpm exec vitest run tests/lineage-flow.test.ts | Write-Host
+      if ($LASTEXITCODE -ne 0) {
+        return "产线流程/族谱回归红了（哪条见上面输出）——E1 红先查库里是不是灌进了同题；E3 红是有模型在出题却说不出母题，去补 origin，别改断言"
+      }
+      return $null
+    }
+  },
+
+  [pscustomobject]@{
     Id     = 'REG-A4'
     Name   = '备份快照有效（出新快照 + 独立只读复算）'
     Action = {
@@ -295,7 +327,7 @@ try {
 
   $bar = '=' * 78
   Write-Host $bar
-  Write-Host "全量回归 · AI:PRD-001 + AI:PRD-002 + AI:PRD-003 + AI:PRD-004（A/B/C/D 四组）"
+  Write-Host "全量回归 · AI:PRD-001 + AI:PRD-002 + AI:PRD-003 + AI:PRD-004 + AI:PRD-005（A/B/C/D/E 五组）"
   Write-Host "  仓根  ：$root"
   Write-Host "  开始  ：$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
   Write-Host "  关卡  ：$($selected.Count) 关（$(($selected | ForEach-Object { $_.Id }) -join '、')）"

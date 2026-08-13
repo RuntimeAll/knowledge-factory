@@ -1,0 +1,40 @@
+[
+ {
+  "no": 1,
+  "q": "\\(3^{3}\\times\\left(1-\\frac{1}{3}\\right)\\times0.25\\)",
+  "ans": "9/2",
+  "kp": [
+   "pow",
+   "fracdec",
+   "order",
+   "paren"
+  ],
+  "diag": "",
+  "kp_group": "",
+  "anchor": "order"
+ },
+ {
+  "no": 2,
+  "q": "若 \\(\\left|x\\right|=\\left|-6\\right|\\)，则 \\(x=\\)<span style=\"display:inline-block;border-bottom:1px solid #000;min-width:5.4em\"></span>。",
+  "ans": "\\(x=\\pm 6\\)",
+  "kp": [
+   "abs"
+  ],
+  "diag": "",
+  "kp_group": "已知绝对值求数",
+  "anchor": "已知绝对值求数"
+ },
+ {
+  "no": 3,
+  "q": "\\(2\\times\\left(-9\\right)+\\left|-3\\right|\\div\\frac{3}{5}\\)",
+  "ans": "-13",
+  "kp": [
+   "order",
+   "abs",
+   "fracdec"
+  ],
+  "diag": "",
+  "kp_group": "",
+  "anchor": "order"
+ }
+]
