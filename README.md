@@ -1,3 +1,31 @@
+# knowledge-factory（AI:PRD-026 资料域产品线）
+
+## 🔴 新 clone / 换机的一次性准备
+
+```powershell
+pnpm install
+copy .env.example .env          # 再按注释把本机路径填对
+powershell -File scriptsetch-embed-model.ps1   # 拉本地句向量模型（~95MB）
+```
+
+第三步是**必须的**：语义检索用的 `bge-small-zh-v1.5` ONNX 模型落在 `models/`，
+**整目录 gitignore**（95MB 二进制不进仓库）。没有它 `embedTexts()` 会抛
+`MODEL_MISSING` 并把这条命令打在脸上。脚本走 **ModelScope 直连**（本机 HF 大文件
+经代理会被掐），每个文件按 Sha256 校验，已经对得上的跳过 —— 可以随便重跑。
+
+自检：
+
+```powershell
+pnpm test                                   # 单测全量
+powershell -File scriptsegression.ps1     # 全量回归（8 关）
+```
+
+分词词典 `dicts/math-terms.dict.txt` **在 git 里**（人可读、带出处注释）。
+🔴 **改了它必须重派生存量**，否则新词只对新题生效：
+`pnpm exec tsx --env-file=.env scriptsesegment-nodejieba-20260813.ts --commit`
+
+---
+
 # Create T3 App
 
 This is a [T3 Stack](https://create.t3.gg/) project bootstrapped with `create-t3-app`.
