@@ -294,8 +294,18 @@ describe("REG-F2 · 错因三形态各归各位（🔴 '[]' 与 NULL 绝不合�
 
   it("错因分布把三形态分列（不并成一个「没归因」）", async () => {
     const d = await causeDistribution();
-    expect(d.unattributed.count).toBe(基准.三形态.unattributed.length);
-    expect(d.unrecorded.count).toBe(基准.三形态.unrecordedInBridged);
+    // 🔴🔴 只增不改旧（照本文件头 F1 的范式，2026-08-14 改）：这两个数是**活圣域**
+    //    上现算的 —— 批改线随时会写进一个新批次（实测 08-14 20:40 就多了一批
+    //    小崽子 day5，20 行 error_kp 全是 '[]'），拿 `toBe(基准长度)` 钉死它，
+    //    等于"每批一次卷子就红一次"，红的还不是代码。
+    //    「旧的没变」由上一条逐行断言把关（基准里每条的 causeForm/errorCodes/wrong
+    //    都逐个对过），这里只管「没少、没被并进别的桶」。
+    expect(d.unattributed.count).toBeGreaterThanOrEqual(
+      基准.三形态.unattributed.length,
+    );
+    expect(d.unrecorded.count).toBeGreaterThanOrEqual(
+      基准.三形态.unrecordedInBridged,
+    );
     // 分列 = 两个独立的桶，各自带样本指得回去
     expect(d.unattributed.sample[0]).toMatchObject({ batchId: 10, qno: 19 });
     expect(d.rubric.length).toBeGreaterThan(0);
