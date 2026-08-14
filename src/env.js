@@ -21,6 +21,17 @@ export const env = createEnv({
         message: "圣域只读挂载必须显式 mode=ro（审核.db 只准 SELECT）",
       })
       .optional(),
+    // 🔴🔴 资料货架 punch 库（举一反三产物/资料库.db）只读挂载（AI:PRD-009 · D-B）。
+    //    **同名异库**：它不是本库的 data/资料库.db，两库 schema 完全不同、绝不互写。
+    //    同样只保证「设了就得带 mode=ro」，强制校验在 core/punch.ts。
+    //    留 optional：没配只影响 /shelf 三页，不该把整个 Next 构建卡死。
+    PUNCH_DB_URL: z
+      .string()
+      .min(1)
+      .refine((v) => v.includes("mode=ro"), {
+        message: "货架只读挂载必须显式 mode=ro（punch 库只准 SELECT）",
+      })
+      .optional(),
     // 备份异地副本目录；不设=跳过异地
     BACKUP_REMOTE_DIR: z.string().min(1).optional(),
     // 当前向量模型版本（对账 C3 的比对基准）
@@ -46,6 +57,7 @@ export const env = createEnv({
   runtimeEnv: {
     DATABASE_URL: process.env.DATABASE_URL,
     GRADING_DB_URL: process.env.GRADING_DB_URL,
+    PUNCH_DB_URL: process.env.PUNCH_DB_URL,
     BACKUP_REMOTE_DIR: process.env.BACKUP_REMOTE_DIR,
     EMBED_MODEL_VER: process.env.EMBED_MODEL_VER,
     NODE_ENV: process.env.NODE_ENV,

@@ -175,6 +175,59 @@ export {
   type ListIngestBatchesOptions,
 } from "./monitor";
 
+// ── AI:PRD-009 · D-B 资料货架（punch 库只读挂载）────────────────────────────
+// 🔴🔴 同名异库：punch 库 = `举一反三产物/资料库.db`，**不是**本库 data/资料库.db。
+//      物理只读（三道锁见 core/punch.ts），两库绝不互写。
+export {
+  PUNCH_FILE_MAX_BYTES,
+  PUNCH_FILE_MIME,
+  PUNCH_RO_MARKER,
+  SHELF_DOC_TYPES,
+  SHELF_LANES,
+  assertPunchUrl,
+  closePunchDb,
+  getPunchDb,
+  getShelfDoc,
+  grantPunchFile,
+  gradeSplitWarnings,
+  listShelfDocs,
+  punchAssetRoot,
+  shelfChecksOf,
+  shelfLaneOf,
+  shelfSeqOf,
+  type PunchDbHandle,
+  type PunchFileDeny,
+  type PunchFileGrant,
+  type ShelfAsset,
+  type ShelfCheck,
+  type ShelfCheckState,
+  type ShelfDocDetail,
+  type ShelfDocRow,
+  type ShelfDocType,
+  type ShelfFacet,
+  type ShelfFacets,
+  type ShelfLane,
+  type ShelfListOptions,
+  type ShelfListResult,
+  type ShelfMaterial,
+  type ShelfMemberLink,
+  type ShelfPublishLog,
+} from "./punch";
+
+// 两库对账（🔴 差异只报不改，零写）
+export {
+  bookKey,
+  linkKey,
+  netdiskOfRecipe,
+  pathKey,
+  reconcileShelf,
+  srcOfGateJson,
+  type BookMatchRow,
+  type FileMatchRow,
+  type NetdiskRow,
+  type ShelfReconcileReport,
+} from "./shelf-reconcile";
+
 export {
   KG_ERROR_CODES,
   KgError,
