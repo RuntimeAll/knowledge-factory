@@ -87,6 +87,26 @@ export const CONSOLE_MENU: ConsoleMenuGroup[] = [
     ],
   },
   {
+    // 🔴 资料货架（AI:PRD-009 · D-B）：读的是**另一个库** ——
+    //    punch 库 `举一反三产物/资料库.db`（同名异库，不是本库的 data/资料库.db），
+    //    全程 mode=ro、两库绝不互写。所以它自成一组，不并进「生产管理」：
+    //    并进去会让人以为货架上的册子和 SKU 台账是同一本账。
+    key: "/g/shelf",
+    name: "资料货架",
+    children: [
+      {
+        path: "/shelf",
+        name: "六类资料",
+        hint: "打卡/专项/试卷/讲义/练习册/课本 的总账（只读挂载 punch 库）",
+      },
+      {
+        path: "/shelf/reconcile",
+        name: "资料对账",
+        hint: "货架成品 ↔ 本库 SKU / 网盘指针，差异只报不改",
+      },
+    ],
+  },
+  {
     key: "/g/student",
     name: "学情中心",
     children: [
@@ -122,6 +142,11 @@ export const CONSOLE_MENU: ConsoleMenuGroup[] = [
         path: "/grading/board",
         name: "批改看板",
         hint: "审核.db（mode=ro）+ 编排台账",
+      },
+      {
+        path: "/grading/review",
+        name: "终审台",
+        hint: "逐题 √/×/去掉 · 写全部 spawn 圣域的 审核库.py",
       },
       {
         path: "/grading/gate",
@@ -178,6 +203,15 @@ export const HIDDEN_CRUMBS: { prefix: string; group: string; name: string }[] =
     //    这里也不留它的面包屑 —— 留着等于告诉人那儿还有一页。
     { prefix: "/cause/map", group: "学情中心", name: "补错因映射" },
     { prefix: "/student/", group: "学情中心", name: "学员学情" },
+    // 批改流水线（详情页）
+    // 🔴 必须排在任何 `/grading/re…` 泛前缀之前不成问题：`/grading/review` 本身
+    //    在菜单里有精确项，crumbsFor 先走精确匹配，只有 `/grading/review/<代号>/<天>`
+    //    才落到这条上。
+    { prefix: "/grading/review/", group: "批改流水线", name: "逐题终审" },
+    // 资料货架（详情页）
+    // 🔴 `/shelf/reconcile` 在菜单里有精确项，crumbsFor 先走精确匹配，
+    //    所以只有 `/shelf/doc/<id>` 会落到这条上。
+    { prefix: "/shelf/doc/", group: "资料货架", name: "册子详情" },
   ];
 
 export interface Crumbs {
