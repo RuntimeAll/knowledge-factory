@@ -407,7 +407,13 @@ export function BoardTable(props: BoardTableProps) {
           showTotal: (t, range) => `第 ${range[0]}-${range[1]} 条 / 共 ${t} 条`,
         }}
         locale={{
-          emptyText: (
+          // 🔴 取数失败时不许再说「没有符合条件的批次」（检查单 §三·2/§三·6）
+          emptyText: err ? (
+            <EmptyHint>
+              这张表是<b>空的，因为没读出来</b>，不是「没有符合条件的批次」——
+              上面那条红色错误里是原文。
+            </EmptyHint>
+          ) : (
             <EmptyHint>
               没有符合条件的批次 ——
               「没有数据」不是「没有批改」：收件段要有人从本台提交过才有行，
@@ -422,11 +428,32 @@ export function BoardTable(props: BoardTableProps) {
           if (p.state) q.set("state", p.state);
           if (p.from) q.set("from", p.from);
           if (p.to) q.set("to", p.to);
-          const res = await fetch(`/api/grading/board?${q.toString()}`);
-          const j = (await res.json()) as BoardResponse;
-          setMeta(j.meta);
-          setErr(j.ok ? undefined : j.error);
-          return { data: j.data, total: j.total, success: true };
+          // 🔴 三种失败都要上墙（检查单 §三·2）：① ok:false；② HTTP 非 2xx
+          //    （body 常是 HTML，json() 会抛看不懂的 SyntaxError）；③ fetch 自己抛。
+          //    **②③ 不 catch 的话 ProTable 把它们吞成一张「没有符合条件的批次」的空表**
+          //    —— 批改线上「查过了没有」与「根本没查成」混为一谈，会漏掉真实批次。
+          try {
+            const res = await fetch(`/api/grading/board?${q.toString()}`);
+            if (!res.ok) {
+              throw new Error(
+                `GET /api/grading/board 返回 HTTP ${res.status} ${res.statusText}`,
+              );
+            }
+            const j = (await res.json()) as BoardResponse;
+            setMeta(j.meta);
+            setErr(
+              j.ok ? undefined : (j.error ?? "接口返回 ok=false，但没给原因"),
+            );
+            return { data: j.data, total: j.total, success: true };
+          } catch (e) {
+            setMeta(null);
+            setErr(
+              `批次列表没取回来（不是「没有批次」）：${
+                e instanceof Error ? `${e.name}: ${e.message}` : String(e)
+              }`,
+            );
+            return { data: [], total: 0, success: true };
+          }
         }}
       />
     </>

@@ -48,6 +48,7 @@ import { useEffect, useRef, useState } from "react";
 
 import {
   CopyCmd,
+  EmphasisText,
   EmptyHint,
   IdTail,
   StatusTag,
@@ -109,7 +110,10 @@ function gateColumns(): ColumnsType<GateItemView> {
         ) : (
           <span style={{ fontSize: 12.5 }}>
             <Tag color="red">{g.code}</Tag>
-            {g.message}
+            {/* 🔴 闸的 message 是 core/gates 生成的串，里头带 Markdown 的
+                `**加粗**`（同一批串还要回给 MCP 客户端）——过 EmphasisText
+                渲成 <b>，不然星号原样印在闸报告里（检查单 §三·9）。 */}
+            <EmphasisText text={g.message} />
             {g.nextTool ? (
               <span style={{ color: "#909399" }}> · 下一步 {g.nextTool}</span>
             ) : null}
@@ -479,6 +483,13 @@ export function IngestTable(props: IngestTableProps = {}) {
           //    结果是一张"没有批次"的空表 —— 那是**把故障说成了事实**（检查单 2）。
           try {
             const res = await fetch(`/api/ingest?${q.toString()}`);
+            // 🔴 HTTP 非 2xx 单列一条：body 常是 HTML，直接 json() 抛出来的是
+            //    `SyntaxError: Unexpected token '<'`，人看着完全不知道发生了什么。
+            if (!res.ok) {
+              throw new Error(
+                `GET /api/ingest 返回 HTTP ${res.status} ${res.statusText}`,
+              );
+            }
             const j = (await res.json()) as IngestListResponse;
             setErr(j.ok ? undefined : j.error);
             setCapped(j.capped);
@@ -639,7 +650,9 @@ export function IngestTable(props: IngestTableProps = {}) {
                             marginBottom: 8,
                           }}
                         >
-                          🔴 2026-08-14 起 core 的检索层**有**录入批次这一维了
+                          {/* 🔴 JSX 不认 Markdown：原来写 `**有**`，星号印在抽屉里 */}
+                          🔴 2026-08-14 起 core 的检索层<b>有</b>
+                          录入批次这一维了
                           （searchParams.ingestBatchIds，硬过滤）：
                           <Link
                             href={`/question?batch=${encodeURIComponent(d.id)}`}

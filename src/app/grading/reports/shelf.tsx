@@ -254,7 +254,13 @@ export function ReportShelf(props: ReportShelfProps) {
           showTotal: (t, range) => `第 ${range[0]}-${range[1]} 条 / 共 ${t} 条`,
         }}
         locale={{
-          emptyText: (
+          // 🔴 取数失败时不许再说「没有报告文件」（检查单 §三·2/§三·6）
+          emptyText: err ? (
+            <EmptyHint>
+              这张表是<b>空的，因为没读出来</b>，不是「没有报告文件」——
+              上面那条红色错误里是原文。
+            </EmptyHint>
+          ) : (
             <EmptyHint>
               没有报告文件 —— 「没有报告」不是「没批过」：未 confirmed
               的批次绝不出件，出件了才会有 PNG 落到 学员/&lt;代号&gt;/报告/ 下。
@@ -264,12 +270,34 @@ export function ReportShelf(props: ReportShelfProps) {
         request={async (params) => {
           const q = new URLSearchParams();
           if (params.code) q.set("code", params.code);
-          const res = await fetch(`/api/grading/reports?${q.toString()}`);
-          const j = (await res.json()) as ReportsResponse;
-          setErr(j.ok ? undefined : j.error);
-          setWarnings(j.warnings);
-          setRoot(j.root);
-          return { data: j.data, total: j.total, success: true };
+          // 🔴 三种失败都要上墙（检查单 §三·2）：① ok:false；② HTTP 非 2xx
+          //    （body 常是 HTML，json() 抛的是看不懂的 SyntaxError）；③ fetch 自己抛。
+          //    **②③ 不 catch 的话 ProTable 吞成一张「没有报告文件」的空表** ——
+          //    而「没出件」是这条线上很重的一句话，不能由一次读失败来冒充。
+          try {
+            const res = await fetch(`/api/grading/reports?${q.toString()}`);
+            if (!res.ok) {
+              throw new Error(
+                `GET /api/grading/reports 返回 HTTP ${res.status} ${res.statusText}`,
+              );
+            }
+            const j = (await res.json()) as ReportsResponse;
+            setErr(
+              j.ok ? undefined : (j.error ?? "接口返回 ok=false，但没给原因"),
+            );
+            setWarnings(j.warnings);
+            setRoot(j.root);
+            return { data: j.data, total: j.total, success: true };
+          } catch (e) {
+            setWarnings([]);
+            setRoot("");
+            setErr(
+              `报告架没取回来（不是「没有报告」）：${
+                e instanceof Error ? `${e.name}: ${e.message}` : String(e)
+              }`,
+            );
+            return { data: [], total: 0, success: true };
+          }
         }}
       />
 

@@ -39,6 +39,7 @@ import { useEffect, useRef, useState } from "react";
 
 import {
   CopyCmd,
+  EmphasisText,
   EmptyHint,
   IdTail,
   StatusTag,
@@ -170,12 +171,19 @@ function MetaBar({
       }
       description={
         notes.length + meta.warnings.length > 0 ? (
+          // 🔴 notes/warnings 是**机器生成**的串，里头带 Markdown 的 `**加粗**`
+          //    （同一批串还要发给 MCP 客户端，那头认 Markdown）。这里过一道
+          //    EmphasisText 渲成 <b>，不然星号原样印在页面上（检查单 §三·9）。
           <div style={{ fontSize: 12.5, lineHeight: 1.9 }}>
             {notes.map((n, i) => (
-              <div key={`n${i}`}>· {n}</div>
+              <div key={`n${i}`}>
+                · <EmphasisText text={n} />
+              </div>
             ))}
             {meta.warnings.map((w, i) => (
-              <div key={`w${i}`}>⚠ {w}</div>
+              <div key={`w${i}`}>
+                ⚠ <EmphasisText text={w} />
+              </div>
             ))}
           </div>
         ) : null
@@ -637,7 +645,9 @@ export function QuestionTable(props: QuestionTableProps) {
           emptyText: (
             <EmptyHint>
               这一组条件下零命中。🔴
-              「没有命中」不等于「库里没有这种题」：关键词走的是**字面**（题面里真出现过那几个字才算），
+              {/* 🔴 JSX 不认 Markdown：原来这里写 `**字面**`，星号印在页面上 */}
+              「没有命中」不等于「库里没有这种题」：关键词走的是<b>字面</b>
+              （题面里真出现过那几个字才算），
               语意描述走的是句向量近邻，两条轴都可能落空。
               <br />
               先放宽：去掉题型/判档/状态，或把关键词换成题面里真会出现的字；
@@ -682,6 +692,13 @@ export function QuestionTable(props: QuestionTableProps) {
           //    结果是一张"零命中"的空表 —— 而零命中和"检索没跑成"是两回事（检查单 2）。
           try {
             const res = await fetch(`/api/questions?${q.toString()}`);
+            // 🔴 HTTP 非 2xx 单列一条：body 常是 HTML，直接 json() 抛出来的是
+            //    `SyntaxError: Unexpected token '<'`，人看着完全不知道发生了什么。
+            if (!res.ok) {
+              throw new Error(
+                `GET /api/questions 返回 HTTP ${res.status} ${res.statusText}`,
+              );
+            }
             const j = (await res.json()) as QuestionListResponse;
             setMeta(j.meta);
             setErr(j.ok ? undefined : j.error);

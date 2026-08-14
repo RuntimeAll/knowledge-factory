@@ -280,13 +280,20 @@ export function StudentTable() {
         }}
         headerTitle="学员名册"
         locale={{
-          emptyText: (
-            <EmptyHint>
-              名册与圣域都没有代号 ——
-              这不是「没有学员」，是「还没有人交过卷、也没人登记过名册」。
-              登记走 upsertRoster（🔴 只落代号，不落真名），收卷走批改线。
-            </EmptyHint>
-          ),
+          // 🔴 取数失败时不许再说「名册与圣域都没有代号」（检查单 §三·2/§三·6）
+          emptyText:
+            meta && !meta.ok ? (
+              <EmptyHint>
+                这张表是<b>空的，因为没读出来</b>，不是「没有学员」——
+                上面那条红色错误里是原文。
+              </EmptyHint>
+            ) : (
+              <EmptyHint>
+                名册与圣域都没有代号 ——
+                这不是「没有学员」，是「还没有人交过卷、也没人登记过名册」。
+                登记走 upsertRoster（🔴 只落代号，不落真名），收卷走批改线。
+              </EmptyHint>
+            ),
         }}
         toolBarRender={() => [
           <span key="anon" style={{ fontSize: 12, color: "#909399" }}>
@@ -302,10 +309,37 @@ export function StudentTable() {
         request={async (params) => {
           const q = new URLSearchParams();
           if (params.status) q.set("status", params.status);
-          const res = await fetch(`/api/student?${q.toString()}`);
-          const j = (await res.json()) as StudentListResponse;
-          setMeta(j);
-          return { data: j.data, total: j.total, success: true };
+          // 🔴 三种失败都要上墙（检查单 §三·2）：① ok:false；② HTTP 非 2xx
+          //    （body 常是 HTML，json() 抛看不懂的 SyntaxError）；③ fetch 自己抛。
+          //    **②③ 不 catch 的话 ProTable 吞成一张「名册与圣域都没有代号」的空表**
+          //    —— 这一页原来连 setErr 都没有，读失败在屏幕上完全没有痕迹。
+          //    这里合成一份 ok:false 的 meta，顶上那条红条与空态文案一起改口。
+          try {
+            const res = await fetch(`/api/student?${q.toString()}`);
+            if (!res.ok) {
+              throw new Error(
+                `GET /api/student 返回 HTTP ${res.status} ${res.statusText}`,
+              );
+            }
+            const j = (await res.json()) as StudentListResponse;
+            setMeta(j);
+            return { data: j.data, total: j.total, success: true };
+          } catch (e) {
+            setMeta({
+              ok: false,
+              error: `名册没取回来（不是「没有学员」）：${
+                e instanceof Error ? `${e.name}: ${e.message}` : String(e)
+              }`,
+              data: [],
+              total: 0,
+              rosterCount: 0,
+              strayCount: 0,
+              coverage: { matched: 0, total: 0, rate: "—" },
+              ms: 0,
+              warnings: [],
+            });
+            return { data: [], total: 0, success: true };
+          }
         }}
       />
     </>

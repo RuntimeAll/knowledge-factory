@@ -806,6 +806,13 @@ export function QueueBoard(props: QueueBoardProps) {
           //    —— 队列空是好事，把故障说成好事是最坏的一种吞（检查单 2）。
           try {
             const res = await fetch(`/api/queue?${q.toString()}`);
+            // 🔴 HTTP 非 2xx 单列一条：body 常是 HTML，直接 json() 抛出来的是
+            //    `SyntaxError: Unexpected token '<'`，人看着完全不知道发生了什么。
+            if (!res.ok) {
+              throw new Error(
+                `GET /api/queue 返回 HTTP ${res.status} ${res.statusText}`,
+              );
+            }
             const j = (await res.json()) as QueueListResponse;
             setCounts(j.counts);
             setListErr(j.ok ? undefined : j.error);

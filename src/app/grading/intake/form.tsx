@@ -7,8 +7,15 @@
  *    白名单写操作**必须二次确认**（设计稿 §六 D2）：确认 Modal 里把「写到哪个目录、
  *    追加进哪个文件」原文摆出来再点头 —— 收件箱是别人（PRD-027）的地盘，
  *    我们只有「新增」这一种权限，点之前要看得见自己在动什么。
- *    🔴 形态统一（AI:PRD-009 打磨 · 检查单 §三·7）：原来这里是 Popconfirm 小气泡，
- *    与终审台三个写动作的 Modal 不是一套；全站写操作一律 Modal + 列明影响面。
+ *    🔴 形态（AI:PRD-009 · 检查单 §三·7）：本页用 **Modal**。原来这里是 Popconfirm
+ *    小气泡，与终审台三个写动作的 Modal 不是一套，所以换了。
+ *    🔴🔴 2026-08-15 更正：这行注释原来写的是「全站写操作**一律** Modal」——
+ *    与 `components/console/confirm.tsx` 里那句「现在统一成 ③（Popconfirm）」**直接打架**，
+ *    两处各自宣称自己是「统一」的。口径的**唯一正本**已挪到 `src/app/write-ops.ts`：
+ *    分界线是**提交机制** —— server action 表单走 Popconfirm（确认后 requestSubmit，
+ *    `useFormStatus` 拿提交态防连点），client 侧 fetch 提交、影响面要现算成一段话的
+ *    走 Modal（本页与终审三动作正是后者：要列将落盘的文件名 / 翻了哪几道案）。
+ *    要不要收成一种形态 = 待用户拍板，见 write-ops.ts 的 `形态待拍板`。
  * 🔴 回执原文照登：写成了报绝对路径 + 那一行 JSON；写砸了报原始错误，
  *    绝不缩成一句「提交失败」。
  * 🔴 提交前不做任何"聪明"处理：不压缩、不改名（只补两位序号锁拍摄顺序）、不去重 ——
@@ -522,6 +529,13 @@ export function IntakeForm(props: IntakeFormProps) {
           request={async () => {
             try {
               const r = await fetch("/api/grading/intake");
+              // 🔴 HTTP 非 2xx 单列一条：body 常是 HTML，直接 json() 抛出来的是
+              //    `SyntaxError: Unexpected token '<'`，人看着完全不知道发生了什么。
+              if (!r.ok) {
+                throw new Error(
+                  `GET /api/grading/intake 返回 HTTP ${r.status} ${r.statusText}`,
+                );
+              }
               const j = (await r.json()) as IntakeRecentResponse;
               setRecentErr(j.ok ? undefined : j.error);
               return { data: j.data, total: j.total, success: true };
