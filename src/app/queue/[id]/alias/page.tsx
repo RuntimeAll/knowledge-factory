@@ -18,17 +18,12 @@
  * 🔴 版面小件已走 d 组的共享件（`components/console/page-head` + `/table`）；
  *    确认按钮走已收编的共享件 `~/components/console/confirm`
  *    （既有先例：本文件原本就从 `../../../kg/shared` 拿 param）——
- *    **待 d 组收编进 components/console/**。
+ *    已由集成收口②收编进 `components/console/confirm`。
  */
 import { Alert, Card, Input, Tag } from "antd";
 import Link from "next/link";
 
-import {
-  DataSourceNote,
-  EmptyHint,
-  IdTail,
-  StatusTag,
-} from "~/components/console/ui";
+import { EmptyHint, IdTail, StatusTag } from "~/components/console/ui";
 import { getQueueItem, resolveKp, type KpCandidate } from "~/core";
 import { ConfirmSubmit, PlainSubmit } from "~/components/console/confirm";
 import { PageHead } from "~/components/console/page-head";
@@ -106,11 +101,11 @@ export default async function QueueAliasPage({
         title="把这句说法补进词表"
         tags={<StatusTag value={item.state} />}
         sub={<>{item.kind ?? "（未分类）"} · 一键 = 补别名 + 工单判过</>}
-        right={
-          <DataSourceNote>
+        source={
+          <>
             core.getQueueItem / core.resolveKp（enqueue:false）· 写走
             core.passQueueWithAlias（一笔事务：kp_alias + review_queue）
-          </DataSourceNote>
+          </>
         }
       />
 

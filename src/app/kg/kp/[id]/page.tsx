@@ -27,12 +27,7 @@
 import { Alert, Card, Input, Space, Tag } from "antd";
 import Link from "next/link";
 
-import {
-  DataSourceNote,
-  EmptyHint,
-  IdTail,
-  StatusTag,
-} from "~/components/console/ui";
+import { EmptyHint, IdTail, StatusTag } from "~/components/console/ui";
 import {
   KpNotFoundError,
   causeDistribution,
@@ -422,12 +417,12 @@ export default async function KpPage({
             "概念层的一个考点 —— 它在各教材版本上的挂位都在下面"
           )
         }
-        right={
-          <DataSourceNote>
+        source={
+          <>
             core.kpContext（= MCP resolve_kg 的卡片包）/ core.kpGroupErrorRate /
             core.causeDistribution · 表 kp / kp_alias /
             node_kp_map（群错误率读圣域 审核.db，mode=ro）
-          </DataSourceNote>
+          </>
         }
       />
 

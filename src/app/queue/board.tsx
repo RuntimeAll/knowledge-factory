@@ -59,7 +59,7 @@ import {
   StatusTag,
   TimeText,
 } from "~/components/console/ui";
-// 🔴 b 组就地内联的确认件（待 d 组收编进 components/console/ui）：
+// 🔴 统一确认件（集成收口②已收编进 components/console/confirm）：
 //    检查单第 7 条要求全站写操作统一 Modal 形态，逐行处置按钮以前是裸 submit。
 import { ConfirmSubmit } from "~/components/console/confirm";
 import {

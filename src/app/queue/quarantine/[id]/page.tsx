@@ -19,13 +19,7 @@
 import { Alert, Card, Input } from "antd";
 import Link from "next/link";
 
-import {
-  DataSourceNote,
-  IdTail,
-  StatusTag,
-  TextArea,
-  TimeText,
-} from "~/components/console/ui";
+import { IdTail, StatusTag, TextArea, TimeText } from "~/components/console/ui";
 import { getQuarantineRow } from "~/core";
 import { ConfirmSubmit } from "~/components/console/confirm";
 import { PageHead } from "~/components/console/page-head";
@@ -96,11 +90,11 @@ export default async function QuarantinePage({
         title="改判这条隔离料"
         tags={<StatusTag value={已结 ? "resolved" : "open"} />}
         sub="管道拒了它，但原样 payload 留着 —— 改对了重投，或者废弃"
-        right={
-          <DataSourceNote>
+        source={
+          <>
             core.getQuarantineRow · 表 quarantine；写走 core 的
             reingestQuarantine / resolveQuarantine（含审计行）
-          </DataSourceNote>
+          </>
         }
       />
 

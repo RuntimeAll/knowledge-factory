@@ -14,7 +14,7 @@
 import { Alert, Card } from "antd";
 import Link from "next/link";
 
-import { DataSourceNote, IdTail, StatusTag } from "~/components/console/ui";
+import { IdTail, StatusTag } from "~/components/console/ui";
 import { KpNotFoundError, kpContext, kpRefCounts } from "~/core";
 import { retireKpAction } from "../../../actions";
 import { ConfirmSubmit } from "~/components/console/confirm";
@@ -74,11 +74,11 @@ export default async function RetirePage({
         title={`退役「${name}」？`}
         tags={<StatusTag value={status} />}
         sub="退役 = 这个考点从此不可挂载（不是删除，行还在）"
-        right={
-          <DataSourceNote>
+        source={
+          <>
             core.kpContext / core.kpRefCounts（与 retireKp
             事务内现算的是同一份口径）
-          </DataSourceNote>
+          </>
         }
       />
 

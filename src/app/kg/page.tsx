@@ -19,7 +19,6 @@ import { Alert, Card, Tag } from "antd";
 import Link from "next/link";
 
 import {
-  DataSourceNote,
   EmptyHint,
   IdTail,
   StatCard,
@@ -55,11 +54,11 @@ export default async function KgHomePage({
       <PageHead
         title="知识图谱"
         sub="概念层（考点）版本无关，教材版本只活在树上 —— 换教材换树，考点不动"
-        right={
-          <DataSourceNote>
+        source={
+          <>
             core.kgOverview / core.listEditionTrees / core.countOpenQueueByKind
             · 表 kp / kp_alias / node_kp_map / edition_tree / review_queue
-          </DataSourceNote>
+          </>
         }
       />
 

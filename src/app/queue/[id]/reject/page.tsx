@@ -18,13 +18,7 @@
 import { Alert, Card, Tag } from "antd";
 import Link from "next/link";
 
-import {
-  DataSourceNote,
-  IdTail,
-  StatusTag,
-  TextArea,
-  TimeText,
-} from "~/components/console/ui";
+import { IdTail, StatusTag, TextArea, TimeText } from "~/components/console/ui";
 import { getFigureReviewCard, getQueueItem, type FigureView } from "~/core";
 import { ConfirmSubmit } from "~/components/console/confirm";
 import { PageHead } from "~/components/console/page-head";
@@ -101,12 +95,12 @@ export default async function RejectPage({
         title={图审 ? "驳回这张图？" : "驳回这条工单？"}
         tags={<StatusTag value={item.state} />}
         sub="驳回是终态：落 verdict_note，之后不可再裁"
-        right={
-          <DataSourceNote>
+        source={
+          <>
             core.getQueueItem{图审 ? " / core.getFigureReviewCard" : ""} · 写走{" "}
             {图审 ? "core.rejectFigureReview" : "core.verdictQueueItem"}
             （含审计行）
-          </DataSourceNote>
+          </>
         }
       />
 

@@ -15,7 +15,7 @@
 import { Alert, Card, Tag } from "antd";
 import Link from "next/link";
 
-import { DataSourceNote, StatusTag } from "~/components/console/ui";
+import { StatusTag } from "~/components/console/ui";
 import { KpNotFoundError, kpContext, kpRefCounts } from "~/core";
 import { mergeKpAction } from "../../actions";
 import { ConfirmSubmit } from "~/components/console/confirm";
@@ -71,11 +71,11 @@ export default async function MergePreviewPage({
       <PageHead
         title="确认合并"
         sub="确认后 from 的引用全部搬到 to，from 留成 merged 壳（旧 id 仍能追到落点）"
-        right={
-          <DataSourceNote>
+        source={
+          <>
             core.kpContext / core.kpRefCounts（与 core 内部 retire/merge
             同一份口径）
-          </DataSourceNote>
+          </>
         }
       />
 

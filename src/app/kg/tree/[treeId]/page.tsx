@@ -12,12 +12,7 @@
 import { Alert, Card, Tag } from "antd";
 import Link from "next/link";
 
-import {
-  DataSourceNote,
-  EmptyHint,
-  IdTail,
-  StatusTag,
-} from "~/components/console/ui";
+import { EmptyHint, IdTail, StatusTag } from "~/components/console/ui";
 import { treeOutline, type TreeNodeView } from "~/core";
 import { PageHead } from "~/components/console/page-head";
 import { Num } from "~/components/console/table";
@@ -185,10 +180,8 @@ export default async function TreePage({
             <Num n={tree.mapCount} /> 挂位 · <Num n={tree.kpCount} /> 个考点
           </>
         }
-        right={
-          <DataSourceNote>
-            core.treeOutline · 表 edition_tree / tree_node / node_kp_map
-          </DataSourceNote>
+        source={
+          <>core.treeOutline · 表 edition_tree / tree_node / node_kp_map</>
         }
       />
 

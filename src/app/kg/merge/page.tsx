@@ -15,7 +15,7 @@
 import { Alert, Card, Input, Space, Tag } from "antd";
 import Link from "next/link";
 
-import { DataSourceNote, EmptyHint, StatusTag } from "~/components/console/ui";
+import { EmptyHint, StatusTag } from "~/components/console/ui";
 import { resolveKp, type KpCandidate } from "~/core";
 import { PlainSubmit } from "~/components/console/confirm";
 import { PageHead } from "~/components/console/page-head";
@@ -181,11 +181,11 @@ export default async function MergePage({
       <PageHead
         title="合并考点"
         sub="重复考点合成一个：引用整体搬家，被合并的那个留成壳（旧 id 仍查得到落点）"
-        right={
-          <DataSourceNote>
+        source={
+          <>
             core.resolveKp（enqueue:false，页面搜索不入低置信队列）· 表 kp /
             kp_alias
-          </DataSourceNote>
+          </>
         }
       />
 

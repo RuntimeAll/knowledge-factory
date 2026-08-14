@@ -16,7 +16,7 @@
 import { Alert, Card, Tag } from "antd";
 import Link from "next/link";
 
-import { DataSourceNote, IdTail } from "~/components/console/ui";
+import { IdTail } from "~/components/console/ui";
 import { readMergeReceipt } from "../../../merge-store";
 import { PageHead } from "~/components/console/page-head";
 import { KV, MONO, Num } from "~/components/console/table";
@@ -124,11 +124,11 @@ export default async function MergeDonePage({
             <Num n={总丢} /> 行
           </>
         }
-        right={
-          <DataSourceNote>
+        source={
+          <>
             core.mergeKp 的返回（原样照登）+ 合并后即跑的 core.integrityCheck ·
             C2
-          </DataSourceNote>
+          </>
         }
       />
 
