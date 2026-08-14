@@ -43,7 +43,7 @@ const LIMIT = 200;
 function pretty(json: string | null): string {
   if (!json) return "（空）";
   try {
-    return JSON.stringify(JSON.parse(json), null, 2) as string;
+    return JSON.stringify(JSON.parse(json), null, 2);
   } catch {
     return json;
   }
@@ -55,7 +55,7 @@ function queryOf(payloadJson: string | null): string | null {
   try {
     const p: unknown = JSON.parse(payloadJson);
     if (p && typeof p === "object" && "query" in p) {
-      const v = (p as { query: unknown }).query;
+      const v = p.query;
       return typeof v === "string" ? v : null;
     }
   } catch {

@@ -27,9 +27,6 @@ import {
   listRoster,
   listSkus,
   searchQuestions,
-  type BackupSnapshotInfo,
-  type HealthReport,
-  type IntegritySummary,
 } from "~/core";
 
 export const dynamic = "force-dynamic";
@@ -99,11 +96,9 @@ export default async function WorkbenchPage() {
   const 队列 = typeof byKind === "string" ? [] : byKind;
   const 队列未处置 = 队列.reduce((a, b) => a + b.count, 0);
   const 隔离未结 = typeof qr === "string" ? 0 : qr.length;
-  const 体检 = typeof h === "string" ? null : (h as HealthReport);
-  const 对账 =
-    typeof integ === "string" ? null : (integ as IntegritySummary | null);
-  const 快照 =
-    typeof backups === "string" ? [] : (backups as BackupSnapshotInfo[]);
+  const 体检 = typeof h === "string" ? null : h;
+  const 对账 = typeof integ === "string" ? null : integ;
+  const 快照 = typeof backups === "string" ? [] : backups;
 
   return (
     <>
@@ -184,7 +179,7 @@ export default async function WorkbenchPage() {
         style={{ marginTop: 14 }}
         extra={
           <span style={{ fontSize: 11.5, color: "#909399" }}>
-            这三行是"今天该去哪"的全部——它们清零 = 没有人等你拍板
+            这三行是「今天该去哪」的全部——它们清零 = 没有人等你拍板
           </span>
         }
       >
