@@ -46,6 +46,7 @@
  *                  群错误率 / 已做题集 / 错因分布 / 学情数据包（AI:PRD-006 · 006-B）
  *   integrity.ts 对账六项 C1~C6（C5 的桥已改调 gradebridge，全产品一份桥）
  *   status.ts  页面读侧（最近一次对账摘要 + 红旗条显示态纯函数）
+ *   monitor.ts 系统监控读侧（录入批次台账 / 审计行列表 · AI:PRD-008 P3，零写）
  */
 
 export {
@@ -157,6 +158,17 @@ export {
   type RedFlagState,
   type RedFlagView,
 } from "./status";
+
+// ── AI:PRD-008 · P3 系统监控三页的只读列侧（🔴 全程零写，不产生审计行） ────────
+export {
+  listAuditRows,
+  listIngestBatches,
+  type AuditListResult,
+  type AuditRowView,
+  type IngestBatchBrief,
+  type ListAuditOptions,
+  type ListIngestBatchesOptions,
+} from "./monitor";
 
 export {
   KG_ERROR_CODES,
