@@ -253,7 +253,7 @@ async function checkC1(
   //    （6.5k 行、0.02s），再逐表扫 id 查集合。判据、样本、口径一个字没动。
   const 覆盖 = new Set<string>();
   const 覆盖键 = (table: string, id: string | number): string =>
-    `${table} ${String(id)}`;
+    `${table}\u0000${String(id)}`;
   for (const r of await q<{ t: string | null; id: string | number | null }>(
     h,
     `SELECT json_extract(j.value,'$.table') AS t, json_extract(j.value,'$.id') AS id
