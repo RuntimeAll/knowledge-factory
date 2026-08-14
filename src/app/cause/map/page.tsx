@@ -14,6 +14,7 @@
 import { Alert, Card, Tag } from "antd";
 import Link from "next/link";
 
+import { ConfirmSubmit } from "~/components/console/confirm";
 import { PageHead } from "~/components/console/page-head";
 import { IdTail, StatusTag, TimeText } from "~/components/console/ui";
 import { param } from "../../kg/shared";
@@ -261,31 +262,47 @@ export default async function MapErrCodePage({
             报告里。
           </label>
 
-          {/* 🔴 检查单 §三·9 文案 + §三·10 一致性：按钮上要写清点下去发生什么
-              （「确认补映射」→「确认写入这条映射」），配色对齐 antd 的 danger 主按钮
-              （终审台那三个写动作也是这个红），不再自成一套 element-ui 浅红。 */}
-          <button
-            type="submit"
+          {/* 🔴🔴 2026-08-15 验收修复（检查单 §三·7 二次确认 / §三·10 一致性）：
+              这里原来是一个**手搓的原生 `<button type="submit">`** + inline 配色 ——
+              白名单六类写操作里唯一一个**没有确认层**的：没有 Popconfirm/Modal，
+              也没有 useFormStatus，**连点两下就落两条审计行**
+              （components/console/confirm.tsx 文件头点名的那桩真实事故）。
+              上面那个 `<input type="checkbox" required>` 不是「列明影响面的二次确认」，
+              它只是一道勾选，勾完照样能连点。
+              现在收编到全站唯一那份 ConfirmSubmit：弹层列明影响面 + 提交中禁用转圈，
+              与另外五类写操作同形。（checkbox 保留：它管的是「你读没读懂这条映射
+              会改写历史统计」，与防连点是两件事，requestSubmit 会照常校验它。） */}
+          <ConfirmSubmit
+            label="确认写入这条映射"
+            title="把这条 (考点, 码) → 错因 的映射写进库？"
+            description={
+              <>
+                <div>
+                  · 往 <b>err_code_map</b> 插<b>一行</b>：(考点「{kp.name}
+                  」, 码 <code>{errCode}</code>) → 你在上面选的那个错因实体。
+                </div>
+                <div>
+                  · 落<b>一条审计行</b>（actor=human · tool=mapErrCode ·
+                  mapped_by=human），mapped_at 由 core 现取。
+                </div>
+                <div>
+                  · 🔴 <b>改变历史统计的解释</b>
+                  ：以前落进 unmapped 的这些码次，从此算到这个错因头上；
+                  错因的名字会出现在学情报告里。
+                </div>
+                <div>
+                  · 🔴 <b>撞键不覆盖</b>：这一组已经映射过的话 core 直接抛
+                  MAP_TAKEN，本页会把原文端出来 —— 改判要走 agent/MCP
+                  的「先摘后挂」。
+                </div>
+              </>
+            }
+            okText="确认写入"
+            danger
             disabled={options.length === 0}
-            style={{
-              border: "1px solid transparent",
-              color: "#fff",
-              background: options.length === 0 ? "#ffa39e" : "#ff4d4f",
-              borderRadius: 3,
-              padding: "6px 16px",
-              fontSize: 13,
-              fontWeight: 600,
-              cursor: options.length === 0 ? "not-allowed" : "pointer",
-            }}
-          >
-            确认写入这条映射
-          </button>
-          <Link
-            href="/cause"
-            style={{ marginInlineStart: 14, fontSize: 12.5, ...灰 }}
-          >
-            取消，回错因管理
-          </Link>
+            disabledReason="错因域一个实体都没有，没有可指的对象 —— 先灌种子"
+            cancelHref="/cause"
+          />
         </form>
 
         <div style={{ marginTop: 14, fontSize: 12, ...灰, lineHeight: 1.9 }}>
