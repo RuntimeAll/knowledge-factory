@@ -167,7 +167,14 @@ export default async function QuarantinePage({
           type="info"
           showIcon
           style={{ marginTop: 12 }}
-          message={`这条已经在 ${row.resolvedAt} 结过了 —— 不重复处置`}
+          // 🔴 检查单 §三·3 时间统一：这一句原来把整串 ISO 直接印在标题里 ——
+          //    而**同一页上面那格**（结案时间）走的是 TimeText，同一个字段在同一页
+          //    出现两种画法。一律走 TimeText（`MM-DD HH:mm` + 悬停全量）。
+          message={
+            <span>
+              这条已经在 <TimeText iso={row.resolvedAt} /> 结过了 —— 不重复处置
+            </span>
+          }
           description={
             <span style={{ fontSize: 12.5, lineHeight: 1.9 }}>
               处置痕迹见上面 why 的【处置】行。

@@ -470,7 +470,15 @@ function 出处({ card }: { card: QuestionCard }) {
           <span style={{ ...灰, marginInlineStart: 8 }}>
             {p.batch.source} · {p.batch.contractVer} ·{" "}
             {p.batch.status ?? "状态未填"}
-            {p.batch.committedAt ? ` · 提交于 ${p.batch.committedAt}` : ""}
+            {/* 🔴 检查单 §三·3 时间统一：原来这里直接把库里那整串 ISO 印出来
+                （`2026-08-13T18:12:33+08:00`），全站口径是 `MM-DD HH:mm` +
+                悬停看全量 —— 一律走 TimeText。 */}
+            {p.batch.committedAt ? (
+              <>
+                {" · 提交于 "}
+                <TimeText iso={p.batch.committedAt} />
+              </>
+            ) : null}
           </span>
           <div style={{ marginTop: 2 }}>
             <Link href={`/question?batch=${encodeURIComponent(p.batch.id)}`}>
@@ -506,9 +514,16 @@ function 出处({ card }: { card: QuestionCard }) {
     key: "time",
     label: "时间",
     children: (
+      // 🔴 检查单 §三·3 时间统一：这两处原来也是整串 ISO 直接印
       <span style={{ ...灰, fontSize: 12 }}>
-        建于 {card.createdAt ?? "未知"}
-        {card.updatedAt ? ` · 改于 ${card.updatedAt}` : ""}
+        建于{" "}
+        {card.createdAt ? <TimeText iso={card.createdAt} /> : <span>未知</span>}
+        {card.updatedAt ? (
+          <>
+            {" · 改于 "}
+            <TimeText iso={card.updatedAt} />
+          </>
+        ) : null}
       </span>
     ),
   });
