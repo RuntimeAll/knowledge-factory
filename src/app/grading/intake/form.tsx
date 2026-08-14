@@ -4,9 +4,11 @@
  * 收卷录入 · 表单 + 最近录入表（AI:PRD-008 · 设计稿 §二 批改流水线组第 1 页）
  *
  * 🔴 页面上唯一的写：提交 → POST `/api/grading/intake`。
- *    白名单写操作**必须二次确认**（设计稿 §六 D2）：Popconfirm 里把「写到哪个目录、
+ *    白名单写操作**必须二次确认**（设计稿 §六 D2）：确认 Modal 里把「写到哪个目录、
  *    追加进哪个文件」原文摆出来再点头 —— 收件箱是别人（PRD-027）的地盘，
  *    我们只有「新增」这一种权限，点之前要看得见自己在动什么。
+ *    🔴 形态统一（AI:PRD-009 打磨 · 检查单 §三·7）：原来这里是 Popconfirm 小气泡，
+ *    与终审台三个写动作的 Modal 不是一套；全站写操作一律 Modal + 列明影响面。
  * 🔴 回执原文照登：写成了报绝对路径 + 那一行 JSON；写砸了报原始错误，
  *    绝不缩成一句「提交失败」。
  * 🔴 提交前不做任何"聪明"处理：不压缩、不改名（只补两位序号锁拍摄顺序）、不去重 ——
@@ -22,7 +24,7 @@ import {
   Alert,
   Button,
   Card,
-  Popconfirm,
+  Modal,
   Select,
   Space,
   Tag,
@@ -65,6 +67,12 @@ export function IntakeForm(props: IntakeFormProps) {
   const [kind, setKind] = useState<PaperKind>("auto");
   const [files, setFiles] = useState<UploadFile[]>([]);
   const [busy, setBusy] = useState(false);
+  /**
+   * 🔴 AI:PRD-009 打磨（检查单 §三·7 二次确认统一形态）：这里原来是 Popconfirm
+   *    （一个小气泡），而终审台的三个写动作是 Modal（列明影响面）。同一个台子上
+   *    两种「按第二次」的形态，人会把气泡当成提示随手点掉。统一成 Modal。
+   */
+  const [确认中, set确认中] = useState(false);
   const [res, setRes] = useState<IntakeSubmitResponse | null>(null);
   const [recentErr, setRecentErr] = useState<string | undefined>(undefined);
   const actionRef = useRef<ActionType>(null);
@@ -101,6 +109,9 @@ export function IntakeForm(props: IntakeFormProps) {
       });
     } finally {
       setBusy(false);
+      // 🔴 成败都关弹窗：回执（成功的绝对路径 / 失败的原文）在弹窗**背后**那条
+      //    Alert 上，弹窗不关人就看不见自己刚写成了什么、或为什么没写成。
+      set确认中(false);
     }
   }
 
@@ -114,16 +125,27 @@ export function IntakeForm(props: IntakeFormProps) {
     {
       title: "学员",
       dataIndex: "code",
-      width: 110,
+      width: 120,
+      // 🔴 检查单 §三·4 看到即可达：代号原来是死字，点不进学情页
       render: (_, r) =>
-        r.code ? <b>{r.code}</b> : <span style={{ color: "#909399" }}>—</span>,
+        r.code ? (
+          <Link href={`/student/${encodeURIComponent(r.code)}`}>
+            <b>{r.code}</b>
+          </Link>
+        ) : (
+          <span style={{ color: "#909399" }}>—</span>
+        ),
     },
     {
       title: "张数",
       key: "count",
       dataIndex: "files",
       width: 70,
-      render: (_, r) => r.files.length,
+      render: (_, r) => (
+        <span style={{ fontVariantNumeric: "tabular-nums" }}>
+          {r.files.length}
+        </span>
+      ),
     },
     {
       title: "卷型",
@@ -379,43 +401,63 @@ export function IntakeForm(props: IntakeFormProps) {
             gap: 10,
           }}
         >
-          <Popconfirm
-            title="确认收卷？"
-            okText="确认写入"
-            cancelText="再想想"
+          <Button
+            type="primary"
             disabled={!能提交}
-            description={
-              <div style={{ fontSize: 12.5, maxWidth: 460, lineHeight: 1.8 }}>
-                将把 <b>{files.length}</b> 张照片写进
-                <br />
-                <code style={{ fontSize: 11.5 }}>
-                  {props.inboxDir}/{code ?? "<代号>"}/&lt;时间戳&gt;/
-                </code>
-                <br />
-                并向 <code style={{ fontSize: 11.5 }}>
-                  {props.queuePath}
-                </code>{" "}
-                追加一行
-                <code style={{ fontSize: 11.5 }}>
-                  {' {…,"status":"收件中"} '}
-                </code>
-                。
-                <br />
-                🔴
-                收件箱只准新增：写进去的照片本页删不了、改不了（要撤只能人工去目录里处理）。
-              </div>
-            }
-            onConfirm={() => void submit()}
+            loading={busy}
+            onClick={() => set确认中(true)}
           >
-            <Button type="primary" disabled={!能提交} loading={busy}>
-              提交录入
-            </Button>
-          </Popconfirm>
+            提交录入…
+          </Button>
           <span style={{ fontSize: 12, color: "#909399" }}>
             提交后：判稳 → 认卷 → 自动开批 → 存疑才推送你，其余不打扰。
           </span>
         </div>
       </Card>
+
+      {/* ── 二次确认（全站统一 Modal 形态：先摆影响面，再点头）───────────────── */}
+      <Modal
+        open={确认中}
+        title="确认把这些照片写进收件箱？"
+        okText="确认写入"
+        cancelText="再想想"
+        confirmLoading={busy}
+        okButtonProps={{ disabled: !能提交 }}
+        onCancel={() => set确认中(false)}
+        onOk={() => void submit()}
+        width={620}
+        style={{ maxWidth: "calc(100vw - 24px)" }}
+      >
+        <div style={{ fontSize: 13, lineHeight: 1.9 }}>
+          <p style={{ marginBottom: 8 }}>
+            <b>影响面</b>：学员 <b>{code ?? "（还没选）"}</b> · 卷型{" "}
+            {PAPER_KIND_LABEL[kind]} · <b>{files.length}</b> 张照片。
+          </p>
+          <p style={{ marginBottom: 8 }}>
+            <b>会发生什么</b>：照片按拍摄顺序（补两位序号）写进
+            <br />
+            <code style={{ fontSize: 11.5, wordBreak: "break-all" }}>
+              {props.inboxDir}/{code ?? "<代号>"}/&lt;时间戳&gt;/
+            </code>
+            <br />
+            并向{" "}
+            <code style={{ fontSize: 11.5, wordBreak: "break-all" }}>
+              {props.queuePath}
+            </code>{" "}
+            追加一行{" "}
+            <code style={{ fontSize: 11.5 }}>{'{…,"status":"收件中"}'}</code>。
+          </p>
+          <p style={{ marginBottom: 8 }}>
+            🔴 <b>收件箱只准新增</b>
+            ：写进去的照片本页删不了、改不了（要撤只能人工去目录里处理）。
+            照片是判定的证据 —— 不压缩、不改名、不去重，原样落盘。
+          </p>
+          <p style={{ marginBottom: 0, color: "#606266" }}>
+            <b>接下来不用你管</b>：watcher 判稳 → 认卷 → 自动开批 →
+            存疑才推给你。 本页只交料，一个字都不写 审核.db。
+          </p>
+        </div>
+      </Modal>
 
       <div style={{ marginTop: 14 }}>
         {/* 🔴 2026-08-14 修：GET 的 ok=false 以前被整段吞掉，页面照样渲染空态
@@ -425,7 +467,7 @@ export function IntakeForm(props: IntakeFormProps) {
           <Alert
             type="error"
             showIcon
-            style={{ marginBottom: 10 }}
+            style={{ marginBottom: 12 }}
             message="最近录入读不出来（原文照登）——下面那张表是空的，不代表没收过件"
             description={
               <span style={{ fontSize: 12.5, whiteSpace: "pre-wrap" }}>
@@ -440,10 +482,11 @@ export function IntakeForm(props: IntakeFormProps) {
           size="small"
           cardBordered
           search={false}
+          // 🔴 检查单 §三·10 一致性：工具栏四件套与看板/终审台/报告架同一套
           options={{
             reload: true,
-            density: false,
-            setting: false,
+            density: true,
+            setting: true,
             fullScreen: false,
           }}
           columns={columns}
@@ -464,8 +507,9 @@ export function IntakeForm(props: IntakeFormProps) {
           ]}
           locale={{
             emptyText: recentErr ? (
+              // 🔴 检查单 §三·9 文案：原来是 Markdown 的 `**读不出来**`，星号被原样印出来
               <EmptyHint>
-                🔴 这张表空着是因为**读不出来**（原文见上面那条红条），
+                🔴 这张表空着是因为<b>读不出来</b>（原文见上面那条红条），
                 不是「还没有收件记录」。
               </EmptyHint>
             ) : (

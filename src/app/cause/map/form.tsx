@@ -54,7 +54,8 @@ export function MapPicker(props: MapPickerProps) {
   return (
     <Space wrap size={8} align="start">
       <Select
-        style={{ minWidth: 320 }}
+        // 🔴 检查单 §三·5：死的 minWidth 在手机上会把这一行顶出屏幕
+        style={{ minWidth: 260, width: "min(320px, 100%)" }}
         showSearch
         allowClear
         filterOption={false}
@@ -68,7 +69,7 @@ export function MapPicker(props: MapPickerProps) {
         }
       />
       <Input
-        style={{ width: 200 }}
+        style={{ width: "min(200px, 100%)" }}
         value={code}
         onChange={(e) => setCode(e.target.value)}
         placeholder="产线码，如 sign / dist / pow"

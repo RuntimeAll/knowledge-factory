@@ -19,15 +19,23 @@
  *   ③ **录入批次**这一维补上（设计稿 §二·2 逐项列了它）：core 的 searchParamsSchema
  *      现在有 ingestBatchIds，是**真硬过滤**，不是窗口内筛。
  *   ④ 「相似题」改成本页弹层（原来跳 004-C 的 /search，那页已随本次改版下线）。
+ *
+ * ── 2026-08-14 夜 · AI:PRD-009 打磨（只动版面与交互）────────────────────────
+ *   ⑤ 错误态（检查单 2）：`request` 里的 fetch **本身**炸了（服务没起/网断/坏 JSON）
+ *      以前会被 ProTable 吞掉 —— 页面显示成"零命中"，而那是故障不是事实。
+ *      现在 try/catch 兜住、原文上墙、`success:false`；
+ *   ⑥ 加载态（检查单 1）：相似题弹层给骨架屏，不再是一行"读取中…"；
+ *   ⑦ 移动端（检查单 5）：弹层宽度改 `min(720px,100vw)`；
+ *   ⑧ 列规范（检查单 3）：难度列补 tabular-nums。
  */
 import {
   ProTable,
   type ActionType,
   type ProColumns,
 } from "@ant-design/pro-components";
-import { Alert, Drawer, Select, Space, Tag, Tooltip } from "antd";
+import { Alert, Drawer, Select, Skeleton, Space, Tag, Tooltip } from "antd";
 import Link from "next/link";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   CopyCmd,
@@ -188,7 +196,17 @@ function SimilarDrawer({
   const [loading, setLoading] = useState(false);
   const 上次 = useRef<string | null>(null);
 
-  if (id && 上次.current !== id) {
+  /**
+   * 🔴 AI:PRD-009 打磨：取数从 render 体里挪进 useEffect。
+   *    原来是「render 时发现 id 变了就顺手 fetch」——点开弹层那条路没问题，
+   *    但 `?similar=q_…` 直接进页时**服务端也会渲这一遍**，而 SSR 里
+   *    `fetch("/api/…")` 的相对地址在 Node 侧解析不了：
+   *    服务端先渲出一条"请求没发出去"的红条、客户端再渲出骨架，
+   *    两边对不上 = hydration mismatch（整块重渲、弹层闪一下）。
+   *    放进 effect 之后只在浏览器跑，行为不变。
+   */
+  useEffect(() => {
+    if (!id || 上次.current === id) return;
     上次.current = id;
     setData(null);
     setLoading(true);
@@ -216,12 +234,13 @@ function SimilarDrawer({
         setLoading(false);
       }
     })();
-  }
+  }, [id]);
 
   return (
     <Drawer
       title="相似题（句向量近邻）"
-      width={720}
+      // 🔴 手机上 720px 会顶出屏幕（检查单 5）：按视口收
+      width="min(720px, 100vw)"
       open={id !== null}
       onClose={() => {
         上次.current = null;
@@ -240,14 +259,19 @@ function SimilarDrawer({
                 marginTop: 4,
               }}
             >
-              {data?.stemBrief !== undefined && data.stemBrief !== ""
-                ? data.stemBrief
-                : loading
-                  ? "读取中…"
-                  : "（题面没读出来）"}
+              {data?.stemBrief !== undefined && data.stemBrief !== "" ? (
+                data.stemBrief
+              ) : loading ? (
+                <Skeleton active title={false} paragraph={{ rows: 1 }} />
+              ) : (
+                "（题面没读出来）"
+              )}
             </div>
             <Link href={`/question/${id}`}>看这道题的正本 →</Link>
           </div>
+
+          {/* 加载态：近邻列表也给骨架，别让人对着空白猜"是不是没有相似题"（检查单 1） */}
+          {loading ? <Skeleton active paragraph={{ rows: 6 }} /> : null}
 
           {data && !data.ok ? (
             <Alert
@@ -482,7 +506,10 @@ export function QuestionTable(props: QuestionTableProps) {
             <span style={{ color: "#909399" }}>—</span>
           </Tooltip>
         ) : (
-          <span>{r.difficulty}</span>
+          // 数字列一律 tabular-nums（检查单 3）
+          <span style={{ fontVariantNumeric: "tabular-nums" }}>
+            {r.difficulty}
+          </span>
         ),
     },
     {
@@ -651,11 +678,23 @@ export function QuestionTable(props: QuestionTableProps) {
             q.set("order", order === "ascend" ? "asc" : "desc");
           }
 
-          const res = await fetch(`/api/questions?${q.toString()}`);
-          const j = (await res.json()) as QuestionListResponse;
-          setMeta(j.meta);
-          setErr(j.ok ? undefined : j.error);
-          return { data: j.data, total: j.total, success: true };
+          // 🔴 fetch 本身炸了（服务没起 / 网断 / JSON 坏）ProTable 会把异常吞掉，
+          //    结果是一张"零命中"的空表 —— 而零命中和"检索没跑成"是两回事（检查单 2）。
+          try {
+            const res = await fetch(`/api/questions?${q.toString()}`);
+            const j = (await res.json()) as QuestionListResponse;
+            setMeta(j.meta);
+            setErr(j.ok ? undefined : j.error);
+            return { data: j.data, total: j.total, success: true };
+          } catch (e) {
+            setMeta(null);
+            setErr(
+              `请求没发出去（或没回来）：${
+                e instanceof Error ? `${e.name}: ${e.message}` : String(e)
+              }`,
+            );
+            return { data: [], total: 0, success: false };
+          }
         }}
       />
       <SimilarDrawer id={similarId} onClose={() => setSimilarId(null)} />

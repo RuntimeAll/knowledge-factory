@@ -158,6 +158,8 @@ export function CollisionTable({ rows }: { rows: DupViewRow[] }) {
         ),
       }}
       pagination={{ defaultPageSize: 20, showSizeChanger: true }}
+      // 🔴 「撞到了谁」那列一行能堆好几条命中，手机上必须让表格自己横向滚
+      scroll={{ x: 860 }}
     />
   );
 }
@@ -213,6 +215,8 @@ export function SimilarTable({ rows }: { rows: SimilarViewRow[] }) {
         ),
       }}
       pagination={{ defaultPageSize: 20, showSizeChanger: true }}
+      // 🔴 四列在手机上放不下：表格自己横向滚，页面本身不许横向滚
+      scroll={{ x: 780 }}
     />
   );
 }

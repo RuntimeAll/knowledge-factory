@@ -125,12 +125,16 @@ export function ModelTable(props: ModelTableProps) {
       dataIndex: "name",
       sorter: true,
       width: 240,
+      // 🔴 模型名会长过一列（「绝对值几何意义·两点距离型」这种）：截断 + 悬停全名
+      ellipsis: true,
       tooltip: "窗口内按「包含」匹配模型名或考点名",
       fieldProps: { placeholder: "绝对值 / 合并同类项" },
       render: (_, r) => (
-        <Link href={`/model/${r.id}`} style={{ color: "inherit" }}>
-          <span style={{ fontSize: 12.5 }}>{r.name}</span>
-        </Link>
+        <Tooltip title={r.name} styles={{ root: { maxWidth: 520 } }}>
+          <Link href={`/model/${r.id}`} style={{ color: "inherit" }}>
+            <span style={{ fontSize: 12.5 }}>{r.name}</span>
+          </Link>
+        </Tooltip>
       ),
     },
     {
@@ -139,11 +143,14 @@ export function ModelTable(props: ModelTableProps) {
       sorter: true,
       search: false,
       width: 220,
+      ellipsis: true,
       render: (_, r) =>
         r.kpName ? (
-          <Link href={`/kg/kp/${r.kpId}`}>
-            <Tag color="blue">{r.kpName}</Tag>
-          </Link>
+          <Tooltip title={`${r.kpName}（kp_id = ${r.kpId}）· 点进考点详情`}>
+            <Link href={`/kg/kp/${r.kpId}`}>
+              <Tag color="blue">{r.kpName}</Tag>
+            </Link>
+          </Tooltip>
         ) : (
           <Tooltip title={`kp_id = ${r.kpId}（考点名没读出来）`}>
             <Tag>考点名未取到</Tag>
@@ -179,14 +186,27 @@ export function ModelTable(props: ModelTableProps) {
       sorter: true,
       search: false,
       width: 76,
+      align: "right",
       tooltip: "question.model_id 指向它的题有多少道",
       render: (_, r) =>
         r.questionCount === 0 ? (
           <Tooltip title="这个模型还没生成过题（或者生成的题没回填 model_id）">
-            <span style={{ color: "#909399" }}>0</span>
+            <span
+              style={{ color: "#909399", fontVariantNumeric: "tabular-nums" }}
+            >
+              0
+            </span>
           </Tooltip>
         ) : (
-          <b>{r.questionCount}</b>
+          // 🔴 看到即可达：出题数点进族谱（那一页才列得出「是哪几道」）
+          <Tooltip title="点进族谱看这些题是哪几道（经母题的血缘查出来）">
+            <Link
+              href={`/model/${r.id}`}
+              style={{ fontVariantNumeric: "tabular-nums", fontWeight: 600 }}
+            >
+              {r.questionCount}
+            </Link>
+          </Tooltip>
         ),
     },
     {
@@ -195,13 +215,22 @@ export function ModelTable(props: ModelTableProps) {
       sorter: true,
       search: false,
       width: 64,
+      align: "right",
       tooltip:
         "origin_qids_json：这个模型是从哪几道真题归纳出来的。0 = 没记，族谱到此断链",
       render: (_, r) =>
         r.originCount === 0 ? (
-          <span style={{ color: "#909399" }}>0</span>
+          <Tooltip title="没记母题：族谱从母题侧进不去（详见族谱页那条警告）">
+            <span
+              style={{ color: "#909399", fontVariantNumeric: "tabular-nums" }}
+            >
+              0
+            </span>
+          </Tooltip>
         ) : (
-          <span>{r.originCount}</span>
+          <span style={{ fontVariantNumeric: "tabular-nums" }}>
+            {r.originCount}
+          </span>
         ),
     },
     {
@@ -210,11 +239,16 @@ export function ModelTable(props: ModelTableProps) {
       sorter: true,
       search: false,
       width: 60,
+      align: "right",
       render: (_, r) =>
         r.difficulty === null ? (
-          <span style={{ color: "#909399" }}>—</span>
+          <Tooltip title="这个模型还没打难度档">
+            <span style={{ color: "#909399" }}>—</span>
+          </Tooltip>
         ) : (
-          <span>{r.difficulty}</span>
+          <span style={{ fontVariantNumeric: "tabular-nums" }}>
+            {r.difficulty}
+          </span>
         ),
     },
     {
@@ -371,11 +405,27 @@ export function ModelTable(props: ModelTableProps) {
             q.set("order", so === "ascend" ? "asc" : "desc");
           }
 
-          const res = await fetch(`/api/exam-models?${q.toString()}`);
-          const j = (await res.json()) as ModelListResponse;
-          setMeta(j.meta);
-          setErr(j.ok ? undefined : j.error);
-          return { data: j.data, total: j.total, success: true };
+          // 🔴 三种失败都要上墙（与 /sku 同一写法）：ok:false / HTTP 非 2xx /
+          //    fetch 抛。后两种不 catch 会被 ProTable 吞成「暂无数据」的空表 ——
+          //    「查过了没有」与「根本没查成」必须分得开。
+          try {
+            const res = await fetch(`/api/exam-models?${q.toString()}`);
+            if (!res.ok) {
+              throw new Error(
+                `GET /api/exam-models 返回 HTTP ${res.status} ${res.statusText}`,
+              );
+            }
+            const j = (await res.json()) as ModelListResponse;
+            setMeta(j.meta);
+            setErr(
+              j.ok ? undefined : (j.error ?? "接口返回 ok=false，但没给原因"),
+            );
+            return { data: j.data, total: j.total, success: true };
+          } catch (e) {
+            setMeta(null);
+            setErr(e instanceof Error ? `${e.name}: ${e.message}` : String(e));
+            return { data: [], total: 0, success: true };
+          }
         }}
       />
     </>

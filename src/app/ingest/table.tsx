@@ -15,6 +15,14 @@
  *    （searchParams.ingestBatchIds，真硬过滤），所以跳 `/question?batch=<id>` 是准的；
  *    抽屉里同时把本批落库的题 id 逐个列出来（点一个进一个的正本）。
  * 🔴 全页只读：录题是数据生产类写操作，页面一个字都不改库（设计稿 §〇·3）。
+ *
+ * ── AI:PRD-009 打磨（只动版面与交互）────────────────────────────────────────
+ *   ① 加载态（检查单 1）：抽屉取数时上 Skeleton，不再是一行「读取中…」的裸字；
+ *   ② 错误态（检查单 2）：列表 fetch **本身**炸了（服务没起/网断）以前是
+ *      静默空表 —— ProTable 会把 request 的异常吞掉。现在 try/catch 兜住、
+ *      原文上墙，并且 `success:false` 让表格显示"重试"而不是假装"没有批次"；
+ *   ③ 跳转贯通（检查单 4）：`?batch=<id>` 可直接开抽屉（别处点得进来了）；
+ *   ④ 移动端（检查单 5）：抽屉宽度 `min(980px,100vw)`、Descriptions 改响应式列数。
  */
 import {
   ProTable,
@@ -26,6 +34,7 @@ import {
   Button,
   Descriptions,
   Drawer,
+  Skeleton,
   Space,
   Table,
   Tabs,
@@ -35,7 +44,7 @@ import {
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import Link from "next/link";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   CopyCmd,
@@ -66,12 +75,16 @@ interface QueryForm {
 /** 抽屉三页：闸报告 / 本批题目 / 隔离行 */
 type DrawerTab = "gate" | "questions" | "quarantine";
 
-/** 数字列：0 显灰（「0 道被拒」和「没这一栏」不是一回事，但灰掉能让红的跳出来） */
+/**
+ * 数字列：0 显灰（「0 道被拒」和「没这一栏」不是一回事，但灰掉能让红的跳出来）。
+ * 🔴 tabular-nums（检查单 3）：等宽数字，几行数字上下对得齐才看得出差异。
+ */
 function Num({ n, tone }: { n: number; tone?: "ok" | "warn" | "bad" }) {
-  if (n === 0) return <span style={{ color: "#c0c4cc" }}>0</span>;
+  const 数 = { fontVariantNumeric: "tabular-nums" } as const;
+  if (n === 0) return <span style={{ ...数, color: "#c0c4cc" }}>0</span>;
   const color =
     tone === "bad" ? "#f56c6c" : tone === "warn" ? "#e6a23c" : "#67c23a";
-  return <b style={{ color }}>{n}</b>;
+  return <b style={{ ...数, color }}>{n}</b>;
 }
 
 /** 一道闸的红绿（红灯连 code + 人话一起摆出来，那是 agent 自愈用的错误契约） */
@@ -211,7 +224,12 @@ function itemColumns(): ColumnsType<IngestItemView> {
   ];
 }
 
-export function IngestTable() {
+export interface IngestTableProps {
+  /** 🔴 `?batch=<id>` 带进来的批次：直接把它的全账抽屉打开（检查单 4） */
+  initialBatch?: string;
+}
+
+export function IngestTable(props: IngestTableProps = {}) {
   const actionRef = useRef<ActionType>(null);
   const [err, setErr] = useState<string | undefined>(undefined);
   const [capped, setCapped] = useState(false);
@@ -236,12 +254,35 @@ export function IngestTable() {
         setDetail(j.data);
         setDetailErr(j.ok ? undefined : j.error);
       } catch (e) {
-        setDetailErr(e instanceof Error ? e.message : String(e));
+        // 🔴 请求本身没发出去/没回来：原文照登，别让抽屉停在一个空白的「—」上
+        setDetailErr(
+          `请求没发出去（或没回来）：${
+            e instanceof Error ? `${e.name}: ${e.message}` : String(e)
+          }`,
+        );
       } finally {
         setLoading(false);
       }
     })();
   }
+
+  /**
+   * 地址栏带了 `?batch=` ⇒ 挂载后开一次抽屉。
+   *
+   * 🔴 必须放在 useEffect 里，不能在 render 里直接调 `打开()`：
+   *    本组件在 SSR 也会渲染一遍，而那一遍里 `fetch("/api/…")` 的相对地址在 Node
+   *    侧解析不了 —— 服务端会先渲出一条"请求没发出去"的红条，客户端再渲出骨架，
+   *    两边对不上就是 hydration mismatch（页面会整块重渲、抽屉闪一下）。
+   * 🔴 ref 守一次：抽屉关掉之后不该被同一个 query 再弹开（那样人就关不掉它了）。
+   */
+  const 已按地址开过 = useRef(false);
+  useEffect(() => {
+    if (props.initialBatch && !已按地址开过.current) {
+      已按地址开过.current = true;
+      打开(props.initialBatch, "gate");
+    }
+    // 只吃挂载时那一次的 ?batch=（后续换批走点击，不由地址栏驱动）
+  }, [props.initialBatch]);
 
   const columns: ProColumns<IngestBatchRow, "text">[] = [
     {
@@ -434,18 +475,31 @@ export function IngestTable() {
           if (params.from) q.set("from", params.from);
           if (params.to) q.set("to", params.to);
 
-          const res = await fetch(`/api/ingest?${q.toString()}`);
-          const j = (await res.json()) as IngestListResponse;
-          setErr(j.ok ? undefined : j.error);
-          setCapped(j.capped);
-          return { data: j.data, total: j.total, success: true };
+          // 🔴 fetch 本身炸了（服务没起 / 网断 / JSON 坏）ProTable 会把异常吞掉，
+          //    结果是一张"没有批次"的空表 —— 那是**把故障说成了事实**（检查单 2）。
+          try {
+            const res = await fetch(`/api/ingest?${q.toString()}`);
+            const j = (await res.json()) as IngestListResponse;
+            setErr(j.ok ? undefined : j.error);
+            setCapped(j.capped);
+            return { data: j.data, total: j.total, success: true };
+          } catch (e) {
+            setErr(
+              `请求没发出去（或没回来）：${
+                e instanceof Error ? `${e.name}: ${e.message}` : String(e)
+              }`,
+            );
+            setCapped(false);
+            return { data: [], total: 0, success: false };
+          }
         }}
       />
 
       <Drawer
         open={open !== null}
         onClose={() => setOpen(null)}
-        width={980}
+        // 🔴 手机上 980px 的抽屉会把内容顶出屏幕（检查单 5）：按视口收
+        width="min(980px, 100vw)"
         title={
           <span style={{ fontSize: 14 }}>
             录入批次全账
@@ -466,7 +520,12 @@ export function IngestTable() {
             type="error"
             showIcon
             style={{ marginBottom: 10 }}
-            message={detailErr}
+            message="这一批的全账读不出来（原文照登）"
+            description={
+              <span style={{ fontSize: 12.5, whiteSpace: "pre-wrap" }}>
+                {detailErr}
+              </span>
+            }
           />
         ) : null}
 
@@ -475,7 +534,8 @@ export function IngestTable() {
             <Descriptions
               size="small"
               bordered
-              column={2}
+              // 手机一列、平板以上两列（检查单 5）
+              column={{ xs: 1, sm: 2 }}
               style={{ marginBottom: 12 }}
               items={[
                 { key: "src", label: "来源", children: d.source },
@@ -631,9 +691,20 @@ export function IngestTable() {
               ]}
             />
           </>
-        ) : (
+        ) : loading ? (
+          // 🔴 加载态给骨架，不给一行"读取中…"的裸字（检查单 1）：
+          //    单批 gate_report 能到 76KB，这一等是看得见的。
+          <>
+            <Skeleton
+              active
+              paragraph={{ rows: 3 }}
+              style={{ marginBottom: 16 }}
+            />
+            <Skeleton active paragraph={{ rows: 6 }} />
+          </>
+        ) : detailErr ? null : (
           <div style={{ padding: 24, textAlign: "center", color: "#909399" }}>
-            {loading ? "读取中…" : detailErr ? "" : "—"}
+            —
           </div>
         )}
 

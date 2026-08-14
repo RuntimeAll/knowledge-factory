@@ -447,10 +447,28 @@ export function ShelfTable({
           if (params.grade) q.set("grade", params.grade);
           if (params.lane) q.set("lane", params.lane);
 
-          const res = await fetch(`/api/shelf/docs?${q.toString()}`);
-          const j = (await res.json()) as ShelfListResponse;
+          // 🔴 三种失败都要上墙（与 /sku 同一写法）：ok:false / HTTP 非 2xx /
+          //    fetch 抛。后两种不 catch 会被 ProTable 吞成「暂无数据」的空表 ——
+          //    货架页这个坑最贵：空表长得就像「货架上没有这本册子」，
+          //    而真相可能只是 PUNCH_DB_URL 没配。
+          let j: ShelfListResponse;
+          try {
+            const res = await fetch(`/api/shelf/docs?${q.toString()}`);
+            if (!res.ok) {
+              throw new Error(
+                `GET /api/shelf/docs 返回 HTTP ${res.status} ${res.statusText}`,
+              );
+            }
+            j = (await res.json()) as ShelfListResponse;
+          } catch (e) {
+            setMeta(null);
+            setErr(e instanceof Error ? `${e.name}: ${e.message}` : String(e));
+            return { data: [], total: 0, success: true };
+          }
           setMeta(j.meta);
-          setErr(j.ok ? undefined : j.error);
+          setErr(
+            j.ok ? undefined : (j.error ?? "接口返回 ok=false，但没给原因"),
+          );
 
           const flat: Row[] = j.data.map((d) => ({
             key: `d${d.id}`,

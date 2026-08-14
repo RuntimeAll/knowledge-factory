@@ -13,8 +13,8 @@
 import { Alert, Card, Descriptions, Tag, Tooltip } from "antd";
 import Link from "next/link";
 
+import { PageHead } from "~/components/console/page-head";
 import {
-  DataSourceNote,
   EmptyHint,
   IdTail,
   StatusTag,
@@ -90,25 +90,19 @@ export default async function SkuDetailPage({
 
   return (
     <>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "baseline",
-          gap: 12,
-          marginBottom: 12,
-        }}
-      >
-        <h1 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>
-          {card.name}
-        </h1>
-        <StatusTag value={card.status} />
-        {card.type ? <Tag>{card.type}</Tag> : null}
-        <span style={{ marginLeft: "auto" }}>
-          <DataSourceNote>
-            core.getSku · 表 sku / sku_item / sku_output / grading_task_map
-          </DataSourceNote>
-        </span>
-      </div>
+      {/* 🔴 flexWrap：册名本来就长，窄屏上不换行会把标题挤成竖排（全站页头一律 wrap） */}
+      <PageHead
+        title={<>{card.name}</>}
+        tags={
+          <>
+            <StatusTag value={card.status} />
+            {card.type ? <Tag>{card.type}</Tag> : null}
+          </>
+        }
+        source={
+          <>core.getSku · 表 sku / sku_item / sku_output / grading_task_map</>
+        }
+      />
 
       {err ? (
         <Alert
@@ -127,17 +121,23 @@ export default async function SkuDetailPage({
         />
       ) : null}
 
+      {/* 🔴 flexWrap + rowGap：手机上这一排链接必须能折行，否则「展开配方」被挤出屏幕 */}
       <div
         style={{
           display: "flex",
           gap: 14,
+          rowGap: 8,
           alignItems: "center",
           marginBottom: 12,
           fontSize: 13,
+          flexWrap: "wrap",
         }}
       >
         <Link href="/sku">← 回台账</Link>
-        <Link href={`/sku/${card.id}/status?to=${下一态}`}>{动作名}…</Link>
+        {/* 🔴 文案说清点下去会发生什么：这一步只到确认页，不改库 */}
+        <Link href={`/sku/${card.id}/status?to=${下一态}`}>
+          {动作名}…（先看确认页）
+        </Link>
         <Link href={`/sku/${card.id}/dedup`}>排重报告</Link>
         <Link href={`/output?sku=${card.id}`}>本册产物</Link>
         <span style={{ marginLeft: "auto" }}>
@@ -148,7 +148,9 @@ export default async function SkuDetailPage({
       <Card size="small" title="基本信息" style={{ marginBottom: 12 }}>
         <Descriptions
           size="small"
-          column={3}
+          // 🔴 响应式列数：手机一列、平板两列、桌面三列。
+          //    写死 column={3} 在 390px 宽的屏上会把「版本语境」压成一列一个字。
+          column={{ xs: 1, sm: 2, md: 3 }}
           items={[
             {
               key: "type",

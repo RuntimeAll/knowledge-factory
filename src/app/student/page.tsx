@@ -8,7 +8,7 @@
  * 🔴 roster 是**纯维度表**：学情事实（对错/错因/轮次）一个字都不复制进来，
  *    全部只读现算自圣域（审核.db，mode=ro）。
  */
-import { DataSourceNote } from "~/components/console/ui";
+import { PageHead } from "~/components/console/page-head";
 import { StudentTable } from "./table";
 
 export const dynamic = "force-dynamic";
@@ -16,25 +16,16 @@ export const dynamic = "force-dynamic";
 export default function StudentRosterPage() {
   return (
     <>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "baseline",
-          gap: 12,
-          marginBottom: 12,
-        }}
-      >
-        <h1 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>学员名册</h1>
-        <span style={{ fontSize: 12.5, color: "#909399" }}>
-          谁在学、交了几次、挂没挂上桥 —— 🔴 全代号，无真名字段
-        </span>
-        <span style={{ marginLeft: "auto" }}>
-          <DataSourceNote>
+      <PageHead
+        title={<>学员名册</>}
+        sub={<>谁在学、交了几次、挂没挂上桥 —— 🔴 全代号，无真名字段</>}
+        source={
+          <>
             表 roster（纯维度表）+ 圣域 审核.db（mode=ro 现算）· core.listRoster
             / bridgeBatches / getStudentView（与 MCP student_view 同一入口）
-          </DataSourceNote>
-        </span>
-      </div>
+          </>
+        }
+      />
 
       <StudentTable />
     </>

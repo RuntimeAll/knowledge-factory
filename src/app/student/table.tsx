@@ -28,6 +28,9 @@ interface QueryForm {
   status?: string;
 }
 
+/** 数字列一律等宽数字（🔴 检查单 §三·3：竖着比大小的数，字宽不一样就比不了） */
+const 数字: React.CSSProperties = { fontVariantNumeric: "tabular-nums" };
+
 /** 覆盖 2/4：全挂=绿 / 全没挂=红 / 一半=橙（0 个批次是灰，那是「还没交过卷」） */
 function 覆盖色(matched: number, total: number): string {
   if (total === 0) return "default";
@@ -99,7 +102,7 @@ export function StudentTable() {
       dataIndex: "batches",
       search: false,
       width: 78,
-      render: (_, r) => <span>{r.batches}</span>,
+      render: (_, r) => <span style={数字}>{r.batches}</span>,
     },
     {
       title: "挂桥覆盖",
@@ -109,7 +112,7 @@ export function StudentTable() {
       tooltip:
         "挂上桥的批次 / 全部批次。挂不上桥 ≠ 没数据：分数照给，只是算不到考点上（perKp 不含它们）",
       render: (_, r) => (
-        <Tag color={覆盖色(r.matched, r.batches)}>
+        <Tag color={覆盖色(r.matched, r.batches)} style={数字}>
           {r.matched}/{r.batches}
         </Tag>
       ),
@@ -124,6 +127,8 @@ export function StudentTable() {
       //    按时间挑会把它当成最早、悄悄显示上一次的旧卷（见 /api/student 的 取最近）。
       tooltip:
         "最近 = 批次号最大的那一批（与详情页批次表同序）。出件时间只是展示：为空就是「批完还没出件」，不拿旧批次顶上",
+      // 🔴 检查单 §三·4 看到即可达：批次号 b<id> 原来是死字 ——
+      //    名册上看见「最近这一批」，却要自己去看板里翻它。有 day 就直接点进终审页。
       render: (_, r) =>
         r.lastBatchId === null ? (
           <span style={{ color: "#909399" }}>还没交过卷</span>
@@ -136,8 +141,21 @@ export function StudentTable() {
             ) : (
               <TimeText iso={r.lastAt} />
             )}
-            <span style={{ color: "#909399" }}> · b{r.lastBatchId}</span>
-            {r.lastDay === null ? "" : ` · 第 ${r.lastDay} 次`}
+            {r.lastDay === null ? (
+              <span style={{ color: "#909399", ...数字 }}>
+                {" "}
+                · b{r.lastBatchId}
+              </span>
+            ) : (
+              <Link
+                href={`/grading/review/${encodeURIComponent(r.code)}/${r.lastDay}`}
+                title="进终审台看这一批的逐题判定"
+                style={数字}
+              >
+                {" "}
+                · b{r.lastBatchId} · 第 {r.lastDay} 次
+              </Link>
+            )}
             <div style={{ color: "#909399" }}>
               {r.lastLine ?? "线名未知（这批没挂上桥）"}
             </div>
@@ -155,10 +173,12 @@ export function StudentTable() {
         r.lastScore === null ? (
           <span style={{ color: "#909399" }}>—</span>
         ) : r.lastMatched ? (
-          <Tag color="green">{得分文本(r)}</Tag>
+          <Tag color="green" style={数字}>
+            {得分文本(r)}
+          </Tag>
         ) : (
           <Tooltip title="这一批没挂上桥：分数是从圣域直接数出来的，算不到考点上（详情页「未挂原因」列有原文）">
-            <Tag>{得分文本(r)}（无桥）</Tag>
+            <Tag style={数字}>{得分文本(r)}（无桥）</Tag>
           </Tooltip>
         ),
     },
@@ -180,11 +200,26 @@ export function StudentTable() {
       title: "操作",
       valueType: "option",
       key: "option",
-      width: 92,
+      width: 150,
       fixed: "right",
+      // 🔴 看到即可达：名册是「人」的入口，他的批次流水与已出件报告都该一步可达
       render: (_, r) => [
         <Link key="view" href={`/student/${encodeURIComponent(r.code)}`}>
           学情详情
+        </Link>,
+        <Link
+          key="board"
+          href={`/grading/board?code=${encodeURIComponent(r.code)}`}
+          title="看这个学员的全部批次流水（收件 → 出件）"
+        >
+          批次
+        </Link>,
+        <Link
+          key="reports"
+          href={`/grading/reports?code=${encodeURIComponent(r.code)}`}
+          title="看这个学员已出件的报告 PNG"
+        >
+          报告
         </Link>,
       ],
     },
@@ -196,7 +231,7 @@ export function StudentTable() {
         <Alert
           type="error"
           showIcon
-          style={{ marginBottom: 10 }}
+          style={{ marginBottom: 12 }}
           message="名册读不出来（原文照登）"
           description={<span style={{ fontSize: 12.5 }}>{meta.error}</span>}
         />
@@ -207,7 +242,7 @@ export function StudentTable() {
             meta.strayCount > 0 || meta.warnings.length > 0 ? "warning" : "info"
           }
           showIcon={meta.strayCount > 0}
-          style={{ marginBottom: 10 }}
+          style={{ marginBottom: 12 }}
           message={
             <span style={{ fontSize: 12.5 }}>
               名册登记 {meta.rosterCount} 人 · 表里 {meta.total} 行（其中{" "}
@@ -235,7 +270,7 @@ export function StudentTable() {
         size="small"
         cardBordered
         columns={columns}
-        scroll={{ x: 1050 }}
+        scroll={{ x: 1140 }}
         search={{ labelWidth: "auto", defaultCollapsed: false }}
         options={{
           reload: true,

@@ -22,6 +22,16 @@
  *     每一条都得看着办（core 的 resolveQuarantine 也要逐条的 payload）。
  * 🔴 列头排序：本表数据是**一次取回全量**（/api/queue 一把取 200 条），
  *    所以 sorter 用比较函数在前端排就是对的 —— 与 /sku 那类服务端切片的表不同。
+ *
+ * ── AI:PRD-009 打磨（只动版面与交互，处置链一条没改）──────────────────────
+ *   ① 二次确认（检查单 7）：逐行的「通过 / 图对得上 / 转正入库」原来是**裸 submit**
+ *      —— 手滑一下就落库。现在与批量通过同一形态：弹层 + 影响面。
+ *      action 一个字没换（还是 verdictQueueAction / passFigureAction /
+ *      promoteDraftAction），确认后走的是同一条 form 提交路径；
+ *   ② 列规范（检查单 3）：进队原因 / why / 题面三列长文三行截断 + 悬停全文，
+ *      不再让一条工单顶掉半屏；
+ *   ③ 跳转贯通（检查单 4）：隔离区的批次 id 点得进 `/ingest?batch=<id>` 看闸报告；
+ *   ④ 错误态（检查单 2）：列表 fetch 本身炸了不再被吞成「队列是空的」。
  */
 import {
   ProTable,
@@ -49,6 +59,9 @@ import {
   StatusTag,
   TimeText,
 } from "~/components/console/ui";
+// 🔴 b 组就地内联的确认件（待 d 组收编进 components/console/ui）：
+//    检查单第 7 条要求全站写操作统一 Modal 形态，逐行处置按钮以前是裸 submit。
+import { ConfirmSubmit } from "~/components/console/confirm";
 import {
   batchPassAction,
   passFigureAction,
@@ -91,6 +104,32 @@ const STATES: Record<string, { label: string; value: string }[]> = {
     { label: "已结", value: "resolved" },
     { label: "全部", value: "all" },
   ],
+};
+
+/**
+ * 长文列的两件样式（AI:PRD-009 · 检查单 3「长文截断 + 悬停全文」）。
+ * 🔴 三行封顶不是"嫌它长"：进队原因/why 里常常整段闸报告，一条能顶掉半屏 ——
+ *    截断之后一屏能看见十条工单，全文在悬停里一个字不少。
+ */
+const 多行截断: React.CSSProperties = {
+  display: "-webkit-box",
+  WebkitLineClamp: 3,
+  WebkitBoxOrient: "vertical",
+  overflow: "hidden",
+  whiteSpace: "pre-wrap",
+  wordBreak: "break-word",
+  fontSize: 12.5,
+  lineHeight: 1.7,
+};
+
+/** 悬停全文：等宽 + 保留换行（闸报告是排过版的，别把它挤成一坨） */
+const 前置样式: React.CSSProperties = {
+  margin: 0,
+  maxHeight: 320,
+  overflow: "auto",
+  whiteSpace: "pre-wrap",
+  fontSize: 11.5,
+  lineHeight: 1.7,
 };
 
 /** 回位隐藏字段：处置完还回原 tab/state（不然处理一列工单要点二十次） */
@@ -176,19 +215,33 @@ export function QueueBoard(props: QueueBoardProps) {
         {
           title: "为什么被拒（why）",
           dataIndex: "why",
+          // 🔴 长文截断 + 悬停全文（检查单 3）：why 里常常是一整段闸报告，
+          //    不截断的话一行能顶掉半屏，一页只看得见三条隔离料。
           render: (_, r) => (
-            <div style={{ whiteSpace: "pre-wrap", fontSize: 12.5 }}>
-              {r.why}
-            </div>
+            <Tooltip
+              title={<pre style={前置样式}>{r.why}</pre>}
+              styles={{ root: { maxWidth: 560 } }}
+            >
+              <div style={多行截断}>{r.why}</div>
+            </Tooltip>
           ),
         },
         {
           title: "批次",
           dataIndex: "batchId",
-          width: 120,
+          width: 130,
           sorter: (a, b) => (a.batchId ?? "").localeCompare(b.batchId ?? ""),
+          // 🔴 检查单 4「看到即可达」：批次 id 点得进那一批的闸报告
           render: (_, r) =>
-            r.batchId ? <IdTail id={r.batchId} /> : <span>—</span>,
+            r.batchId ? (
+              <Link href={`/ingest?batch=${encodeURIComponent(r.batchId)}`}>
+                <IdTail id={r.batchId} />
+              </Link>
+            ) : (
+              <Tooltip title="这条隔离料没记来自哪一批（老数据）">
+                <span style={{ color: "#909399" }}>—</span>
+              </Tooltip>
+            ),
         },
         ...时间列,
         {
@@ -215,11 +268,17 @@ export function QueueBoard(props: QueueBoardProps) {
     const 原因列: ProColumns<QueueViewRow> = {
       title: "进队原因",
       dataIndex: "reason",
+      // 长文截断 + 悬停全文（检查单 3）；🔴 loadError 不截断——报错要一眼看全
       render: (_, r) => (
-        <div style={{ whiteSpace: "pre-wrap", fontSize: 12.5 }}>
-          {r.reason ?? "（没写理由）"}
+        <div style={{ fontSize: 12.5 }}>
+          <Tooltip
+            title={<pre style={前置样式}>{r.reason ?? "（没写理由）"}</pre>}
+            styles={{ root: { maxWidth: 560 } }}
+          >
+            <div style={多行截断}>{r.reason ?? "（没写理由）"}</div>
+          </Tooltip>
           {r.loadError ? (
-            <div style={{ color: "#c45656" }}>
+            <div style={{ color: "#c45656", whiteSpace: "pre-wrap" }}>
               这条工单的详情读不出来：{r.loadError}
             </div>
           ) : null}
@@ -264,9 +323,21 @@ export function QueueBoard(props: QueueBoardProps) {
                     <input type="hidden" name="id" value={r.id} />
                     <input type="hidden" name="verdict" value="passed" />
                     <Back tab={tab} state={state} />
-                    <Button size="small" htmlType="submit">
-                      通过
-                    </Button>
+                    <ConfirmSubmit
+                      label="通过"
+                      title="判这条低置信工单「通过」？"
+                      okText="通过"
+                      description={
+                        <>
+                          本工单 → <b>passed</b>，另记一条审计行。
+                          <br />
+                          🔴 <b>只是把工单关掉</b>：词表一个字不加 —— agent
+                          下次照原话问，照样问不出来、照样再开一条。
+                          <br />
+                          真要让它下次问得到，走「别名收编」。
+                        </>
+                      }
+                    />
                   </form>,
                   r.query ? (
                     <Link key="alias" href={`/queue/${r.id}/alias`}>
@@ -288,8 +359,15 @@ export function QueueBoard(props: QueueBoardProps) {
           dataIndex: "stem",
           width: 300,
           render: (_, r) => (
-            <div style={{ whiteSpace: "pre-wrap", fontSize: 12.5 }}>
-              {r.stem ?? "（题不在库里了）"}
+            <div style={{ fontSize: 12.5 }}>
+              <Tooltip
+                title={
+                  <pre style={前置样式}>{r.stem ?? "（题不在库里了）"}</pre>
+                }
+                styles={{ root: { maxWidth: 560 } }}
+              >
+                <div style={多行截断}>{r.stem ?? "（题不在库里了）"}</div>
+              </Tooltip>
               {r.questionId ? (
                 <div style={{ color: "#909399", marginTop: 2 }}>
                   <Link href={`/question/${r.questionId}`}>看这道题 →</Link>
@@ -355,9 +433,22 @@ export function QueueBoard(props: QueueBoardProps) {
                   >
                     <input type="hidden" name="id" value={r.id} />
                     <Back tab={tab} state={state} />
-                    <Button size="small" type="primary" ghost htmlType="submit">
-                      图对得上，通过
-                    </Button>
+                    <ConfirmSubmit
+                      label="图对得上，通过"
+                      primary
+                      okText="通过"
+                      title="这张题干图与题面对得上？"
+                      description={
+                        <>
+                          figure.review_state → <b>passed</b>，并
+                          <b>摘掉该题的必审位</b>
+                          （question.review_required → 0），本工单关掉。
+                          <br />
+                          🔴 摘掉必审位之后这道题就<b>算数了</b>
+                          （会进检索、能被组进册子）——图文对不上就别按。
+                        </>
+                      }
+                    />
                   </form>,
                   <Link key="reject" href={`/queue/${r.id}/reject`}>
                     驳回…
@@ -375,9 +466,18 @@ export function QueueBoard(props: QueueBoardProps) {
           width: 320,
           render: (_, r) => (
             <div style={{ fontSize: 12.5 }}>
-              <div style={{ whiteSpace: "pre-wrap" }}>
-                {r.stem ?? "（payload 里没有 stem）"}
-              </div>
+              <Tooltip
+                title={
+                  <pre style={前置样式}>
+                    {r.stem ?? "（payload 里没有 stem）"}
+                  </pre>
+                }
+                styles={{ root: { maxWidth: 560 } }}
+              >
+                <div style={多行截断}>
+                  {r.stem ?? "（payload 里没有 stem）"}
+                </div>
+              </Tooltip>
               <div style={{ color: "#909399", marginTop: 2 }}>
                 答案：{r.answer ?? "（无）"} · 来源 {r.source ?? "—"}
               </div>
@@ -424,9 +524,25 @@ export function QueueBoard(props: QueueBoardProps) {
                   >
                     <input type="hidden" name="id" value={r.id} />
                     <Back tab={tab} state={state} />
-                    <Button size="small" type="primary" ghost htmlType="submit">
-                      转正入库
-                    </Button>
+                    <ConfirmSubmit
+                      label="转正入库"
+                      primary
+                      okText="转正"
+                      title="把这道草稿真的录进题库？"
+                      description={
+                        <>
+                          走一遍<b>完整的十道闸</b>再落 question ——
+                          闸红了就不入库，红灯原文会回到本页顶上。
+                          <br />
+                          过了则：题进库、本工单关掉；带题干图的还会另开一条图审工单。
+                          <br />
+                          🔴 这是<b>真入库</b>，不是「标记通过」。
+                          {r.precheckOk === false
+                            ? "预检已经报了红灯，多半会被拦下。"
+                            : ""}
+                        </>
+                      }
+                    />
                   </form>,
                   <Link key="reject" href={`/queue/${r.id}/reject`}>
                     驳回…
@@ -475,9 +591,34 @@ export function QueueBoard(props: QueueBoardProps) {
                   <input type="hidden" name="id" value={r.id} />
                   <input type="hidden" name="verdict" value="passed" />
                   <Back tab={tab} state={state} />
-                  <Button size="small" htmlType="submit">
-                    {r.kind === "模型转正" ? "转正（模型→active）" : "通过"}
-                  </Button>
+                  <ConfirmSubmit
+                    label={
+                      r.kind === "模型转正" ? "转正（模型→active）" : "通过"
+                    }
+                    okText={r.kind === "模型转正" ? "转正" : "通过"}
+                    title={
+                      r.kind === "模型转正"
+                        ? "把这个考察模型转成现役？"
+                        : "判这条工单「通过」？"
+                    }
+                    description={
+                      r.kind === "模型转正" ? (
+                        <>
+                          走 core 的 <b>activateModel</b>：模型 proposed →{" "}
+                          <b>active</b>，本工单在<b>同一事务</b>里关掉
+                          （不是只关工单）。
+                          <br />
+                          🔴 转正之后它就能被拿去出题了。
+                        </>
+                      ) : (
+                        <>
+                          本工单 → <b>passed</b>，另记一条审计行。
+                          <br />
+                          本类没有额外的连带写 —— 就是「这条我看过了，放行」。
+                        </>
+                      )
+                    }
+                  />
                 </form>,
                 <Link key="reject" href={`/queue/${r.id}/reject`}>
                   驳回…
@@ -661,11 +802,22 @@ export function QueueBoard(props: QueueBoardProps) {
           const q = new URLSearchParams();
           q.set("tab", String((params as { tab?: string }).tab ?? tab));
           q.set("state", String((params as { state?: string }).state ?? state));
-          const res = await fetch(`/api/queue?${q.toString()}`);
-          const j = (await res.json()) as QueueListResponse;
-          setCounts(j.counts);
-          setListErr(j.ok ? undefined : j.error);
-          return { data: j.data, total: j.total, success: true };
+          // 🔴 fetch 本身炸了 ProTable 会吞掉异常，页面显示成"这一类没有待处置的东西"
+          //    —— 队列空是好事，把故障说成好事是最坏的一种吞（检查单 2）。
+          try {
+            const res = await fetch(`/api/queue?${q.toString()}`);
+            const j = (await res.json()) as QueueListResponse;
+            setCounts(j.counts);
+            setListErr(j.ok ? undefined : j.error);
+            return { data: j.data, total: j.total, success: true };
+          } catch (e) {
+            setListErr(
+              `请求没发出去（或没回来）：${
+                e instanceof Error ? `${e.name}: ${e.message}` : String(e)
+              }`,
+            );
+            return { data: [], total: 0, success: false };
+          }
         }}
       />
     </>

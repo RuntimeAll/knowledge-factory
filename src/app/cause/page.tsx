@@ -12,7 +12,7 @@
  */
 import { Alert } from "antd";
 
-import { DataSourceNote } from "~/components/console/ui";
+import { PageHead } from "~/components/console/page-head";
 import { causeDistribution, getCause, listCauses } from "~/core";
 import { param } from "../kg/shared";
 import { CausePanels } from "./panels";
@@ -30,28 +30,22 @@ export default async function CausePage({
   const err = param(sp, "err");
 
   const 头 = (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "baseline",
-        gap: 12,
-        marginBottom: 12,
-        flexWrap: "wrap",
-      }}
-    >
-      <h1 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>错因管理</h1>
-      <span style={{ fontSize: 12.5, color: "#909399" }}>
-        错因实体 + (考点,码) 映射台账 + unmapped 红旗队列 ——
-        补映射是页面上的写，其余只读
-      </span>
-      <span style={{ marginLeft: "auto" }}>
-        <DataSourceNote>
+    <PageHead
+      title={<>错因管理</>}
+      sub={
+        <>
+          错因实体 + (考点,码) 映射台账 + unmapped 红旗队列 ——
+          补映射是页面上的写，其余只读
+        </>
+      }
+      source={
+        <>
           表 error_cause / err_code_map(kp_id, err_code) / kp_error /
           cause_example · core.listCauses / getCause / causeDistribution（挂桥
           现算自圣域 mode=ro）
-        </DataSourceNote>
-      </span>
-    </div>
+        </>
+      }
+    />
   );
 
   let causes: CauseEntityRow[];

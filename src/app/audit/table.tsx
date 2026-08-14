@@ -17,10 +17,36 @@ import {
 } from "@ant-design/pro-components";
 import { Alert, Table, Tag, Tooltip, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
+import Link from "next/link";
 import { useRef, useState } from "react";
 
-import { CopyCmd, EmptyHint, TimeText } from "~/components/console/ui";
+import {
+  CopyCmd,
+  EmptyHint,
+  LongText,
+  TimeText,
+} from "~/components/console/ui";
 import type { AuditListResponse, AuditRefView, AuditRow } from "./shared";
+
+/**
+ * 影响行 → 它自己的页（AI:PRD-009 · 检查单 ④「看到即可达」）。
+ *
+ * 🔴 只登记**确实存在的详情页**：question_kp / sku_item / kp_alias 这类关联表
+ *    没有自己的页，review_queue 也只有处置动作页（/queue/[id]/reject）没有详情页 ——
+ *    一律不给链接。不可点是遗憾，点过去 404 是欺骗。
+ * 🔴 id 一律 encodeURIComponent：审计行里的 id 是从库里原样取的，
+ *    将来出现带 `/` 或空格的键时不会把路由劈开。
+ */
+const REF_ROUTE: Record<string, (id: string) => string> = {
+  question: (id) => `/question/${encodeURIComponent(id)}`,
+  kp: (id) => `/kg/kp/${encodeURIComponent(id)}`,
+  edition_tree: (id) => `/kg/tree/${encodeURIComponent(id)}`,
+  sku: (id) => `/sku/${encodeURIComponent(id)}`,
+  exam_model: (id) => `/model/${encodeURIComponent(id)}`,
+  ingest_batch: (id) => `/ingest?batch=${encodeURIComponent(id)}`,
+  quarantine: (id) => `/queue/quarantine/${encodeURIComponent(id)}`,
+  roster: (id) => `/student/${encodeURIComponent(id)}`,
+};
 
 interface QueryForm {
   actor?: string;
@@ -99,13 +125,12 @@ export function AuditTable() {
         showSearch: true,
       },
       tooltip: "写路径的名字（core 原语 / 脚本名）——候选来自全表 distinct",
-      render: (_, r) => (
-        <span
-          style={{ fontFamily: "Consolas, Menlo, monospace", fontSize: 12 }}
-        >
-          {r.tool ?? "—"}
-        </span>
-      ),
+      render: (_, r) =>
+        r.tool ? (
+          <LongText text={r.tool} maxWidth={172} mono />
+        ) : (
+          <span style={{ color: "#c0c4cc" }}>—</span>
+        ),
     },
     {
       title: "影响行摘要",
@@ -148,18 +173,32 @@ export function AuditTable() {
   ];
 
   const refColumns: ColumnsType<AuditRefView> = [
-    { title: "表", dataIndex: "table", width: 200 },
-    { title: "操作", dataIndex: "op", width: 90 },
+    { title: "表", dataIndex: "table", width: 180 },
+    { title: "操作", dataIndex: "op", width: 80 },
     {
       title: "行 id",
       dataIndex: "id",
-      render: (_, r) => (
-        <span
-          style={{ fontFamily: "Consolas, Menlo, monospace", fontSize: 12 }}
-        >
-          {r.id}
-        </span>
-      ),
+      render: (_, r) => {
+        const to = REF_ROUTE[r.table]?.(r.id);
+        const body = (
+          <span
+            style={{ fontFamily: "Consolas, Menlo, monospace", fontSize: 12 }}
+          >
+            {r.id}
+          </span>
+        );
+        // 🔴 检查单 ④：审计行说「动了 question ULID…」，人当然想点进去看动的是哪道题。
+        //    有详情页的就给链接；没有的（关联表）保持纯文本，不假装可点。
+        return to ? (
+          <Tooltip title={`去 ${to}`}>
+            <Link href={to}>{body}</Link>
+          </Tooltip>
+        ) : (
+          <Tooltip title="这张表没有自己的详情页（关联表 / 只在别的页里出现）">
+            {body}
+          </Tooltip>
+        );
+      },
     },
   ];
 
@@ -195,7 +234,15 @@ export function AuditTable() {
         }}
         headerTitle="审计行（seq 倒序）"
         locale={{
-          emptyText: (
+          // 🔴 检查单 ⑥：空态与「读不出」必须是两句话。读失败时还端出
+          //    「这段时间没有写操作留痕」，等于用一句结论把一次事故盖住了。
+          emptyText: err ? (
+            <EmptyHint>
+              这一屏是空的，<b>因为上面那次读失败了</b> —— 不是「没有审计行」。
+              <br />
+              修好再刷新；在此之前，本页对「谁动过库」不给任何结论。
+            </EmptyHint>
+          ) : (
             <EmptyHint>
               这段时间没有写操作留痕。
               <br />
@@ -222,6 +269,7 @@ export function AuditTable() {
                   columns={refColumns}
                   dataSource={r.refs}
                   pagination={false}
+                  scroll={{ x: 480 }}
                 />
               ) : (
                 <pre
@@ -268,12 +316,29 @@ export function AuditTable() {
           if (params.from) q.set("from", params.from);
           if (params.to) q.set("to", params.to);
 
-          const res = await fetch(`/api/audit?${q.toString()}`);
-          const j = (await res.json()) as AuditListResponse;
-          setErr(j.ok ? undefined : j.error);
-          setActors(j.actors);
-          setTools(j.tools);
-          return { data: j.data, total: j.total, success: true };
+          // 🔴 检查单 ②：取数**整条链**都要接住。原先只认路由返回体里的 error，
+          //    可 fetch 本身失败（服务没起 / 500 / 响应不是 JSON）时这里会抛，
+          //    ProTable 只把表清空 —— 屏幕上就变成那句「这段时间没有写操作留痕」，
+          //    把一次读失败画成了"库里很干净"。这是本页最不能出的错。
+          try {
+            const res = await fetch(`/api/audit?${q.toString()}`);
+            if (!res.ok) {
+              setErr(`HTTP ${res.status} ${res.statusText}（GET /api/audit）`);
+              return { data: [], total: 0, success: false };
+            }
+            const j = (await res.json()) as AuditListResponse;
+            setErr(j.ok ? undefined : j.error);
+            setActors(j.actors);
+            setTools(j.tools);
+            return { data: j.data, total: j.total, success: j.ok };
+          } catch (e) {
+            setErr(
+              e instanceof Error
+                ? `${e.name}: ${e.message}（GET /api/audit）`
+                : String(e),
+            );
+            return { data: [], total: 0, success: false };
+          }
         }}
       />
     </>

@@ -14,13 +14,10 @@
 import { Alert, Card, Descriptions } from "antd";
 import Link from "next/link";
 
-import {
-  DataSourceNote,
-  EmptyHint,
-  StatusTag,
-  TimeText,
-} from "~/components/console/ui";
+import { PageHead } from "~/components/console/page-head";
+import { EmptyHint, StatusTag, TimeText } from "~/components/console/ui";
 import { SKU_STATUSES, getSku } from "~/core";
+import { ConfirmSubmit } from "~/components/console/confirm";
 import { setSkuStatusAction } from "../../actions";
 
 export const dynamic = "force-dynamic";
@@ -51,7 +48,34 @@ export default async function SkuStatusConfirmPage({
   const sp = await searchParams;
   const to = one(sp, "to");
 
-  const card = await getSku(id);
+  // 🔴 读不出来也要原文照登：确认页读不到卡就直接 500 白屏，
+  //    人只会看到「这页坏了」，看不到「库连不上」这条真消息。
+  let card: Awaited<ReturnType<typeof getSku>> = null;
+  let loadError = "";
+  try {
+    card = await getSku(id);
+  } catch (e) {
+    loadError = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+  }
+
+  if (loadError) {
+    return (
+      <Alert
+        type="error"
+        showIcon
+        message="这本册子读不出来，确认页不能给你按（原文照登）"
+        description={
+          <div style={{ fontSize: 12.5, whiteSpace: "pre-wrap" }}>
+            {loadError}
+            {"\n"}id = {id}
+            {"\n\n"}
+            <Link href={`/sku/${id}`}>回册子详情</Link> 再试一次。
+          </div>
+        }
+      />
+    );
+  }
+
   if (!card) {
     return (
       <Card size="small">
@@ -83,32 +107,23 @@ export default async function SkuStatusConfirmPage({
 
   return (
     <>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "baseline",
-          gap: 12,
-          marginBottom: 12,
-        }}
-      >
-        <h1 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>
-          {to === "active" ? "上架" : to === "retired" ? "下架" : "改回草稿"}·
-          确认
-        </h1>
-        <span style={{ fontSize: 12.5, color: "#909399" }}>
-          确认之后才改库 —— 这一步只改 sku.status 一列，并留一条审计行
-        </span>
-        <span style={{ marginLeft: "auto" }}>
-          <DataSourceNote>
-            core.setSkuStatus · 表 sku（单列 update）
-          </DataSourceNote>
-        </span>
-      </div>
+      {/* 🔴 flexWrap：窄屏上不换行会把标题挤成竖排（全站页头一律 wrap） */}
+      <PageHead
+        title={
+          <>
+            {to === "active" ? "上架" : to === "retired" ? "下架" : "改回草稿"}·
+            确认
+          </>
+        }
+        sub={<>确认之后才改库 —— 这一步只改 sku.status 一列，并留一条审计行</>}
+        source={<>core.setSkuStatus · 表 sku（单列 update）</>}
+      />
 
       <Card size="small" style={{ marginBottom: 12 }}>
         <Descriptions
           size="small"
-          column={2}
+          // 🔴 响应式：手机一列。确认页尤其不能挤 ——「从什么改成什么」看不清就等于没确认
+          column={{ xs: 1, sm: 2 }}
           items={[
             { key: "name", label: "册子", children: card.name },
             {
@@ -194,28 +209,46 @@ export default async function SkuStatusConfirmPage({
               />
             </label>
           </div>
-          {/* 🔴 提交按钮用原生 button：确认页是 server component，
-              这里不为了一个按钮把整页拖成 client。 */}
-          <button
-            type="submit"
-            style={{
-              background: "#409eff",
-              color: "#fff",
-              border: "1px solid #409eff",
-              borderRadius: 3,
-              padding: "5px 16px",
-              fontSize: 13,
-              cursor: "pointer",
-            }}
-          >
-            确认改成 {to}
-          </button>
-          <Link
-            href={`/sku/${card.id}`}
-            style={{ marginInlineStart: 14, fontSize: 13 }}
-          >
-            取消
-          </Link>
+          {/* 🔴 提交按钮是唯一的 client 组件（确认页整体仍是 server component）：
+              它要的是**提交态** —— 原来那个原生 button 点两下就落两条审计行。
+              文案写「从什么改成什么」，不写「确定」。
+              🔴 集成收口②：本页原来内联的 `./submit.tsx`（只有防连点、没有弹层）
+              已被删掉，统一走 `~/components/console/confirm` 那份 ——
+              检查单 §三·7 要的是「统一形态 + 列明影响面」，所以最后这一下
+              也和全站其余五类写操作一样再弹一层（确认页照旧留着，规矩不改）。 */}
+          <ConfirmSubmit
+            label={
+              to === "active"
+                ? `确认上架（状态 ${card.status ?? "空"} → active）`
+                : to === "retired"
+                  ? `确认下架（状态 ${card.status ?? "空"} → retired）`
+                  : `确认改回草稿（状态 ${card.status ?? "空"} → draft）`
+            }
+            title={
+              to === "retired"
+                ? "确认把这本册子下架？"
+                : to === "active"
+                  ? "确认把这本册子上架？"
+                  : "确认把这本册子改回草稿？"
+            }
+            description={
+              <>
+                <div>
+                  · 册子：<b>{card.name ?? card.id}</b>
+                </div>
+                <div>
+                  · 状态：<b>{card.status ?? "空"}</b> → <b>{to}</b>
+                  （只改 sku.status 一列）
+                </div>
+                <div>· 题单 / 产物 / 挂桥 / 审计痕迹：一样不动。</div>
+                <div>· 会落一条审计行；改错了原路再改回来即可（可逆）。</div>
+              </>
+            }
+            okText={to === "retired" ? "确认下架" : "确认"}
+            danger={to === "retired"}
+            cancelHref={`/sku/${card.id}`}
+            block
+          />
         </form>
       </Card>
     </>

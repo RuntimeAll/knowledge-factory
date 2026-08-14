@@ -15,11 +15,16 @@ import {
   type ActionType,
   type ProColumns,
 } from "@ant-design/pro-components";
-import { Alert, Tag, Tooltip, Typography } from "antd";
+import { Alert, Tag, Tooltip } from "antd";
 import Link from "next/link";
 import { useRef, useState } from "react";
 
-import { EmptyHint, StatusTag, TimeText } from "~/components/console/ui";
+import {
+  EmptyHint,
+  HashTail,
+  StatusTag,
+  TimeText,
+} from "~/components/console/ui";
 import {
   humanBytes,
   type OutputListMeta,
@@ -41,26 +46,6 @@ export interface OutputTableProps {
   kinds: readonly string[];
   /** 从 /sku 详情点「本册产物」过来时带的册子 id */
   initialSku?: string;
-}
-
-/**
- * 内容 hash 的短串 + 复制。
- * 🔴 hash 认前缀（`a3f1c9…`），ULID 认尾 6 位 ——
- *    ~/components/console/ui 的 IdTail 是给 ULID 的，这里不套它。
- *    （同一段也在 `app/sku/[id]/panels.tsx` 里有一份：那是详情页的产物表，
- *      两处都只有八行，比为它去动地基的公共件划算。）
- */
-function HashTail({ hash }: { hash: string }) {
-  return (
-    <Tooltip title={hash}>
-      <Typography.Text
-        copyable={{ text: hash, tooltips: ["复制全 hash", "已复制"] }}
-        style={{ fontFamily: "Consolas, Menlo, monospace", fontSize: 12 }}
-      >
-        {hash.slice(0, 8)}…
-      </Typography.Text>
-    </Tooltip>
-  );
 }
 
 function extOf(path: string | null): string {
@@ -151,9 +136,21 @@ export function OutputTable(props: OutputTableProps) {
       },
       render: (_, r) => (
         <div style={{ fontSize: 12.5 }}>
-          <Link href={`/sku/${r.skuId}`} style={{ color: "inherit" }}>
-            {r.skuName}
-          </Link>
+          {/* 🔴 册名长过一列时截断 + 悬停全名（下面那行 tag 不参与截断） */}
+          <Tooltip title={r.skuName} styles={{ root: { maxWidth: 520 } }}>
+            <Link
+              href={`/sku/${r.skuId}`}
+              style={{
+                color: "inherit",
+                display: "block",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {r.skuName}
+            </Link>
+          </Tooltip>
           <div style={{ marginTop: 2 }}>
             {r.skuType ? <Tag>{r.skuType}</Tag> : null}
             <StatusTag value={r.skuStatus} />
@@ -328,11 +325,27 @@ export function OutputTable(props: OutputTableProps) {
             q.set("order", so === "ascend" ? "asc" : "desc");
           }
 
-          const res = await fetch(`/api/outputs?${q.toString()}`);
-          const j = (await res.json()) as OutputListResponse;
-          setMeta(j.meta);
-          setErr(j.ok ? undefined : j.error);
-          return { data: j.data, total: j.total, success: true };
+          // 🔴 三种失败都要上墙（与 /sku 同一写法）：ok:false / HTTP 非 2xx /
+          //    fetch 抛。后两种不 catch 会被 ProTable 吞成「暂无数据」的空表 ——
+          //    产物这一页尤其致命：空表看着就像「这本册子没出过件」。
+          try {
+            const res = await fetch(`/api/outputs?${q.toString()}`);
+            if (!res.ok) {
+              throw new Error(
+                `GET /api/outputs 返回 HTTP ${res.status} ${res.statusText}`,
+              );
+            }
+            const j = (await res.json()) as OutputListResponse;
+            setMeta(j.meta);
+            setErr(
+              j.ok ? undefined : (j.error ?? "接口返回 ok=false，但没给原因"),
+            );
+            return { data: j.data, total: j.total, success: true };
+          } catch (e) {
+            setMeta(null);
+            setErr(e instanceof Error ? `${e.name}: ${e.message}` : String(e));
+            return { data: [], total: 0, success: true };
+          }
         }}
       />
     </>

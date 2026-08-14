@@ -34,6 +34,15 @@ const MONO: React.CSSProperties = {
   fontSize: 12.5,
 };
 const 灰: React.CSSProperties = { color: "#909399" };
+/** 数字列一律等宽数字（🔴 检查单 §三·3） */
+const 数字: React.CSSProperties = { fontVariantNumeric: "tabular-nums" };
+/** 长文截两行 + 悬停看全文（🔴 检查单 §三·3：原文一个字不改，只是折起来） */
+const 折两行: React.CSSProperties = {
+  display: "-webkit-box",
+  WebkitLineClamp: 2,
+  WebkitBoxOrient: "vertical",
+  overflow: "hidden",
+};
 
 /** 从数据里现推的列筛选项（不写死字典：码/错因都会长） */
 function 选项(values: string[]): { text: string; value: string }[] {
@@ -46,10 +55,12 @@ export function CausePanels(props: CausePanelsProps) {
       title: "错因实体",
       dataIndex: "name",
       render: (_, r) => (
-        <div style={{ fontSize: 12.5 }}>
-          <b>{r.name}</b>
-          {r.desc ? <div style={灰}>{r.desc}</div> : null}
-        </div>
+        <Tooltip title={r.desc ? `${r.name}\n${r.desc}` : r.name}>
+          <div style={{ fontSize: 12.5 }}>
+            <b>{r.name}</b>
+            {r.desc ? <div style={{ ...灰, ...折两行 }}>{r.desc}</div> : null}
+          </div>
+        </Tooltip>
       ),
     },
     {
@@ -74,7 +85,7 @@ export function CausePanels(props: CausePanelsProps) {
       dataIndex: "kps",
       width: 90,
       sorter: (a, b) => a.kps - b.kps,
-      render: (_, r) => <span>{r.kps}</span>,
+      render: (_, r) => <span style={数字}>{r.kps}</span>,
     },
     {
       title: "诊断例题",
@@ -83,10 +94,12 @@ export function CausePanels(props: CausePanelsProps) {
       sorter: (a, b) => a.examples - b.examples,
       render: (_, r) =>
         r.examples >= 2 ? (
-          <span>{r.examples}</span>
+          <span style={数字}>{r.examples}</span>
         ) : (
           <Tooltip title="M1 口径 ≥2 道。🔴 软闸：不拦，但少于两道就讲不清「这类错长什么样」。补例题走 addCauseExample（agent/MCP）">
-            <Tag color="orange">{r.examples} · 不足 2</Tag>
+            <Tag color="orange" style={数字}>
+              {r.examples} · 不足 2
+            </Tag>
           </Tooltip>
         ),
     },
@@ -95,7 +108,7 @@ export function CausePanels(props: CausePanelsProps) {
       dataIndex: "errCodes",
       width: 90,
       sorter: (a, b) => a.errCodes - b.errCodes,
-      render: (_, r) => <span>{r.errCodes}</span>,
+      render: (_, r) => <span style={数字}>{r.errCodes}</span>,
     },
   ];
 
@@ -166,12 +179,23 @@ export function CausePanels(props: CausePanelsProps) {
       dataIndex: "count",
       width: 80,
       sorter: (a, b) => a.count - b.count,
+      render: (_, r) => <span style={数字}>{r.count}</span>,
     },
     {
       title: "样本（指得回去）",
       dataIndex: "samples",
+      // 🔴 检查单 §三·4 的例外，写在这儿免得下一个人再想一遍：
+      //    样本是 `b<批次号>·q<题号>`，而终审页按 (代号, 打卡次) 定位 ——
+      //    这张表是**跨学员**汇总的，行上根本没有代号，链接拼不出来。
+      //    宁可不给链接，也不给一个可能跳错人的链接。
+      tooltip:
+        "b<批次号>·q<题号>（圣域 审核.db）。🔴 这里不做跳转：本表跨学员汇总，行上没有代号，拼不出终审页地址（终审页按 代号 + 打卡次 定位）——去 批改看板 按批次号找",
       render: (_, r) => (
-        <span style={{ ...MONO, fontSize: 12 }}>{r.samples.join("、")}</span>
+        <Tooltip title={r.samples.join("、")}>
+          <span style={{ ...MONO, fontSize: 12, ...折两行 }}>
+            {r.samples.join("、")}
+          </span>
+        </Tooltip>
       ),
     },
     {
@@ -197,7 +221,7 @@ export function CausePanels(props: CausePanelsProps) {
         <Alert
           type="error"
           showIcon
-          style={{ marginBottom: 10 }}
+          style={{ marginBottom: 12 }}
           message={<span style={{ whiteSpace: "pre-wrap" }}>{props.err}</span>}
         />
       ) : null}
@@ -205,7 +229,7 @@ export function CausePanels(props: CausePanelsProps) {
         <Alert
           type="success"
           showIcon
-          style={{ marginBottom: 10 }}
+          style={{ marginBottom: 12 }}
           message={<span style={{ whiteSpace: "pre-wrap" }}>{props.ok}</span>}
         />
       ) : null}

@@ -24,13 +24,11 @@
  *    没跑过就如实说「没跑过」，绝不画一个看起来像真的假结果。
  */
 import { Alert, Card, Col, Row, Tag, Tooltip } from "antd";
+import Link from "next/link";
 
-import {
-  CopyCmd,
-  DataSourceNote,
-  EmptyHint,
-  TimeText,
-} from "~/components/console/ui";
+import { PageHead } from "~/components/console/page-head";
+import { MONO, NUM, ScrollX, TABLE, TD, TH } from "~/components/console/table";
+import { CopyCmd, EmptyHint, TimeText } from "~/components/console/ui";
 import {
   getLatestIntegritySummary,
   getLatestRegressionSummary,
@@ -57,21 +55,9 @@ function bytesText(n: number): string {
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
-const TH: React.CSSProperties = {
-  background: "#f5f7fa",
-  color: "#606266",
-  fontWeight: 500,
-  fontSize: 12.5,
-  textAlign: "left",
-  padding: "7px 10px",
-  borderBottom: "1px solid #ebeef5",
-};
-const TD: React.CSSProperties = {
-  padding: "7px 10px",
-  borderBottom: "1px solid #ebeef5",
-  fontSize: 12.5,
-  verticalAlign: "top",
-};
+// 🔴 TH/TD 已收编到 ~/components/console/table（AI:PRD-009 · 检查单 ⑩）：
+//    本页与工作台原先各抄一份，padding 8px vs 7px、字号 13 vs 12.5，
+//    两页来回切能看出表格行高在跳。现在两边同一把尺子。
 
 export default async function HealthPage() {
   const [h, integ, snaps, reg] = await Promise.all([
@@ -88,39 +74,13 @@ export default async function HealthPage() {
 
   return (
     <>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "baseline",
-          gap: 12,
-          marginBottom: 12,
-        }}
-      >
-        {/* 🔴 nowrap：数据源那行字长，不钉住的话标题会被挤成「备份与对 / 账」两行 */}
-        <h1
-          style={{
-            fontSize: 18,
-            fontWeight: 600,
-            margin: 0,
-            whiteSpace: "nowrap",
-          }}
-        >
-          备份与对账
-        </h1>
-        <span
-          style={{ fontSize: 12.5, color: "#909399", whiteSpace: "nowrap" }}
-        >
-          库健不健康一页看完 —— 只读，页面不触发任何写
-        </span>
-        <span style={{ marginLeft: "auto", textAlign: "right" }}>
-          <DataSourceNote>
-            core.health / core.getLatestIntegritySummary（metric_event 的
-            integrity_check 最近一行）/ core.listBackups（data/backup/）/
-            core.getLatestRegressionSummary（metric_event 的 regression
-            最近一行）
-          </DataSourceNote>
-        </span>
-      </div>
+      {/* 🔴 标题 nowrap（数据源那行字长，不钉住会被挤成「备份与对 / 账」两行）
+          现在由共享件 PageHead 统一保证，全站 25 页同一个页头形状 */}
+      <PageHead
+        title="备份与对账"
+        sub="库健不健康一页看完 —— 只读，页面不触发任何写"
+        source="core.health / core.getLatestIntegritySummary（metric_event 的 integrity_check 最近一行）/ core.listBackups（data/backup/）/ core.getLatestRegressionSummary（metric_event 的 regression 最近一行）"
+      />
 
       {/* ── 库体检（毫秒级，现算）───────────────────────────────────────── */}
       <Card size="small" title="库体检（现算）" style={{ marginBottom: 14 }}>
@@ -133,9 +93,14 @@ export default async function HealthPage() {
                 {体检.ok ? "库活着 · 闸静息 · 链尾正常" : "不健康"}
               </Tag>
               <br />
-              表数 {体检.tableCount} 张（含 FTS 影子表与机制表；WP2 立项时 41）
+              表数 <span style={NUM}>{体检.tableCount}</span> 张（含 FTS
+              影子表与机制表；WP2 立项时 41）
               <br />
-              审计链尾 seq {体检.auditHeadSeq ?? "—（空链）"}
+              {/* 检查单 ④：seq 是审计链上的位置，点得进 /audit 才叫闭环 */}
+              审计链尾 seq{" "}
+              <Link href="/audit">
+                <span style={NUM}>{体检.auditHeadSeq ?? "—（空链）"}</span>
+              </Link>
             </Col>
             <Col xs={24} lg={8}>
               写闸 allowed=<b>{体检.writeGate}</b>
@@ -192,46 +157,48 @@ export default async function HealthPage() {
                 （metric_event #{对账.metricId}）
               </span>
             </div>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead>
-                <tr>
-                  <th style={{ ...TH, width: 56 }}>项</th>
-                  <th style={TH}>说明</th>
-                  <th style={{ ...TH, width: 96 }}>最近结果</th>
-                </tr>
-              </thead>
-              <tbody>
-                {CHECK_IDS.map((id) => {
-                  const item = 对账.items.find((i) => i.id === id) ?? null;
-                  const red = 对账.red.includes(id);
-                  const warn = 对账.warn.includes(id);
-                  return (
-                    <tr key={id}>
-                      <td style={TD}>
-                        <b>{id}</b>
-                      </td>
-                      <td style={TD}>
-                        {/* 🔴 名字用摘要里那份 —— 它是**当次对账**的原话。
+            <ScrollX min={420}>
+              <table style={TABLE}>
+                <thead>
+                  <tr>
+                    <th style={{ ...TH, width: 56 }}>项</th>
+                    <th style={TH}>说明</th>
+                    <th style={{ ...TH, width: 96 }}>最近结果</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {CHECK_IDS.map((id) => {
+                    const item = 对账.items.find((i) => i.id === id) ?? null;
+                    const red = 对账.red.includes(id);
+                    const warn = 对账.warn.includes(id);
+                    return (
+                      <tr key={id}>
+                        <td style={TD}>
+                          <b>{id}</b>
+                        </td>
+                        <td style={TD}>
+                          {/* 🔴 名字用摘要里那份 —— 它是**当次对账**的原话。
                             本页的 CHECK_TITLE 只作兜底：WP6 之前落的老摘要行没有
                             items 字段，那时才拿它顶上（两份并排摆等于同一句话说两遍）。 */}
-                        {item?.name ?? CHECK_TITLE[id]}
-                      </td>
-                      <td style={TD}>
-                        {red ? (
-                          <Tag color="red">RED</Tag>
-                        ) : warn ? (
-                          <Tag color="orange">WARN</Tag>
-                        ) : item ? (
-                          <Tag color="green">PASS</Tag>
-                        ) : (
-                          <Tag>摘要里没这一项</Tag>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                          {item?.name ?? CHECK_TITLE[id]}
+                        </td>
+                        <td style={TD}>
+                          {red ? (
+                            <Tag color="red">RED</Tag>
+                          ) : warn ? (
+                            <Tag color="orange">WARN</Tag>
+                          ) : item ? (
+                            <Tag color="green">PASS</Tag>
+                          ) : (
+                            <Tag>摘要里没这一项</Tag>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </ScrollX>
             <div style={{ marginTop: 8, fontSize: 11.5, color: "#909399" }}>
               🔴 摘要只驮「哪几项红/warn」，不驮明细（C5 挂不上桥的是哪几批、 C1
               少了哪几行，摘要里没有）。要明细就点下面那个按钮现跑一次，
@@ -254,7 +221,13 @@ export default async function HealthPage() {
       {/* ── 快照列表 ───────────────────────────────────────────────────── */}
       <Card
         size="small"
-        title={`快照（data/backup/ · 列最近 ${快照.length} 份）`}
+        // 🔴 读失败时标题原先写「列最近 0 份」—— 那读起来就是"备份目录是空的"，
+        //    与"这份列表没读出来"差着一次灾难。读不出就别在标题里报数。
+        title={
+          typeof snaps === "string"
+            ? "快照（data/backup/ · 列不出来）"
+            : `快照（data/backup/ · 列最近 ${快照.length} 份）`
+        }
         style={{ marginBottom: 14 }}
         extra={
           <span style={{ fontSize: 11.5, color: "#909399" }}>
@@ -269,43 +242,40 @@ export default async function HealthPage() {
             一份快照都没有 —— 这不是「暂无数据」，这是没有退路。先跑一次备份。
           </EmptyHint>
         ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr>
-                <th style={TH}>文件</th>
-                <th style={{ ...TH, width: 110 }}>时间</th>
-                <th style={{ ...TH, width: 90 }}>大小</th>
-                <th style={{ ...TH, width: 100 }}>时点</th>
-                <th style={{ ...TH, width: 220 }}>验证结果</th>
-              </tr>
-            </thead>
-            <tbody>
-              {快照.map((s) => (
-                <tr key={s.path}>
-                  <td style={TD}>
-                    <span
-                      style={{
-                        fontFamily: "Consolas, Menlo, monospace",
-                        fontSize: 11.5,
-                      }}
-                    >
-                      {s.file}
-                    </span>
-                  </td>
-                  <td style={TD}>
-                    <TimeText iso={s.mtime} />
-                  </td>
-                  <td style={TD}>{bytesText(s.bytes)}</td>
-                  <td style={TD}>
-                    <Tag>{s.reason}</Tag>
-                  </td>
-                  <td style={{ ...TD, color: "#909399" }}>
-                    未验证（本页只 stat 文件，没打开过它）
-                  </td>
+          <ScrollX min={720}>
+            <table style={TABLE}>
+              <thead>
+                <tr>
+                  <th style={TH}>文件</th>
+                  <th style={{ ...TH, width: 110 }}>时间</th>
+                  <th style={{ ...TH, width: 90 }}>大小</th>
+                  <th style={{ ...TH, width: 100 }}>时点</th>
+                  <th style={{ ...TH, width: 220 }}>验证结果</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {快照.map((s) => (
+                  <tr key={s.path}>
+                    <td style={TD}>
+                      <Tooltip title={s.path}>
+                        <span style={MONO}>{s.file}</span>
+                      </Tooltip>
+                    </td>
+                    <td style={TD}>
+                      <TimeText iso={s.mtime} />
+                    </td>
+                    <td style={{ ...TD, ...NUM }}>{bytesText(s.bytes)}</td>
+                    <td style={TD}>
+                      <Tag>{s.reason}</Tag>
+                    </td>
+                    <td style={{ ...TD, color: "#909399" }}>
+                      未验证（本页只 stat 文件，没打开过它）
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </ScrollX>
         )}
         <div style={{ marginTop: 10 }}>
           <CopyCmd
@@ -355,49 +325,49 @@ export default async function HealthPage() {
                 {回归.metricId}）
               </span>
             </div>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead>
-                <tr>
-                  <th style={{ ...TH, width: 92 }}>关</th>
-                  <th style={TH}>名称</th>
-                  <th style={{ ...TH, width: 72 }}>耗时</th>
-                  <th style={{ ...TH, width: 90 }}>结果</th>
-                </tr>
-              </thead>
-              <tbody>
-                {回归.gates.map((g) => (
-                  <tr key={g.id}>
-                    <td style={TD}>
-                      <b>{g.id}</b>
-                    </td>
-                    <td style={TD}>
-                      {g.name}
-                      {g.reason ? (
-                        <div
-                          style={{
-                            color: "#c45656",
-                            whiteSpace: "pre-wrap",
-                            marginTop: 2,
-                          }}
-                        >
-                          原因：{g.reason}
-                        </div>
-                      ) : null}
-                    </td>
-                    <td style={{ ...TD, fontVariantNumeric: "tabular-nums" }}>
-                      {g.secs}s
-                    </td>
-                    <td style={TD}>
-                      {g.ok ? (
-                        <Tag color="green">PASS</Tag>
-                      ) : (
-                        <Tag color="red">FAIL</Tag>
-                      )}
-                    </td>
+            <ScrollX min={520}>
+              <table style={TABLE}>
+                <thead>
+                  <tr>
+                    <th style={{ ...TH, width: 92 }}>关</th>
+                    <th style={TH}>名称</th>
+                    <th style={{ ...TH, width: 72 }}>耗时</th>
+                    <th style={{ ...TH, width: 90 }}>结果</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {回归.gates.map((g) => (
+                    <tr key={g.id}>
+                      <td style={TD}>
+                        <b>{g.id}</b>
+                      </td>
+                      <td style={TD}>
+                        {g.name}
+                        {g.reason ? (
+                          <div
+                            style={{
+                              color: "#c45656",
+                              whiteSpace: "pre-wrap",
+                              marginTop: 2,
+                            }}
+                          >
+                            原因：{g.reason}
+                          </div>
+                        ) : null}
+                      </td>
+                      <td style={{ ...TD, ...NUM }}>{g.secs}s</td>
+                      <td style={TD}>
+                        {g.ok ? (
+                          <Tag color="green">PASS</Tag>
+                        ) : (
+                          <Tag color="red">FAIL</Tag>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </ScrollX>
             <div style={{ marginTop: 8, fontSize: 11.5, color: "#909399" }}>
               🔴 这是**上一跑**的账，不是此刻的结论：库/代码在这之后改过的话，
               它只说明「那时候是这样」。要现在的结论就照下面第③条命令再跑一轮。

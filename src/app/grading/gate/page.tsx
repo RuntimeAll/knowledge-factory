@@ -22,8 +22,10 @@
 import { readFileSync } from "node:fs";
 
 import { Alert, Card, Col, Row, Tag, Tooltip } from "antd";
+import Link from "next/link";
 
-import { DataSourceNote, StatCard, TimeText } from "~/components/console/ui";
+import { PageHead } from "~/components/console/page-head";
+import { StatCard, TimeText } from "~/components/console/ui";
 import { getGradingDb, nowLocalISO } from "~/core";
 import { pipelineConfigFile } from "../paths";
 import { RISK_LEDGER } from "./ledger";
@@ -225,25 +227,16 @@ export default async function GradingGatePage() {
 
   return (
     <>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "baseline",
-          gap: 12,
-          marginBottom: 12,
-        }}
-      >
-        <h1 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>升档判据</h1>
-        <span style={{ fontSize: 12.5, color: "#909399" }}>
-          升 L2 靠数字不靠感觉：L1 跑两周零翻案 ∧ 风险台账 8 条全关
-        </span>
-        <span style={{ marginLeft: "auto" }}>
-          <DataSourceNote>
+      <PageHead
+        title={<>升档判据</>}
+        sub={<>升 L2 靠数字不靠感觉：L1 跑两周零翻案 ∧ 风险台账 8 条全关</>}
+        source={
+          <>
             审核.db（mode=ro：batches / items）现算 · 档位读 {cfgPath} ·
             台账正本 = 需求沉淀-2026-08-13-无人值守流水线.md §五
-          </DataSourceNote>
-        </span>
-      </div>
+          </>
+        }
+      />
 
       {dbError ? (
         <Alert
@@ -330,11 +323,17 @@ export default async function GradingGatePage() {
             ) : 零翻案 ? (
               <Tag color="green">是 · {全量.judgedHuman} 题次 0 翻案</Tag>
             ) : (
+              // 🔴 检查单 §三·3 时间统一：这里原来直接印库里的整串
+              //    `2026-08-11T00:49:48`，与全站 `MM-DD HH:mm`（悬停看全量）两套写法。
               <Tag color="red">
                 否 · {全量.flipsHuman}/{全量.judgedHuman} 被翻
-                {全量.lastFlipAt
-                  ? `（最近一次在 ${全量.lastFlipAt} 建的批次）`
-                  : ""}
+                {全量.lastFlipAt ? (
+                  <>
+                    （最近一次在 <TimeText iso={全量.lastFlipAt} /> 建的批次）
+                  </>
+                ) : (
+                  ""
+                )}
               </Tag>
             )}
             {全量.judgedAuto > 0 ? (
@@ -428,7 +427,18 @@ export default async function GradingGatePage() {
         </div>
       </Card>
 
-      <div style={{ marginTop: 14, fontSize: 12, color: "#909399" }}>
+      {/* 🔴 检查单 §三·4 看到即可达：本页算的是「哪些批次被翻了案 / 谁在静默放行」，
+          却是全站唯一一个点不出去的页。给两条出口：翻案要逐题看去终审台，
+          批次面要按状态筛去看板。 */}
+      <div style={{ marginTop: 14, fontSize: 12.5, lineHeight: 2 }}>
+        这些数出自哪些批次 →{" "}
+        <Link href="/grading/board">
+          批改看板（一行一批，可按学员/状态/日期筛）
+        </Link>{" "}
+        · 要逐题看判定与翻案 → <Link href="/grading/review">终审台</Link>
+      </div>
+
+      <div style={{ marginTop: 8, fontSize: 12, color: "#909399" }}>
         圣域（只读）：{dbPath ?? "路径未知（审核.db 没连上）"}
         <br />
         本页只读、现算，没有缓存。档位要改去动 {cfgPath}{" "}

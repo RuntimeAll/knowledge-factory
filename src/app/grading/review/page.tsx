@@ -8,7 +8,7 @@
  * 🔴 写：一个都不在本页 —— 确认/打回/撤回全在逐题终审页，且全部 spawn 审核库.py。
  * 🔴 学员只代号（本产品从不落真名）。
  */
-import { DataSourceNote } from "~/components/console/ui";
+import { PageHead } from "~/components/console/page-head";
 import { ReviewQueueTable } from "./table";
 
 export const dynamic = "force-dynamic";
@@ -16,26 +16,20 @@ export const dynamic = "force-dynamic";
 export default function GradingReviewPage() {
   return (
     <>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "baseline",
-          gap: 12,
-          marginBottom: 12,
-          flexWrap: "wrap",
-        }}
-      >
-        <h1 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>终审台</h1>
-        <span style={{ fontSize: 12.5, color: "#909399" }}>
-          agent 预批只是草稿：每题给出终审 √ / × / 去掉，全部定完才谈得上出件
-        </span>
-        <span style={{ marginLeft: "auto" }}>
-          <DataSourceNote>
+      <PageHead
+        title={<>终审台</>}
+        sub={
+          <>
+            agent 预批只是草稿：每题给出终审 √ / × / 去掉，全部定完才谈得上出件
+          </>
+        }
+        source={
+          <>
             审核.db（mode=ro：batches / items / feedback）—— 队列口径照抄
             审核库.py 的 pending()：status ∈ (pending, rework)
-          </DataSourceNote>
-        </span>
-      </div>
+          </>
+        }
+      />
 
       <ReviewQueueTable />
     </>

@@ -23,8 +23,8 @@ import { existsSync } from "node:fs";
 import { Alert, Card, Descriptions, Tag, Tooltip } from "antd";
 import Link from "next/link";
 
+import { PageHead } from "~/components/console/page-head";
 import {
-  DataSourceNote,
   EmptyHint,
   IdTail,
   StatusTag,
@@ -155,39 +155,42 @@ export default async function ModelDetailPage({
 
   return (
     <>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "baseline",
-          gap: 12,
-          marginBottom: 12,
-        }}
-      >
-        <h1 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>
-          {card.name}
-        </h1>
-        <StatusTag value={card.status} />
-        <span style={{ fontSize: 12.5, color: "#909399" }}>
-          考察模型 · 族谱
-        </span>
-        <span style={{ marginLeft: "auto" }}>
-          <DataSourceNote>
+      {/* 🔴 flexWrap：模型名本来就长，窄屏上不换行会把标题挤成竖排（全站页头一律 wrap） */}
+      <PageHead
+        title={<>{card.name}</>}
+        tags={
+          <>
+            <StatusTag value={card.status} />
+            <span style={{ fontSize: 12.5, color: "#909399" }}>
+              考察模型 · 族谱
+            </span>
+          </>
+        }
+        source={
+          <>
             core.getModel + core.getLineage · 表 exam_model / question（model_id
             / origin_qids_json）
-          </DataSourceNote>
-        </span>
-      </div>
+          </>
+        }
+      />
 
+      {/* 🔴 flexWrap + rowGap：手机上这一排链接必须能折行 */}
       <div
         style={{
           display: "flex",
           gap: 14,
+          rowGap: 8,
           alignItems: "center",
           marginBottom: 12,
           fontSize: 13,
+          flexWrap: "wrap",
         }}
       >
         <Link href="/model">← 回模型台账</Link>
+        {/* 🔴 看到即可达：归位考点在上面的卡里出现过，这里给它一条直达链 */}
+        <Link href={`/kg/kp/${card.kpId}`}>
+          归位考点详情{card.kpName ? `（${card.kpName}）` : ""}
+        </Link>
         <Link href={`/question?kp=${card.kpId}`}>
           看这个考点下的题（不等于本模型出的题）
         </Link>
@@ -201,7 +204,9 @@ export default async function ModelDetailPage({
       <Card size="small" title="基本信息" style={{ marginBottom: 12 }}>
         <Descriptions
           size="small"
-          column={3}
+          // 🔴 响应式：写死 column={3} 时「生成器 dsl_ref」那格在手机上会被压成
+          //    一列一个字（它装的是一条 Windows 全路径）
+          column={{ xs: 1, sm: 2, md: 3 }}
           items={[
             {
               key: "kp",

@@ -231,6 +231,19 @@ export const REVIEW_STATUS_LABEL: Record<ReviewStatus, string> = {
   confirmed: "已确认",
 };
 
+/**
+ * 🔴 批次状态的**颜色**不在这儿：集成收口②已把 `confirmed` / `rework` 并进
+ *    `~/components/console/ui` 的 `STATUS_COLOR`（`pending` 本来就在那张表里）。
+ *    本线两处用色的地方（终审台列表 / 逐题终审页）直接查那张表 ——
+ *    同一个壳里两张色表，`pending` 又刚好同色，是最难发现的那类不一致。
+ *    这儿只留**文案**（label / 未知话术）：文案是批改线自己的话，不进共享件。
+ */
+
+/** 认不出的状态值统一话术（三值之外一律不猜，原样端出来） */
+export function reviewStatusUnknownHint(status: string): string {
+  return `审核.db batches.status=${JSON.stringify(status)} —— 不是 pending / rework / confirmed，本页不猜它是什么`;
+}
+
 /** 「近期已确认」取多少条 —— 审核台 `/api/confirmed` 把 limit 写死 10，这里照抄 */
 export const REVIEW_CONFIRMED_LIMIT = 10;
 

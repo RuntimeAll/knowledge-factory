@@ -1,5 +1,5 @@
 /**
- * 队列 · 隔离行改判（AI:PRD-003 · 003-D）
+ * 队列 · 隔离行改判（AI:PRD-003 · 003-D；AI:PRD-009 打磨批换壳）
  *
  * 隔离区 = 红灯题的收容所（管道拒了它，但**原样 payload 留着**）。这页给两条出路：
  *
@@ -10,11 +10,25 @@
  *
  * 🔴 两个都是「结案」动作，所以都在这页两步提交（002-D 的破坏性动作定式）。
  * 🔴 文本框里给的是**原样 JSON**，不做任何表单化：坏料千奇百怪，能改的形状只有 JSON 本身。
+ *
+ * ── AI:PRD-009 打磨（只动版面与交互）────────────────────────────────────────
+ *   换 antd + console/ui（检查单 10）；两个动作各自统一 ConfirmSubmit 弹层、
+ *   影响面分别写清（检查单 7）；「来自批」现在能点进
+ *   `/ingest?batch=<id>` 看那一批的闸报告（检查单 4 看到即可达）。
  */
+import { Alert, Card, Input } from "antd";
 import Link from "next/link";
 
-import { Chip, Notice, PageHead, Panel, Row } from "~/components/kit";
+import {
+  DataSourceNote,
+  IdTail,
+  StatusTag,
+  TimeText,
+} from "~/components/console/ui";
 import { getQuarantineRow } from "~/core";
+import { ConfirmSubmit } from "~/components/console/confirm";
+import { PageHead } from "~/components/console/page-head";
+import { KV } from "~/components/console/table";
 import { param } from "../../../kg/shared";
 import {
   discardQuarantineAction,
@@ -49,26 +63,25 @@ export default async function QuarantinePage({
   try {
     row = await getQuarantineRow(id);
   } catch (e) {
-    error = e instanceof Error ? e.message : String(e);
+    error = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
   }
 
   if (!row) {
     return (
       <>
-        <PageHead
-          title="隔离行"
-          sub={<span className="font-mono">{id}</span>}
+        <PageHead title="隔离行" sub="这条隔离料打不开" />
+        <Alert
+          type="error"
+          showIcon
+          message={error ? "隔离行读不出来（原文照登）" : "这条隔离行不在库里"}
+          description={
+            <div style={{ fontSize: 12.5, whiteSpace: "pre-wrap" }}>
+              {error ?? `quarantine 里没有 id = ${id} 这一行。`}
+            </div>
+          }
         />
-        <div className="text-pen text-[12.5px] whitespace-pre-wrap">
-          {error ?? "这条隔离行不在库里。"}
-        </div>
-        <div className="mt-4 text-[12.5px]">
-          <Link
-            className="text-acc-deep underline"
-            href="/queue?tab=quarantine"
-          >
-            ← 回队列
-          </Link>
+        <div style={{ marginTop: 14, fontSize: 12.5 }}>
+          <Link href="/queue?tab=quarantine">← 回处置台 · 隔离区</Link>
         </div>
       </>
     );
@@ -80,134 +93,233 @@ export default async function QuarantinePage({
     <>
       <PageHead
         title="改判这条隔离料"
-        sub={<span className="font-mono">{row.id}</span>}
+        tags={<StatusTag value={已结 ? "resolved" : "open"} />}
+        sub="管道拒了它，但原样 payload 留着 —— 改对了重投，或者废弃"
         right={
-          <span className="flex items-baseline gap-2">
-            <Chip tone={已结 ? "n" : "a"}>{已结 ? "已结" : "未结"}</Chip>
-            <Link
-              className="text-acc-deep text-[12.5px] underline"
-              href="/queue?tab=quarantine"
-            >
-              ← 队列
-            </Link>
-          </span>
+          <DataSourceNote>
+            core.getQuarantineRow · 表 quarantine；写走 core 的
+            reingestQuarantine / resolveQuarantine（含审计行）
+          </DataSourceNote>
         }
       />
 
-      {err ? <Notice tone="err">{err}</Notice> : null}
-      {ok ? <Notice tone="ok">{ok}</Notice> : null}
+      <div
+        style={{
+          display: "flex",
+          gap: 14,
+          alignItems: "center",
+          flexWrap: "wrap",
+          marginBottom: 12,
+          fontSize: 12.5,
+        }}
+      >
+        <Link href="/queue?tab=quarantine">← 回处置台 · 隔离区</Link>
+        <IdTail id={row.id} />
+      </div>
 
-      <Panel title="管道为什么拒了它">
-        <div className="text-pen text-[12.5px] leading-[1.9] break-words whitespace-pre-wrap">
+      {err ? (
+        <Alert
+          type="error"
+          showIcon
+          style={{ marginBottom: 10 }}
+          message={<span style={{ whiteSpace: "pre-wrap" }}>{err}</span>}
+        />
+      ) : null}
+      {ok ? (
+        <Alert
+          type="success"
+          showIcon
+          style={{ marginBottom: 10 }}
+          message={<span style={{ whiteSpace: "pre-wrap" }}>{ok}</span>}
+        />
+      ) : null}
+
+      <Card size="small" title="管道为什么拒了它">
+        <div
+          style={{
+            color: "#c45656",
+            fontSize: 12.5,
+            lineHeight: 1.9,
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-word",
+          }}
+        >
           {row.why}
         </div>
-        <div className="mt-2">
-          <Row k="进隔离时间" v={row.createdAt ?? "—"} />
-          <Row
+        <div style={{ marginTop: 10 }}>
+          <KV k="进隔离时间" v={<TimeText iso={row.createdAt} />} />
+          <KV
             k="来自批"
             v={
               row.batchId ? (
-                <span className="font-mono">{row.batchId}</span>
+                // 🔴 检查单 4：批次 id 看得见就该点得进去（那一批的闸报告在录入批次页）
+                <Link href={`/ingest?batch=${encodeURIComponent(row.batchId)}`}>
+                  看这一批的闸报告 → <IdTail id={row.batchId} />
+                </Link>
               ) : (
                 "—"
               )
             }
           />
-          {已结 ? <Row k="结案时间" v={row.resolvedAt} /> : null}
+          {已结 ? (
+            <KV k="结案时间" v={<TimeText iso={row.resolvedAt} />} />
+          ) : null}
         </div>
-      </Panel>
+      </Card>
 
       {已结 ? (
-        <div className="text-mut mt-4 text-[12.5px] leading-[1.9]">
-          这条已经在 {row.resolvedAt} 结过了 —— 不重复处置（处置痕迹见上面 why
-          的【处置】行）。
-          <br />
-          还想录这道题就直接走录题管线（MCP 的 kb_ingest / propose_question）。
-        </div>
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginTop: 12 }}
+          message={`这条已经在 ${row.resolvedAt} 结过了 —— 不重复处置`}
+          description={
+            <span style={{ fontSize: 12.5, lineHeight: 1.9 }}>
+              处置痕迹见上面 why 的【处置】行。
+              <br />
+              还想录这道题就直接走录题管线（MCP 的 kb_ingest /
+              propose_question）。
+            </span>
+          }
+        />
       ) : (
         <>
-          <div className="mt-3.5">
-            <Panel title="① 改判重投（改完再走一遍全套闸）">
-              <form action={reingestQuarantineAction}>
-                <input type="hidden" name="id" value={row.id} />
-                <label
-                  htmlFor="payload"
-                  className="text-mut mb-1 block text-[11.5px] tracking-[1px]"
-                >
-                  单题 payload（原样 JSON；不动它 = 拿原样重投）
-                </label>
-                <textarea
-                  id="payload"
-                  name="payload"
-                  rows={16}
-                  defaultValue={pretty(row.payloadJson)}
-                  spellCheck={false}
-                  className="border-hair2 bg-paper w-full rounded-[2px] border px-2 py-1.5 font-mono text-[11.5px] leading-[1.7]"
+          <Card
+            size="small"
+            title="① 改判重投（改完再走一遍全套闸）"
+            style={{ marginTop: 12 }}
+          >
+            <form action={reingestQuarantineAction}>
+              <input type="hidden" name="id" value={row.id} />
+              <label
+                htmlFor="payload"
+                style={{
+                  display: "block",
+                  marginBottom: 4,
+                  fontSize: 11.5,
+                  letterSpacing: 1,
+                  color: "#909399",
+                }}
+              >
+                单题 payload（原样 JSON；不动它 = 拿原样重投）
+              </label>
+              <Input.TextArea
+                id="payload"
+                name="payload"
+                rows={16}
+                defaultValue={pretty(row.payloadJson)}
+                spellCheck={false}
+                style={{
+                  fontFamily: "Consolas, Menlo, monospace",
+                  fontSize: 11.5,
+                  lineHeight: 1.7,
+                }}
+              />
+              <label
+                htmlFor="note"
+                style={{
+                  display: "block",
+                  margin: "10px 0 4px",
+                  fontSize: 11.5,
+                  letterSpacing: 1,
+                  color: "#909399",
+                }}
+              >
+                改了什么（记进 quarantine.why 的处置行）
+              </label>
+              <Input
+                id="note"
+                name="note"
+                placeholder="例：考点名写错了，改成「有理数的混合运算」"
+              />
+              <div
+                style={{
+                  marginTop: 10,
+                  display: "flex",
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                  gap: 14,
+                }}
+              >
+                <ConfirmSubmit
+                  label="重投这一题"
+                  primary
+                  okText="重投"
+                  title="把改过的 payload 重走一遍管道？"
+                  description={
+                    <>
+                      拿文本框里的 JSON 重跑<b>全套十道闸</b>： 过了就落
+                      question + 本隔离行标结案；
+                      <br />
+                      🔴 还红就<b>零写返回</b> —— 这条隔离行原地不动、
+                      <b>不会多长一行</b>，新的红灯原文贴回页顶。
+                    </>
+                  }
                 />
-                <label
-                  htmlFor="note"
-                  className="text-mut mt-2 mb-1 block text-[11.5px] tracking-[1px]"
-                >
-                  改了什么（记进 quarantine.why 的处置行）
-                </label>
-                <input
-                  id="note"
-                  name="note"
-                  placeholder="例：考点名写错了，改成「有理数的混合运算」"
-                  className="border-hair2 bg-paper w-full rounded-[2px] border px-2 py-1.5 text-[12.5px]"
-                />
-                <div className="mt-2.5 flex flex-wrap items-center gap-3">
-                  <button
-                    type="submit"
-                    className="border-acc/40 text-acc-deep bg-acc-soft rounded-[2px] border px-3 py-[5px] text-[12.5px] font-semibold"
-                  >
-                    重投这一题
-                  </button>
-                  <span className="text-mut text-[11.5px]">
-                    🔴
-                    还红就零写返回（这条隔离行原地不动，不会多长一行），红灯原文贴在页顶
-                  </span>
-                </div>
-              </form>
-            </Panel>
-          </div>
+                <span style={{ fontSize: 11.5, color: "#909399" }}>
+                  🔴 还红就零写返回（这条隔离行原地不动），红灯原文贴在页顶
+                </span>
+              </div>
+            </form>
+          </Card>
 
-          <div className="mt-3.5">
-            <Panel title="② 废弃（这题不要了）">
-              <form action={discardQuarantineAction}>
-                <input type="hidden" name="id" value={row.id} />
-                <label
-                  htmlFor="dnote"
-                  className="text-mut mb-1 block text-[11.5px] tracking-[1px]"
-                >
-                  废弃理由（必填 ——
-                  日后翻账时，「为什么不要它」比「不要它」有用得多）
-                </label>
-                <textarea
-                  id="dnote"
-                  name="note"
-                  rows={2}
-                  required
-                  placeholder="例：题源本身抄错了，卷子已作废，不必再录。"
-                  className="border-hair2 bg-paper w-full rounded-[2px] border px-2 py-1.5 text-[12.5px]"
+          <Card
+            size="small"
+            title="② 废弃（这题不要了）"
+            style={{ marginTop: 12 }}
+          >
+            <form action={discardQuarantineAction}>
+              <input type="hidden" name="id" value={row.id} />
+              <label
+                htmlFor="dnote"
+                style={{
+                  display: "block",
+                  marginBottom: 4,
+                  fontSize: 11.5,
+                  letterSpacing: 1,
+                  color: "#909399",
+                }}
+              >
+                废弃理由（必填 ——
+                日后翻账时，「为什么不要它」比「不要它」有用得多）
+              </label>
+              <Input.TextArea
+                id="dnote"
+                name="note"
+                rows={2}
+                required
+                placeholder="例：题源本身抄错了，卷子已作废，不必再录。"
+              />
+              <div
+                style={{
+                  marginTop: 10,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 14,
+                }}
+              >
+                <ConfirmSubmit
+                  label="确认废弃"
+                  danger
+                  okText="废弃"
+                  title="把这条隔离料废弃？"
+                  description={
+                    <>
+                      只标 <b>quarantine.resolved_at</b> 并把理由写进 why 的
+                      【处置】行 —— <b>payload 不删</b>，日后翻得到。
+                      <br />
+                      这道题<b>不会</b>落进题库。
+                      <br />
+                      🔴 结案后本页转只读，同一条不再重复处置。
+                    </>
+                  }
                 />
-                <div className="mt-2.5 flex items-center gap-3">
-                  <button
-                    type="submit"
-                    className="border-pen/40 text-pen bg-pen-soft rounded-[2px] border px-3 py-[5px] text-[12.5px] font-semibold"
-                  >
-                    确认废弃
-                  </button>
-                  <Link
-                    href="/queue?tab=quarantine"
-                    className="text-mut text-[12.5px] underline"
-                  >
-                    取消，回队列
-                  </Link>
-                </div>
-              </form>
-            </Panel>
-          </div>
+                <Link href="/queue?tab=quarantine" style={{ fontSize: 12.5 }}>
+                  取消，回隔离区
+                </Link>
+              </div>
+            </form>
+          </Card>
         </>
       )}
     </>

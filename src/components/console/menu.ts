@@ -178,47 +178,151 @@ export const CONSOLE_MENU: ConsoleMenuGroup[] = [
   },
 ];
 
+export interface HiddenCrumb {
+  prefix: string;
+  /**
+   * 末段匹配（集成收口②补）：`/sku/<id>/status`、`/sku/<id>/dedup`、
+   * `/kg/kp/<id>/retire` 这类**中缀带 id** 的确认页，靠前缀表达不出来 ——
+   * `/sku/` 必然先命中，于是三张确认页的面包屑都显示成上一层的「详情」，
+   * 人站在一个会改库的确认页上，面包屑却说这是详情页。
+   * 🔴 有 suffix 的条目要求 **prefix 与 suffix 同时命中**，
+   *    且在 {@link crumbsFor} 里**先于**纯前缀条目匹配（否则照样被泛前缀吃掉）。
+   */
+  suffix?: string;
+  group: string;
+  name: string;
+  /**
+   * 上一级列表页的路由（面包屑里画成可点的一层）。
+   * 🔴 AI:PRD-009 · 检查单 ④⑧：详情页原先的面包屑是「知识工厂 / 题库管理 / 题目详情」——
+   *    中间那层是组名（伪路径，点不动），于是从详情页回列表页**没有一条路**，
+   *    只能靠浏览器后退。补一层可点的父页，闭环才叫闭环。
+   *    旧地址/无列表页的（如 /kg/queue）不填，宁可少一层也不给一个跳错的链接。
+   */
+  parent?: string;
+}
+
 /**
  * 不进菜单、但要有面包屑的地址（详情页 / 旧路由）。
  * 🔴 详情页不进菜单是若依的习惯：它们要 id 才打得开，菜单上放一个打不开的入口没有意义。
  */
-export const HIDDEN_CRUMBS: { prefix: string; group: string; name: string }[] =
-  [
-    // 🔴 /q/ 与 /search 已下线（2026-08-14，设计稿 §一 的两处路由改造）：
-    //    题目详情迁到 /question/[id]（四 tab），检索并进 /question。
-    //    这里不留它们的面包屑 —— 留着等于告诉人那两个地址还在。
-    { prefix: "/question/", group: "题库管理", name: "题目详情" },
-    { prefix: "/kg/kp/", group: "知识图谱", name: "考点详情" },
-    { prefix: "/kg/tree/", group: "知识图谱", name: "版本树" },
-    { prefix: "/kg/queue", group: "审查队列", name: "处置台（旧地址）" },
-    { prefix: "/queue/quarantine/", group: "审查队列", name: "隔离行处置" },
-    { prefix: "/queue/", group: "审查队列", name: "工单处置" },
-    // 生产管理（详情 / 确认页）
-    { prefix: "/sku/", group: "生产管理", name: "SKU 详情" },
-    { prefix: "/model/", group: "生产管理", name: "模型族谱" },
-    // 学情中心（详情 / 确认页）
-    // 🔴 /cause/map 必须排在这里、且排在任何 `/cause` 泛前缀之前，
-    //    否则确认页会被认成错因管理列表页。
-    // 🔴 /cause/remap 已下线（2026-08-14：删映射行超出写操作白名单五类），
-    //    这里也不留它的面包屑 —— 留着等于告诉人那儿还有一页。
-    { prefix: "/cause/map", group: "学情中心", name: "补错因映射" },
-    { prefix: "/student/", group: "学情中心", name: "学员学情" },
-    // 批改流水线（详情页）
-    // 🔴 必须排在任何 `/grading/re…` 泛前缀之前不成问题：`/grading/review` 本身
-    //    在菜单里有精确项，crumbsFor 先走精确匹配，只有 `/grading/review/<代号>/<天>`
-    //    才落到这条上。
-    { prefix: "/grading/review/", group: "批改流水线", name: "逐题终审" },
-    // 资料货架（详情页）
-    // 🔴 `/shelf/reconcile` 在菜单里有精确项，crumbsFor 先走精确匹配，
-    //    所以只有 `/shelf/doc/<id>` 会落到这条上。
-    { prefix: "/shelf/doc/", group: "资料货架", name: "册子详情" },
-  ];
+export const HIDDEN_CRUMBS: HiddenCrumb[] = [
+  // 🔴 /q/ 与 /search 已下线（2026-08-14，设计稿 §一 的两处路由改造）：
+  //    题目详情迁到 /question/[id]（四 tab），检索并进 /question。
+  //    这里不留它们的面包屑 —— 留着等于告诉人那两个地址还在。
+  {
+    prefix: "/question/",
+    group: "题库管理",
+    name: "题目详情",
+    parent: "/question",
+  },
+  // 🔴 末段匹配的三条（集成收口②）：确认页 ≠ 详情页，面包屑必须分得开。
+  //    它们靠 suffix 命中，与在表里的先后无关（crumbsFor 先扫一遍带 suffix 的）。
+  {
+    prefix: "/kg/kp/",
+    suffix: "/retire",
+    group: "知识图谱",
+    name: "考点退役确认",
+    parent: "/kg",
+  },
+  {
+    prefix: "/sku/",
+    suffix: "/status",
+    group: "生产管理",
+    name: "上下架确认",
+    parent: "/sku",
+  },
+  {
+    prefix: "/sku/",
+    suffix: "/dedup",
+    group: "生产管理",
+    name: "排重报告",
+    parent: "/sku",
+  },
+  { prefix: "/kg/kp/", group: "知识图谱", name: "考点详情", parent: "/kg" },
+  { prefix: "/kg/tree/", group: "知识图谱", name: "版本树", parent: "/kg" },
+  // 🔴 合并向导的两步（AI:PRD-009 补）：原先这两个地址一条前缀都不中，
+  //    面包屑只剩「知识工厂」一层 —— 人在确认页上看不出自己站在哪儿。
+  //    必须排在任何 `/kg/` 泛前缀之前（本表当下没有泛 `/kg/`，先占好位）。
+  {
+    prefix: "/kg/merge/preview",
+    group: "知识图谱",
+    name: "合并预览",
+    parent: "/kg/merge",
+  },
+  {
+    prefix: "/kg/merge/done/",
+    group: "知识图谱",
+    name: "合并结果",
+    parent: "/kg/merge",
+  },
+  { prefix: "/kg/queue", group: "审查队列", name: "处置台（旧地址）" },
+  {
+    prefix: "/queue/quarantine/",
+    group: "审查队列",
+    name: "隔离行处置",
+    parent: "/queue",
+  },
+  { prefix: "/queue/", group: "审查队列", name: "工单处置", parent: "/queue" },
+  // 生产管理（详情 / 确认页）
+  { prefix: "/sku/", group: "生产管理", name: "SKU 详情", parent: "/sku" },
+  { prefix: "/model/", group: "生产管理", name: "模型族谱", parent: "/model" },
+  // 学情中心（详情 / 确认页）
+  // 🔴 /cause/map 必须排在这里、且排在任何 `/cause` 泛前缀之前，
+  //    否则确认页会被认成错因管理列表页。
+  // 🔴 /cause/remap 已下线（2026-08-14：删映射行超出写操作白名单五类），
+  //    这里也不留它的面包屑 —— 留着等于告诉人那儿还有一页。
+  {
+    prefix: "/cause/map",
+    group: "学情中心",
+    name: "补错因映射",
+    parent: "/cause",
+  },
+  {
+    prefix: "/student/",
+    group: "学情中心",
+    name: "学员学情",
+    parent: "/student",
+  },
+  // 批改流水线（详情页）
+  // 🔴 必须排在任何 `/grading/re…` 泛前缀之前不成问题：`/grading/review` 本身
+  //    在菜单里有精确项，crumbsFor 先走精确匹配，只有 `/grading/review/<代号>/<天>`
+  //    才落到这条上。
+  {
+    prefix: "/grading/review/",
+    group: "批改流水线",
+    name: "逐题终审",
+    parent: "/grading/review",
+  },
+  // 资料货架（详情页）
+  // 🔴 `/shelf/reconcile` 在菜单里有精确项，crumbsFor 先走精确匹配，
+  //    所以只有 `/shelf/doc/<id>` 会落到这条上。
+  {
+    prefix: "/shelf/doc/",
+    group: "资料货架",
+    name: "册子详情",
+    parent: "/shelf",
+  },
+];
 
 export interface Crumbs {
   group: string;
   name: string;
   /** 命中的菜单项（旧地址/详情页为 null） */
   item: ConsoleMenuItem | null;
+  /**
+   * 可点的上一级列表页（详情页才有；列表页自己没有上一级）。
+   * 🔴 只在菜单正本里真有这一项时才给 —— 父路由写错了的面包屑
+   *    比没有面包屑更糟（点过去 404）。
+   */
+  parent: { path: string; name: string } | null;
+}
+
+/** 按路由取菜单项（找不到返回 null —— 不猜名字） */
+export function menuItemByPath(path: string): ConsoleMenuItem | null {
+  for (const g of CONSOLE_MENU) {
+    for (const it of g.children) if (it.path === path) return it;
+  }
+  return null;
 }
 
 /**
@@ -230,15 +334,32 @@ export function crumbsFor(pathname: string): Crumbs | null {
   for (const g of CONSOLE_MENU) {
     for (const it of g.children) {
       if (it.path === pathname)
-        return { group: g.name, name: it.name, item: it };
+        return { group: g.name, name: it.name, item: it, parent: null };
+    }
+  }
+  // 🔴 带 suffix 的先扫（集成收口②）：`/sku/<id>/status` 这种中缀带 id 的确认页，
+  //    若让纯前缀条目先跑，`/sku/` 一定先中，确认页会被叫成「SKU 详情」。
+  for (const h of HIDDEN_CRUMBS) {
+    if (!h.suffix) continue;
+    if (pathname.startsWith(h.prefix) && pathname.endsWith(h.suffix)) {
+      return crumbOf(h);
     }
   }
   for (const h of HIDDEN_CRUMBS) {
-    if (pathname.startsWith(h.prefix)) {
-      return { group: h.group, name: h.name, item: null };
-    }
+    if (h.suffix) continue;
+    if (pathname.startsWith(h.prefix)) return crumbOf(h);
   }
   return null;
+}
+
+function crumbOf(h: HiddenCrumb): Crumbs {
+  const p = h.parent ? menuItemByPath(h.parent) : null;
+  return {
+    group: h.group,
+    name: h.name,
+    item: null,
+    parent: p ? { path: p.path, name: p.name } : null,
+  };
 }
 
 /**

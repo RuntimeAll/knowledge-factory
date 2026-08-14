@@ -49,6 +49,12 @@ export const STATUS_COLOR: Record<string, string> = {
   retired: "default",
   merged: "default",
   deprecated: "default",
+  // 🔴 批改线三态（集成收口②收编：原来 `app/grading/shared.ts` 里另有一份
+  //    REVIEW_STATUS_TONE 自成色表 —— 同一个壳里两张色表，`pending` 在两处
+  //    还刚好同色，于是没人发现它是两份。并进来后那份只留 label/hint 文案）：
+  //      pending 已在上面（橙）· rework=红（要返工）· confirmed=绿（已终审）
+  confirmed: "green",
+  rework: "red",
 };
 
 export function StatusTag({
@@ -80,6 +86,28 @@ export function TimeText({ iso }: { iso: string | null | undefined }) {
       <span style={{ fontVariantNumeric: "tabular-nums" }}>
         {shortTime(iso)}
       </span>
+    </Tooltip>
+  );
+}
+
+/**
+ * 内容 hash：显示**前 8 位** + 复制（集成收口②收编，原来 `output/table.tsx` 与
+ * `sku/[id]/panels.tsx` 各内联一份）。
+ *
+ * 🔴 与 {@link IdTail} 分成两件而不是加个 flag：hash 认**前缀**（`a3f1c9…`，
+ *    内容寻址仓的目录就是按前缀分的），ULID 认**尾 6 位**（前缀是时间，
+ *    同一批入库的题前缀全一样，截前面等于没截）。两种截法混用会让人
+ *    照着屏幕上的短串去仓里找不到文件。
+ */
+export function HashTail({ hash }: { hash: string }) {
+  return (
+    <Tooltip title={hash}>
+      <Typography.Text
+        copyable={{ text: hash, tooltips: ["复制全 hash", "已复制"] }}
+        style={{ fontFamily: "Consolas, Menlo, monospace", fontSize: 12 }}
+      >
+        {hash.slice(0, 8)}…
+      </Typography.Text>
     </Tooltip>
   );
 }
@@ -152,6 +180,62 @@ export function DataSourceNote({ children }: { children: React.ReactNode }) {
     <span style={{ fontSize: 11.5, color: "#909399" }}>
       本页数据源：{children}
     </span>
+  );
+}
+
+/**
+ * 长文一行截断 + 悬停看全文（AI:PRD-009 · 检查单 ③）。
+ *
+ * 🔴 截断必须配 tooltip：只截不给全文 = 把信息删了还不告诉人。
+ * 🔴 `maxWidth` 用 px 不用 %：手搓 `<td>` 里百分比宽度算不出稳定值，
+ *    列会随内容抖动（同一张表刷新两次列宽不一样）。
+ */
+export function LongText({
+  text,
+  maxWidth = 240,
+  mono,
+}: {
+  text: string;
+  maxWidth?: number;
+  /** id / 路径这类要逐字符看的，用等宽 */
+  mono?: boolean;
+}) {
+  return (
+    <Tooltip title={text}>
+      <span
+        style={{
+          display: "inline-block",
+          maxWidth,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+          verticalAlign: "bottom",
+          ...(mono
+            ? { fontFamily: "Consolas, Menlo, monospace", fontSize: 11.5 }
+            : {}),
+        }}
+      >
+        {text}
+      </span>
+    </Tooltip>
+  );
+}
+
+/**
+ * 「这一格读不出来」的统一形态（AI:PRD-009 · 检查单 ②）。
+ *
+ * 🔴🔴 存在的理由：读失败时**绝不能退化成 0 / 空 / 绿**。
+ *    「隔离区 0 条」和「隔离区读不出来」在屏幕上长得一样的话，
+ *    一次库连不上会被读成「今天没活儿」—— 这是监督面能犯的最坏的错。
+ *    所以失败一律出这枚灰红标，原文挂在悬停里。
+ */
+export function Unreadable({ why }: { why?: string | null }) {
+  return (
+    <Tooltip title={why ?? "读这一项时抛了异常，原文见页面顶部的错误条"}>
+      <Tag color="red" style={{ opacity: 0.85 }}>
+        读不出
+      </Tag>
+    </Tooltip>
   );
 }
 

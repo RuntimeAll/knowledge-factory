@@ -5,7 +5,9 @@
  *    （core.SKU_OUTPUT_KINDS）取出来传给表格；`?sku=` 带进来就预置成筛选值
  *    （从 SKU 台账点「本册产物」过来时用）。
  */
-import { DataSourceNote } from "~/components/console/ui";
+import { Alert } from "antd";
+
+import { PageHead } from "~/components/console/page-head";
 import { SKU_OUTPUT_KINDS, listSkus } from "~/core";
 import type { SkuOption } from "./shared";
 import { OutputTable } from "./table";
@@ -44,31 +46,37 @@ export default async function OutputPage({
 
   return (
     <>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "baseline",
-          gap: 12,
-          marginBottom: 12,
-        }}
-      >
-        <h1 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>产物仓</h1>
-        <span style={{ fontSize: 12.5, color: "#909399" }}>
-          内容寻址仓里的实物件（PDF / 题单 JSON / 物料）—— 字节按 sha256
-          存，路径只是指针
-        </span>
-        <span style={{ marginLeft: "auto" }}>
-          <DataSourceNote>
+      {/* 🔴 flexWrap：窄屏上不换行，右边的数据源小字会把标题挤成竖排（全站页头一律 wrap） */}
+      <PageHead
+        title={<>产物仓</>}
+        sub={
+          <>
+            内容寻址仓里的实物件（PDF / 题单 JSON / 物料）—— 字节按 sha256
+            存，路径只是指针
+          </>
+        }
+        source={
+          <>
             core.listSkus + core.getSku（展平 outputs）· 表 sku_output / asset ·
             下载走 /api/asset/&lt;hash&gt;
-          </DataSourceNote>
-        </span>
-      </div>
+          </>
+        }
+      />
 
+      {/* 🔴 报错一律走 Alert（全站同一形态），不再用一行红字：
+          红字在密集的页头里几乎看不见，而这条恰恰是「筛选框为什么空着」的唯一解释。 */}
       {listErr ? (
-        <div style={{ fontSize: 12.5, color: "#c45656", marginBottom: 10 }}>
-          SKU 下拉取不到（筛选框里会是空的，表格照常）：{listErr}
-        </div>
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 10 }}
+          message="SKU 下拉候选取不到 —— 筛选区的「所属 SKU」会是空的（表格照常出数）"
+          description={
+            <span style={{ fontSize: 12.5, whiteSpace: "pre-wrap" }}>
+              {listErr}
+            </span>
+          }
+        />
       ) : null}
 
       <OutputTable

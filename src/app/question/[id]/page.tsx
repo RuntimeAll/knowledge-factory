@@ -20,8 +20,8 @@ import { Alert, Card, Descriptions, Space, Tag, Tooltip } from "antd";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { PageHead } from "~/components/console/page-head";
 import {
-  DataSourceNote,
   EmptyHint,
   IdTail,
   StatusTag,
@@ -249,116 +249,121 @@ function 归属({ rows }: { rows: QuestionSkuPlacement[] }) {
   }
   return (
     <>
-      <table style={{ width: "100%", borderCollapse: "collapse" }}>
-        <thead>
-          <tr>
-            <th
-              style={{
-                background: "#f5f7fa",
-                textAlign: "left",
-                padding: "7px 10px",
-                fontSize: 12.5,
-                fontWeight: 500,
-                borderBottom: "1px solid #ebeef5",
-              }}
-            >
-              册子
-            </th>
-            <th
-              style={{
-                background: "#f5f7fa",
-                textAlign: "left",
-                padding: "7px 10px",
-                fontSize: 12.5,
-                fontWeight: 500,
-                borderBottom: "1px solid #ebeef5",
-                width: 90,
-              }}
-            >
-              第几题
-            </th>
-            <th
-              style={{
-                background: "#f5f7fa",
-                textAlign: "left",
-                padding: "7px 10px",
-                fontSize: 12.5,
-                fontWeight: 500,
-                borderBottom: "1px solid #ebeef5",
-                width: 140,
-              }}
-            >
-              挂桥
-            </th>
-            <th
-              style={{
-                background: "#f5f7fa",
-                textAlign: "left",
-                padding: "7px 10px",
-                fontSize: 12.5,
-                fontWeight: 500,
-                borderBottom: "1px solid #ebeef5",
-                width: 120,
-              }}
-            >
-              建档
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={`${r.skuId}|${r.ord}`}>
-              <td
+      {/* 🔴 手机上让**表格自己**横向滚，别让 body 横滚（AI:PRD-009 检查单 5） */}
+      <div style={{ overflowX: "auto", width: "100%" }}>
+        <table
+          style={{ width: "100%", minWidth: 520, borderCollapse: "collapse" }}
+        >
+          <thead>
+            <tr>
+              <th
                 style={{
+                  background: "#f5f7fa",
+                  textAlign: "left",
                   padding: "7px 10px",
-                  borderBottom: "1px solid #ebeef5",
                   fontSize: 12.5,
+                  fontWeight: 500,
+                  borderBottom: "1px solid #ebeef5",
                 }}
               >
-                <Link href={`/sku/${r.skuId}`}>{r.name}</Link>
-                <Space size={4} style={{ marginInlineStart: 6 }}>
-                  {r.type ? <Tag>{r.type}</Tag> : null}
-                  <StatusTag value={r.status} />
-                </Space>
-              </td>
-              <td
+                册子
+              </th>
+              <th
                 style={{
+                  background: "#f5f7fa",
+                  textAlign: "left",
                   padding: "7px 10px",
-                  borderBottom: "1px solid #ebeef5",
                   fontSize: 12.5,
-                  fontVariantNumeric: "tabular-nums",
+                  fontWeight: 500,
+                  borderBottom: "1px solid #ebeef5",
+                  width: 90,
                 }}
               >
-                <Tooltip title="sku_item.ord = 卷面题号，学情回流按它对位（不是排序字段）">
-                  <b>第 {r.ord} 题</b>
-                </Tooltip>
-              </td>
-              <td
+                第几题
+              </th>
+              <th
                 style={{
+                  background: "#f5f7fa",
+                  textAlign: "left",
                   padding: "7px 10px",
-                  borderBottom: "1px solid #ebeef5",
                   fontSize: 12.5,
+                  fontWeight: 500,
+                  borderBottom: "1px solid #ebeef5",
+                  width: 140,
                 }}
               >
-                {r.taskId === null ? (
-                  <span style={灰}>没挂桥</span>
-                ) : (
-                  <Tag color="blue">task {r.taskId}</Tag>
-                )}
-              </td>
-              <td
+                挂桥
+              </th>
+              <th
                 style={{
+                  background: "#f5f7fa",
+                  textAlign: "left",
                   padding: "7px 10px",
-                  borderBottom: "1px solid #ebeef5",
                   fontSize: 12.5,
+                  fontWeight: 500,
+                  borderBottom: "1px solid #ebeef5",
+                  width: 120,
                 }}
               >
-                <TimeText iso={r.createdAt} />
-              </td>
+                建档
+              </th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={`${r.skuId}|${r.ord}`}>
+                <td
+                  style={{
+                    padding: "7px 10px",
+                    borderBottom: "1px solid #ebeef5",
+                    fontSize: 12.5,
+                  }}
+                >
+                  <Link href={`/sku/${r.skuId}`}>{r.name}</Link>
+                  <Space size={4} style={{ marginInlineStart: 6 }}>
+                    {r.type ? <Tag>{r.type}</Tag> : null}
+                    <StatusTag value={r.status} />
+                  </Space>
+                </td>
+                <td
+                  style={{
+                    padding: "7px 10px",
+                    borderBottom: "1px solid #ebeef5",
+                    fontSize: 12.5,
+                    fontVariantNumeric: "tabular-nums",
+                  }}
+                >
+                  <Tooltip title="sku_item.ord = 卷面题号，学情回流按它对位（不是排序字段）">
+                    <b>第 {r.ord} 题</b>
+                  </Tooltip>
+                </td>
+                <td
+                  style={{
+                    padding: "7px 10px",
+                    borderBottom: "1px solid #ebeef5",
+                    fontSize: 12.5,
+                  }}
+                >
+                  {r.taskId === null ? (
+                    <span style={灰}>没挂桥</span>
+                  ) : (
+                    <Tag color="blue">task {r.taskId}</Tag>
+                  )}
+                </td>
+                <td
+                  style={{
+                    padding: "7px 10px",
+                    borderBottom: "1px solid #ebeef5",
+                    fontSize: 12.5,
+                  }}
+                >
+                  <TimeText iso={r.createdAt} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       <div style={{ marginTop: 8, fontSize: 11.5, ...灰, lineHeight: 1.9 }}>
         🔴 一道题可以进多本册子（合刊/重排都算），每一处的 ord 各自算。
         <br />
@@ -471,8 +476,16 @@ function 出处({ card }: { card: QuestionCard }) {
             <Link href={`/question?batch=${encodeURIComponent(p.batch.id)}`}>
               看这一批的题 →
             </Link>
+            {/* 🔴 AI:PRD-009 检查单 4「看到即可达」：批次 id 摆在这儿却点不进闸报告，
+                以前只能去 /ingest 里手动翻。现在 ?batch= 直接开那一批的全账抽屉。 */}
+            <Link
+              href={`/ingest?batch=${encodeURIComponent(p.batch.id)}`}
+              style={{ marginInlineStart: 10 }}
+            >
+              看这一批的闸报告 →
+            </Link>
             <span style={{ ...灰, marginInlineStart: 10 }}>
-              逐题逐闸全账：<span style={MONO}>get_ingest_batch</span>
+              agent 侧同一份账：<span style={MONO}>get_ingest_batch</span>
             </span>
           </div>
         </span>
@@ -618,6 +631,8 @@ export default async function QuestionDetailPage({
                     alt={`配图 ${fig.role ?? ""}`}
                     style={{
                       maxHeight: 300,
+                      // 手机上不撑破容器（AI:PRD-009 检查单 5）
+                      maxWidth: "100%",
                       border: "1px solid #ebeef5",
                       background: "#fff",
                     }}
@@ -651,25 +666,21 @@ export default async function QuestionDetailPage({
 
   return (
     <>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "baseline",
-          gap: 12,
-          marginBottom: 12,
-          flexWrap: "wrap",
-        }}
-      >
-        <h1 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>题目详情</h1>
-        <IdTail id={card.id} />
-        <span style={{ marginLeft: "auto" }}>
-          <DataSourceNote>
+      <PageHead
+        title={<>题目详情</>}
+        tags={
+          <>
+            <IdTail id={card.id} />
+          </>
+        }
+        source={
+          <>
             core.getQuestion（= MCP get_question）/ core.getLineage /
             core.listSkusOfQuestion · 表 question / question_kp / figure /
             exam_model / sku_item
-          </DataSourceNote>
-        </span>
-      </div>
+          </>
+        }
+      />
 
       {/* ── 徽章条：一眼看清这道题「能不能直接拿去用」 ────────────────────── */}
       <Space size={4} wrap style={{ marginBottom: 12 }}>

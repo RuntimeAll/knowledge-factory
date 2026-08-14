@@ -18,9 +18,9 @@
 import { Alert, Card, Col, Progress, Row, Tag } from "antd";
 import Link from "next/link";
 
+import { PageHead } from "~/components/console/page-head";
 import {
   CopyCmd,
-  DataSourceNote,
   EmptyHint,
   StatusTag,
   TimeText,
@@ -47,6 +47,17 @@ const TD: React.CSSProperties = {
 };
 const 表: React.CSSProperties = { width: "100%", borderCollapse: "collapse" };
 const 灰: React.CSSProperties = { color: "#909399" };
+/** 数字一律等宽（🔴 检查单 §三·3） */
+const 数字: React.CSSProperties = { fontVariantNumeric: "tabular-nums" };
+
+/**
+ * 宽表在手机上必须**自己横向滚**，不能把整页顶宽（🔴 检查单 §三·5）。
+ * 本页三张表都是手写 `<table>`（不是 ProTable，没有内建的 scroll 容器），
+ * 一律套这个壳。
+ */
+function HScroll({ children }: { children: React.ReactNode }) {
+  return <div style={{ overflowX: "auto" }}>{children}</div>;
+}
 
 function 百分(ok: number, total: number): number {
   if (total <= 0) return 0;
@@ -94,99 +105,129 @@ function BatchTable({
   }
   const 排序 = [...view.batches].sort((a, b) => b.batchId - a.batchId);
   return (
-    <table style={表}>
-      <thead>
-        <tr>
-          <th style={{ ...TH, width: 76 }}>批次</th>
-          <th style={{ ...TH, width: 56 }}>第几次</th>
-          <th style={{ ...TH, width: 150 }}>线</th>
-          <th style={{ ...TH, width: 130 }}>得分</th>
-          <th style={{ ...TH, width: 110 }}>档位</th>
-          <th style={{ ...TH, width: 120 }}>挂桥</th>
-          <th style={TH}>说明（未挂原因 / 题单正本）</th>
-          <th style={{ ...TH, width: 92 }}>操作</th>
-        </tr>
-      </thead>
-      <tbody>
-        {排序.map((b) => (
-          <tr
-            key={b.batchId}
-            style={active === b.batchId ? { background: "#f0f7ff" } : undefined}
-          >
-            <td style={{ ...TD, fontFamily: "Consolas, Menlo, monospace" }}>
-              b{b.batchId}
-            </td>
-            <td style={TD}>{b.day ?? "—"}</td>
-            <td style={TD}>
-              {b.line ?? <span style={灰}>没挂上桥，拿不到线名</span>}
-            </td>
-            <td style={TD}>
-              {b.score === null ? (
-                <span style={灰}>—</span>
-              ) : (
-                <span
-                  title="🔴 题数口径：分母 = 判定行数 − skip（漏抄整条摘掉），所以是 16/19 而不是 16/20"
-                  style={{ fontVariantNumeric: "tabular-nums" }}
-                >
-                  {b.score.ok}/{b.score.total}
-                  {b.score.total > 0
-                    ? ` · ${百分(b.score.ok, b.score.total)}%`
-                    : ""}
-                  {b.score.skip > 0 ? (
-                    <span style={灰}> （skip {b.score.skip} 已摘）</span>
-                  ) : null}
-                </span>
-              )}
-            </td>
-            <td style={TD}>
-              {b.auto ? (
-                <Tag color="blue" title="无人值守放行（batches.auto）">
-                  {b.auto}
-                </Tag>
-              ) : (
-                <Tag title="batches.auto 是 NULL = 人工点的">人工</Tag>
-              )}
-              <div style={{ ...灰, marginTop: 2 }}>
-                {b.status ?? "状态未记"}
-                {b.round === null ? "" : ` · 第 ${b.round} 轮`}
-              </div>
-            </td>
-            <td style={TD}>
-              {b.matched ? (
-                <Tag color="green">
-                  {b.via === "slots" ? "slots 主路" : "补录桥"}
-                  {b.taskId === null ? "" : ` → task${b.taskId}`}
-                </Tag>
-              ) : (
-                <Tag color="red">无桥</Tag>
-              )}
-            </td>
-            <td style={{ ...TD, whiteSpace: "pre-wrap" }}>
-              {b.matched ? (
-                <span style={灰}>
-                  {b.sheet ?? "题单路径未记（tasks.sheet 为空）"}
-                </span>
-              ) : (
-                <span style={{ color: "#c45656" }}>{b.why}</span>
-              )}
-            </td>
-            <td style={TD}>
-              {active === b.batchId ? (
-                <Link href={`/student/${encodeURIComponent(code)}`}>
-                  看全部批次
-                </Link>
-              ) : (
-                <Link
-                  href={`/student/${encodeURIComponent(code)}?batch=${b.batchId}`}
-                >
-                  只看这一批
-                </Link>
-              )}
-            </td>
+    <HScroll>
+      <table style={{ ...表, minWidth: 900 }}>
+        <thead>
+          <tr>
+            <th style={{ ...TH, width: 76 }}>批次</th>
+            <th style={{ ...TH, width: 56 }}>第几次</th>
+            <th style={{ ...TH, width: 150 }}>线</th>
+            <th style={{ ...TH, width: 130 }}>得分</th>
+            <th style={{ ...TH, width: 110 }}>档位</th>
+            <th style={{ ...TH, width: 120 }}>挂桥</th>
+            <th style={TH}>说明（未挂原因 / 题单正本）</th>
+            <th style={{ ...TH, width: 140 }}>操作</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {排序.map((b) => (
+            <tr
+              key={b.batchId}
+              style={
+                active === b.batchId ? { background: "#f0f7ff" } : undefined
+              }
+            >
+              {/* 🔴 检查单 §三·4 看到即可达：批次号原来是死字，看得见却点不进那一批的判定 */}
+              <td
+                style={{
+                  ...TD,
+                  fontFamily: "Consolas, Menlo, monospace",
+                  ...数字,
+                }}
+              >
+                {b.day === null ? (
+                  `b${b.batchId}`
+                ) : (
+                  <Link
+                    href={`/grading/review/${encodeURIComponent(code)}/${b.day}`}
+                    title="进终审台看这一批的逐题判定（读 审核.db mode=ro）"
+                  >
+                    b{b.batchId}
+                  </Link>
+                )}
+              </td>
+              <td style={{ ...TD, ...数字 }}>{b.day ?? "—"}</td>
+              <td style={TD}>
+                {b.line ?? <span style={灰}>没挂上桥，拿不到线名</span>}
+              </td>
+              <td style={TD}>
+                {b.score === null ? (
+                  <span style={灰}>—</span>
+                ) : (
+                  <span
+                    title="🔴 题数口径：分母 = 判定行数 − skip（漏抄整条摘掉），所以是 16/19 而不是 16/20"
+                    style={{ fontVariantNumeric: "tabular-nums" }}
+                  >
+                    {b.score.ok}/{b.score.total}
+                    {b.score.total > 0
+                      ? ` · ${百分(b.score.ok, b.score.total)}%`
+                      : ""}
+                    {b.score.skip > 0 ? (
+                      <span style={灰}> （skip {b.score.skip} 已摘）</span>
+                    ) : null}
+                  </span>
+                )}
+              </td>
+              <td style={TD}>
+                {b.auto ? (
+                  <Tag color="blue" title="无人值守放行（batches.auto）">
+                    {b.auto}
+                  </Tag>
+                ) : (
+                  <Tag title="batches.auto 是 NULL = 人工点的">人工</Tag>
+                )}
+                <div style={{ ...灰, marginTop: 2 }}>
+                  {b.status ?? "状态未记"}
+                  {b.round === null ? "" : ` · 第 ${b.round} 轮`}
+                </div>
+              </td>
+              <td style={TD}>
+                {b.matched ? (
+                  <Tag color="green">
+                    {b.via === "slots" ? "slots 主路" : "补录桥"}
+                    {b.taskId === null ? "" : ` → task${b.taskId}`}
+                  </Tag>
+                ) : (
+                  <Tag color="red">无桥</Tag>
+                )}
+              </td>
+              <td style={{ ...TD, whiteSpace: "pre-wrap" }}>
+                {b.matched ? (
+                  <span style={灰}>
+                    {b.sheet ?? "题单路径未记（tasks.sheet 为空）"}
+                  </span>
+                ) : (
+                  <span style={{ color: "#c45656" }}>{b.why}</span>
+                )}
+              </td>
+              <td style={TD}>
+                {active === b.batchId ? (
+                  <Link href={`/student/${encodeURIComponent(code)}`}>
+                    看全部批次
+                  </Link>
+                ) : (
+                  <Link
+                    href={`/student/${encodeURIComponent(code)}?batch=${b.batchId}`}
+                  >
+                    只看这一批
+                  </Link>
+                )}
+                {b.day === null ? null : (
+                  <>
+                    {" · "}
+                    <Link
+                      href={`/grading/review/${encodeURIComponent(code)}/${b.day}`}
+                    >
+                      去终审
+                    </Link>
+                  </>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </HScroll>
   );
 }
 
@@ -207,56 +248,58 @@ function KpMastery({ view }: { view: StudentViewResult }) {
   }
   return (
     <>
-      <table style={表}>
-        <thead>
-          <tr>
-            <th style={TH}>考点</th>
-            <th style={{ ...TH, width: 260 }}>掌握（题数口径）</th>
-            <th style={{ ...TH, width: 90 }}>对/总</th>
-            <th style={{ ...TH, width: 190 }}>兜底档扣了几题次</th>
-          </tr>
-        </thead>
-        <tbody>
-          {view.perKp.map((k) => {
-            const p = 百分(k.ok, k.total);
-            return (
-              <tr key={k.kpId}>
-                <td style={TD}>
-                  <Link href={`/kg/kp/${k.kpId}`}>{k.kpName}</Link>
-                </td>
-                <td style={TD}>
-                  <Progress
-                    percent={p}
-                    size="small"
-                    status={p === 100 ? "success" : "normal"}
-                    strokeColor={
-                      p === 100 ? "#67c23a" : p >= 60 ? "#409eff" : "#e6a23c"
-                    }
-                  />
-                </td>
-                <td style={{ ...TD, fontVariantNumeric: "tabular-nums" }}>
-                  {k.ok}/{k.total}
-                </td>
-                <td style={TD}>
-                  {k.fallbackAll === 0 ? (
-                    <span style={灰}>0</span>
-                  ) : (
-                    <span
-                      title={
-                        "这些题的 error_kp 是 NULL（没给归因）→ 兜底档：该题所挂考点全扣。数摆在这儿，别当成「这个考点真的错了这么多」。\n" +
-                        "🔴 单位是题次（一题挂 N 个考点记 N 次），与③「NULL 未记录 · X 题」的题数口径不同，两个数本来就对不上。"
+      <HScroll>
+        <table style={{ ...表, minWidth: 720 }}>
+          <thead>
+            <tr>
+              <th style={TH}>考点</th>
+              <th style={{ ...TH, width: 260 }}>掌握（题数口径）</th>
+              <th style={{ ...TH, width: 90 }}>对/总</th>
+              <th style={{ ...TH, width: 190 }}>兜底档扣了几题次</th>
+            </tr>
+          </thead>
+          <tbody>
+            {view.perKp.map((k) => {
+              const p = 百分(k.ok, k.total);
+              return (
+                <tr key={k.kpId}>
+                  <td style={TD}>
+                    <Link href={`/kg/kp/${k.kpId}`}>{k.kpName}</Link>
+                  </td>
+                  <td style={TD}>
+                    <Progress
+                      percent={p}
+                      size="small"
+                      status={p === 100 ? "success" : "normal"}
+                      strokeColor={
+                        p === 100 ? "#67c23a" : p >= 60 ? "#409eff" : "#e6a23c"
                       }
-                      style={{ color: "#e6a23c" }}
-                    >
-                      {k.fallbackAll} 题次（error_kp IS NULL）
-                    </span>
-                  )}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+                    />
+                  </td>
+                  <td style={{ ...TD, ...数字 }}>
+                    {k.ok}/{k.total}
+                  </td>
+                  <td style={TD}>
+                    {k.fallbackAll === 0 ? (
+                      <span style={灰}>0</span>
+                    ) : (
+                      <span
+                        title={
+                          "这些题的 error_kp 是 NULL（没给归因）→ 兜底档：该题所挂考点全扣。数摆在这儿，别当成「这个考点真的错了这么多」。\n" +
+                          "🔴 单位是题次（一题挂 N 个考点记 N 次），与③「NULL 未记录 · X 题」的题数口径不同，两个数本来就对不上。"
+                        }
+                        style={{ color: "#e6a23c" }}
+                      >
+                        {k.fallbackAll} 题次（error_kp IS NULL）
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </HScroll>
       <div style={{ marginTop: 8, fontSize: 12, ...灰, lineHeight: 1.9 }}>
         · 分母 = <b>题单挂载的考点</b>（sku_item → question → question_kp），
         不是 error_kp：光有错因码算不出掌握度。
@@ -312,36 +355,38 @@ function CauseTriState({ view }: { view: StudentViewResult }) {
                 ），要么码还没铺映射（见下方红旗）。
               </EmptyHint>
             ) : (
-              <table style={表}>
-                <thead>
-                  <tr>
-                    <th style={TH}>错因</th>
-                    <th style={{ ...TH, width: 70 }}>码</th>
-                    <th style={{ ...TH, width: 56 }}>码次</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {c.rows.map((r) => (
-                    <tr key={`${r.causeId}|${r.kpId}|${r.errCode}`}>
-                      <td style={TD}>
-                        {r.causeName}
-                        <div style={灰}>
-                          <Link href={`/kg/kp/${r.kpId}`}>{r.kpName}</Link>
-                        </div>
-                      </td>
-                      <td
-                        style={{
-                          ...TD,
-                          fontFamily: "Consolas, Menlo, monospace",
-                        }}
-                      >
-                        {r.errCode}
-                      </td>
-                      <td style={TD}>{r.count}</td>
+              <HScroll>
+                <table style={{ ...表, minWidth: 300 }}>
+                  <thead>
+                    <tr>
+                      <th style={TH}>错因</th>
+                      <th style={{ ...TH, width: 70 }}>码</th>
+                      <th style={{ ...TH, width: 56 }}>码次</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {c.rows.map((r) => (
+                      <tr key={`${r.causeId}|${r.kpId}|${r.errCode}`}>
+                        <td style={TD}>
+                          {r.causeName}
+                          <div style={灰}>
+                            <Link href={`/kg/kp/${r.kpId}`}>{r.kpName}</Link>
+                          </div>
+                        </td>
+                        <td
+                          style={{
+                            ...TD,
+                            fontFamily: "Consolas, Menlo, monospace",
+                          }}
+                        >
+                          {r.errCode}
+                        </td>
+                        <td style={{ ...TD, ...数字 }}>{r.count}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </HScroll>
             )}
           </Card>
         </Col>
@@ -512,12 +557,22 @@ export default async function StudentViewPage({
 
   const 有这一批 =
     batchId !== null && all.batches.some((b) => b.batchId === batchId);
-  const scoped =
-    有这一批 && batchId !== null
-      ? await getStudentView(code, { batchId })
-      : null;
+  // 🔴 AI:PRD-009 打磨（检查单 §三·2 错误态）：单批取数原来是**裸 await** ——
+  //    它一抛，整页 500（连上面那张批次表都看不见了）。全量那一次早就包了 try，
+  //    这一次也得包：单批算不出就退回全量口径，并把原文摆在页面上。
+  let scoped: StudentViewResult | null = null;
+  let scopedError: string | undefined;
+  if (有这一批 && batchId !== null) {
+    try {
+      scoped = await getStudentView(code, { batchId });
+    } catch (e) {
+      scopedError = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+    }
+  }
   const 视图 = scoped ?? all;
   const 选中 = scoped ? batchId : null;
+  /** 地址栏给了 batch 但库里没这一批（手改地址 / 批次被删）—— 不许静默当没看见 */
+  const 批次不存在 = batchRaw !== "" && !有这一批;
 
   // 取数命令里的 batch_id：优先选中的那一批，否则最近一个挂上桥的批次
   const 挂上的 = all.batches.filter((b) => b.matched);
@@ -535,29 +590,33 @@ export default async function StudentViewPage({
 
   return (
     <>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "baseline",
-          gap: 12,
-          marginBottom: 12,
-          flexWrap: "wrap",
-        }}
-      >
-        <h1 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>
-          学员学情 · {code}
-        </h1>
-        <span style={{ fontSize: 12.5, ...灰 }}>
-          student_view 数据包的页面化 = 报告的取数预览（不出报告）
-        </span>
-        <span style={{ marginLeft: "auto" }}>
-          <DataSourceNote>
+      <PageHead
+        title={<>学员学情 · {code}</>}
+        tags={
+          <>
+            <span style={{ fontSize: 12.5, ...灰 }}>
+              student_view 数据包的页面化 = 报告的取数预览（不出报告）
+            </span>
+            {/* 🔴 检查单 §三·4/8：详情页要有回头路，也要能一步走到这个人的另外三处 */}
+            <span style={{ fontSize: 12.5, display: "flex", gap: 10 }}>
+              <Link href="/student">← 回学员名册</Link>
+              <Link href={`/grading/board?code=${encodeURIComponent(code)}`}>
+                批次流水
+              </Link>
+              <Link href={`/grading/reports?code=${encodeURIComponent(code)}`}>
+                已出件报告
+              </Link>
+            </span>
+          </>
+        }
+        source={
+          <>
             core.getStudentView / causeDistribution（与 MCP student_view
             同一入口）· 圣域 审核.db(mode=ro) batches/slots/items + 本库
             sku_item / question_kp / err_code_map
-          </DataSourceNote>
-        </span>
-      </div>
+          </>
+        }
+      />
 
       {/* ── 名册维度 + 覆盖口径 ─────────────────────────────────────────── */}
       <Card size="small" style={{ marginBottom: 12 }}>
@@ -613,6 +672,35 @@ export default async function StudentViewPage({
           </Col>
         </Row>
       </Card>
+
+      {批次不存在 ? (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message={`地址里的 batch=${batchRaw} 在这个学员名下找不到 —— 下面按「全部挂桥批次汇总」显示`}
+          description={
+            <span style={{ fontSize: 12.5 }}>
+              可能是手改的地址、或那一批不属于 {code}。
+              要按单批看（报告是一天一份），从下面①批次表点「只看这一批」。
+            </span>
+          }
+        />
+      ) : null}
+
+      {scopedError ? (
+        <Alert
+          type="error"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message={`b${batchId ?? "?"} 的单批口径算不出来（原文照登）—— 下面退回了「全部挂桥批次汇总」`}
+          description={
+            <pre style={{ whiteSpace: "pre-wrap", fontSize: 12.5, margin: 0 }}>
+              {scopedError}
+            </pre>
+          }
+        />
+      ) : null}
 
       {视图.warnings.length > 0 ? (
         <Alert

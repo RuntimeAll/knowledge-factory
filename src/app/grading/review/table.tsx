@@ -22,28 +22,39 @@ import { Alert, Progress, Space, Tag, Tooltip } from "antd";
 import Link from "next/link";
 import { useRef, useState } from "react";
 
-import { EmptyHint, TimeText } from "~/components/console/ui";
+import { EmptyHint, STATUS_COLOR, TimeText } from "~/components/console/ui";
 import {
   REVIEW_CONFIRMED_LIMIT,
   REVIEW_CONSOLE_URL,
+  REVIEW_STATUS_LABEL,
+  REVIEW_STATUSES,
+  reviewStatusUnknownHint,
   type ReviewBatchBrief,
   type ReviewConfirmedRow,
   type ReviewListResponse,
+  type ReviewStatus,
 } from "../shared";
+
+/** 数字列一律等宽数字（🔴 检查单 §三·3：竖着比大小的数，字宽不一样就比不了） */
+const 数字: React.CSSProperties = { fontVariantNumeric: "tabular-nums" };
 
 /** 终审页地址（代号可能是中文，必须 encode） */
 export function reviewHref(student: string, day: number): string {
   return `/grading/review/${encodeURIComponent(student)}/${day}`;
 }
 
+/** 学情页地址（🔴 检查单 §三·4 看到即可达：表上出现的代号必须点得进去） */
+export function studentHref(student: string): string {
+  return `/student/${encodeURIComponent(student)}`;
+}
+
 function StatusTagOf({ status }: { status: string }) {
-  if (status === "pending") return <Tag color="orange">待审核</Tag>;
-  if (status === "rework") return <Tag color="red">已打回 · 待重批</Tag>;
-  if (status === "confirmed") return <Tag color="green">已确认</Tag>;
+  if ((REVIEW_STATUSES as readonly string[]).includes(status)) {
+    const s = status as ReviewStatus;
+    return <Tag color={STATUS_COLOR[s]}>{REVIEW_STATUS_LABEL[s]}</Tag>;
+  }
   return (
-    <Tooltip
-      title={`审核.db batches.status=${JSON.stringify(status)} —— 不是 pending/rework/confirmed，本页不猜它是什么`}
-    >
+    <Tooltip title={reviewStatusUnknownHint(status)}>
       <Tag>状态未知</Tag>
     </Tooltip>
   );
@@ -60,14 +71,25 @@ export function ReviewQueueTable() {
     {
       title: "学员 · 打卡次",
       dataIndex: "student",
-      width: 170,
+      width: 190,
       render: (_, r) => (
         <Space size={6} wrap>
           <Link href={reviewHref(r.student, r.day)}>
             <b>{r.student}</b>
           </Link>
           <Tooltip title="该学员自己的第几次打卡（batches.day）—— 🔴 与「线的第几天」不是一回事">
-            <span style={{ color: "#606266" }}>第 {r.day} 次</span>
+            <span style={{ color: "#606266", ...数字 }}>第 {r.day} 次</span>
+          </Tooltip>
+          {/* 🔴 看到即可达：代号在这儿出现了，就得点得进他的学情页 */}
+          <Tooltip
+            title={`看 ${r.student} 的学情（批次 / 考点掌握 / 诊断三态）`}
+          >
+            <Link
+              href={studentHref(r.student)}
+              style={{ fontSize: 11.5, color: "#909399" }}
+            >
+              学情
+            </Link>
           </Tooltip>
         </Space>
       ),
@@ -79,7 +101,7 @@ export function ReviewQueueTable() {
       render: (_, r) => (
         <Space direction="vertical" size={2}>
           <StatusTagOf status={r.status} />
-          <span style={{ fontSize: 11.5, color: "#909399" }}>
+          <span style={{ fontSize: 11.5, color: "#909399", ...数字 }}>
             第 {r.round} 轮
           </span>
         </Space>
@@ -121,7 +143,7 @@ export function ReviewQueueTable() {
               size="small"
               status={r.judgedCount === r.itemCount ? "success" : "active"}
             />
-            <span style={{ fontSize: 11.5, color: "#909399" }}>
+            <span style={{ fontSize: 11.5, color: "#909399", ...数字 }}>
               {r.judgedCount} / {r.itemCount} 题 · {r.pages.length} 页
             </span>
           </Space>
@@ -186,7 +208,7 @@ export function ReviewQueueTable() {
         <Alert
           type="error"
           showIcon
-          style={{ marginBottom: 10 }}
+          style={{ marginBottom: 12 }}
           message="待审队列取数没跑成（原文照登）"
           description={
             <span style={{ fontSize: 12.5, whiteSpace: "pre-wrap" }}>
@@ -199,7 +221,7 @@ export function ReviewQueueTable() {
         <Alert
           type="warning"
           showIcon
-          style={{ marginBottom: 10 }}
+          style={{ marginBottom: 12 }}
           message="读队列时遇到的事（一条不吞）"
           description={
             <div style={{ fontSize: 12.5, lineHeight: 1.9 }}>
@@ -217,7 +239,7 @@ export function ReviewQueueTable() {
         size="small"
         cardBordered
         columns={columns}
-        scroll={{ x: 1080 }}
+        scroll={{ x: 1140 }}
         search={false}
         options={{
           reload: true,
@@ -262,9 +284,11 @@ export function ReviewQueueTable() {
       <RecentConfirmed rows={confirmed} />
 
       <div style={{ marginTop: 12, fontSize: 11.5, color: "#909399" }}>
-        旧审核台（{REVIEW_CONSOLE_URL}，PRD-027
-        自己的进程）从本卡起是**可退役的旧 UI** ——
-        终审全流程已在本页闭环，写仍由圣域的 审核库.py 落库，它开不开都不影响。
+        {/* 🔴 AI:PRD-009 打磨（检查单 §三·9 文案）：这里原来写的是 Markdown 的
+            `**可退役的旧 UI**` —— JSX 不认 Markdown，星号是原样印在页面上的。 */}
+        旧审核台（{REVIEW_CONSOLE_URL}，PRD-027 自己的进程）从本卡起是
+        <b>可退役的旧 UI</b> —— 终审全流程已在本页闭环，写仍由圣域的 审核库.py
+        落库，它开不开都不影响。
       </div>
     </>
   );
@@ -279,18 +303,26 @@ function RecentConfirmed({ rows }: { rows: ReviewConfirmedRow[] }) {
     {
       title: "学员",
       dataIndex: "student",
-      width: 150,
+      width: 170,
       render: (_, r) => (
-        <Link href={reviewHref(r.student, r.day)}>
-          <b>{r.student}</b>
-        </Link>
+        <Space size={6} wrap>
+          <Link href={reviewHref(r.student, r.day)}>
+            <b>{r.student}</b>
+          </Link>
+          <Link
+            href={studentHref(r.student)}
+            style={{ fontSize: 11.5, color: "#909399" }}
+          >
+            学情
+          </Link>
+        </Space>
       ),
     },
     {
       title: "打卡次",
       dataIndex: "day",
       width: 90,
-      render: (_, r) => `第 ${r.day} 次`,
+      render: (_, r) => <span style={数字}>第 {r.day} 次</span>,
     },
     {
       title: "确认时间",
@@ -302,7 +334,7 @@ function RecentConfirmed({ rows }: { rows: ReviewConfirmedRow[] }) {
       title: "轮次",
       dataIndex: "round",
       width: 80,
-      render: (_, r) => `第 ${r.round} 轮`,
+      render: (_, r) => <span style={数字}>第 {r.round} 轮</span>,
     },
     {
       title: "放行来源",
@@ -337,7 +369,7 @@ function RecentConfirmed({ rows }: { rows: ReviewConfirmedRow[] }) {
       search={false}
       options={false}
       pagination={false}
-      scroll={{ x: 640 }}
+      scroll={{ x: 700 }}
       headerTitle={
         <span style={{ fontSize: 13 }}>
           近期已确认（只读 · 最近 {REVIEW_CONFIRMED_LIMIT} 批）

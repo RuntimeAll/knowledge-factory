@@ -156,13 +156,18 @@ export function SkuTable(props: SkuTableProps) {
       dataIndex: "name",
       sorter: true,
       width: 300,
+      // 🔴 册名常常长过一列（「七上有理数混合运算每日打卡·教辅版」这种）：
+      //    截断 + 悬停全名，别让一行撑成三行把整张表顶散。
+      ellipsis: true,
       tooltip:
         "在取回的窗口里按「包含」匹配（core 的 listSkus 没有名称这一维）",
       fieldProps: { placeholder: "群打卡 / 绝对值" },
       render: (_, r) => (
-        <Link href={`/sku/${r.id}`} style={{ color: "inherit" }}>
-          <span style={{ fontSize: 12.5 }}>{r.name}</span>
-        </Link>
+        <Tooltip title={r.name} styles={{ root: { maxWidth: 520 } }}>
+          <Link href={`/sku/${r.id}`} style={{ color: "inherit" }}>
+            <span style={{ fontSize: 12.5 }}>{r.name}</span>
+          </Link>
+        </Tooltip>
       ),
     },
     {
@@ -192,14 +197,27 @@ export function SkuTable(props: SkuTableProps) {
       sorter: true,
       search: false,
       width: 64,
+      align: "right",
       tooltip: "sku_item 行数 = 题单里有多少题（0 = 登记了还没装题）",
       render: (_, r) =>
         r.items === 0 ? (
           <Tooltip title="登记 ≠ 装题：这本册子还没有一条 sku_item">
-            <span style={{ color: "#909399" }}>0</span>
+            <span
+              style={{ color: "#909399", fontVariantNumeric: "tabular-nums" }}
+            >
+              0
+            </span>
           </Tooltip>
         ) : (
-          <span>{r.items}</span>
+          // 🔴 看到即可达：题数点得动 —— 题单在详情页（ord 对位那张表）
+          <Tooltip title="点进册子详情看题单（ord = 卷面题号）">
+            <Link
+              href={`/sku/${r.id}`}
+              style={{ fontVariantNumeric: "tabular-nums" }}
+            >
+              {r.items}
+            </Link>
+          </Tooltip>
         ),
     },
     {
@@ -208,12 +226,24 @@ export function SkuTable(props: SkuTableProps) {
       sorter: true,
       search: false,
       width: 64,
+      align: "right",
       tooltip: "sku_output 行数（PDF/题单 JSON/物料）",
       render: (_, r) =>
         r.outputs === 0 ? (
-          <span style={{ color: "#909399" }}>0</span>
+          <span
+            style={{ color: "#909399", fontVariantNumeric: "tabular-nums" }}
+          >
+            0
+          </span>
         ) : (
-          <Link href={`/output?sku=${r.id}`}>{r.outputs}</Link>
+          <Tooltip title="点进产物仓，只看这本册子的件">
+            <Link
+              href={`/output?sku=${r.id}`}
+              style={{ fontVariantNumeric: "tabular-nums" }}
+            >
+              {r.outputs}
+            </Link>
+          </Tooltip>
         ),
     },
     {
@@ -229,13 +259,18 @@ export function SkuTable(props: SkuTableProps) {
       dataIndex: "layout",
       sorter: true,
       width: 96,
+      ellipsis: true,
       tooltip: "sku.layout（punch 的 layout_key）。窗口内按「包含」匹配",
       fieldProps: { placeholder: "daily_v1" },
       render: (_, r) =>
         r.layout ? (
-          <span style={{ fontSize: 12 }}>{r.layout}</span>
+          <Tooltip title={r.layout}>
+            <span style={{ fontSize: 12 }}>{r.layout}</span>
+          </Tooltip>
         ) : (
-          <span style={{ color: "#909399" }}>—</span>
+          <Tooltip title="sku.layout 是空的">
+            <span style={{ color: "#909399" }}>—</span>
+          </Tooltip>
         ),
     },
     {
@@ -243,13 +278,18 @@ export function SkuTable(props: SkuTableProps) {
       dataIndex: "edition",
       sorter: true,
       width: 96,
+      ellipsis: true,
       tooltip: "sku.edition_ctx（生产动作显式带的版本）。窗口内按「包含」匹配",
       fieldProps: { placeholder: "人教七上 / 七上" },
       render: (_, r) =>
         r.editionCtx ? (
-          <span style={{ fontSize: 12 }}>{r.editionCtx}</span>
+          <Tooltip title={r.editionCtx}>
+            <span style={{ fontSize: 12 }}>{r.editionCtx}</span>
+          </Tooltip>
         ) : (
-          <span style={{ color: "#909399" }}>—</span>
+          <Tooltip title="sku.edition_ctx 是空的">
+            <span style={{ color: "#909399" }}>—</span>
+          </Tooltip>
         ),
     },
     {
@@ -261,9 +301,23 @@ export function SkuTable(props: SkuTableProps) {
         "grading_task_map：这本天卷对应圣域的哪个打卡任务（null = 没挂桥）",
       render: (_, r) =>
         r.taskId === null ? (
-          <span style={{ color: "#909399" }}>—</span>
+          <Tooltip title="grading_task_map 里没有这本册子 —— 学情回流找不到它的作答（只有打卡天卷才需要挂桥）">
+            <span style={{ color: "#909399" }}>—</span>
+          </Tooltip>
         ) : (
-          <Tag color="blue">task {r.taskId}</Tag>
+          // 🔴 这个 tag 点不动是**故意**的：task 是圣域（审核.db）那边的 id，
+          //    本管理台没有一页是按 task 号打开的（批改看板按学员代号进）。
+          //    给一个点进去 404 的链接比不能点更糟 —— 与 StatCard 的 todo 一个规矩。
+          <Tooltip
+            title={`圣域打卡任务 task ${r.taskId}（本台没有按 task 号打开的页，所以这个标签点不动）`}
+          >
+            <Tag
+              color="blue"
+              style={{ fontVariantNumeric: "tabular-nums", cursor: "default" }}
+            >
+              task {r.taskId}
+            </Tag>
+          </Tooltip>
         ),
     },
     {
@@ -375,11 +429,30 @@ export function SkuTable(props: SkuTableProps) {
             q.set("order", so === "ascend" ? "asc" : "desc");
           }
 
-          const res = await fetch(`/api/skus?${q.toString()}`);
-          const j = (await res.json()) as SkuListResponse;
-          setMeta(j.meta);
-          setErr(j.ok ? undefined : j.error);
-          return { data: j.data, total: j.total, success: true };
+          // 🔴 取数的三种失败都要上墙（设计稿 §三·2「API 失败 Alert 上墙带原文，
+          //    绝不吞」）：① 路由自己报 ok:false；② HTTP 非 2xx（body 常是 HTML，
+          //    直接 json() 会抛一个看不懂的 SyntaxError）；③ fetch 本身抛
+          //    （dev server 断了/跨源被拦）。**②③ 不 catch 的话 ProTable 会把它们
+          //    吞成一张「暂无数据」的空表** —— 「查过了没有」与「根本没查成」
+          //    在这一页必须分得开。
+          try {
+            const res = await fetch(`/api/skus?${q.toString()}`);
+            if (!res.ok) {
+              throw new Error(
+                `GET /api/skus 返回 HTTP ${res.status} ${res.statusText}`,
+              );
+            }
+            const j = (await res.json()) as SkuListResponse;
+            setMeta(j.meta);
+            setErr(
+              j.ok ? undefined : (j.error ?? "接口返回 ok=false，但没给原因"),
+            );
+            return { data: j.data, total: j.total, success: true };
+          } catch (e) {
+            setMeta(null);
+            setErr(e instanceof Error ? `${e.name}: ${e.message}` : String(e));
+            return { data: [], total: 0, success: true };
+          }
         }}
       />
       <div

@@ -50,7 +50,12 @@ interface QueryForm {
 export interface BoardTableProps {
   codes: string[];
   defaultCode?: string;
+  /** 🔴 名册没读出来时的原文（下拉会缺人，必须说出来，见 page.tsx） */
+  rosterError?: string;
 }
+
+/** 数字列一律等宽数字（🔴 检查单 §三·3） */
+const 数字: React.CSSProperties = { fontVariantNumeric: "tabular-nums" };
 
 function MetaBar({ meta, error }: { meta: BoardMeta | null; error?: string }) {
   if (error) {
@@ -58,7 +63,7 @@ function MetaBar({ meta, error }: { meta: BoardMeta | null; error?: string }) {
       <Alert
         type="error"
         showIcon
-        style={{ marginBottom: 10 }}
+        style={{ marginBottom: 12 }}
         message="看板取数没跑成（原文照登）"
         description={<span style={{ fontSize: 12.5 }}>{error}</span>}
       />
@@ -81,7 +86,7 @@ function MetaBar({ meta, error }: { meta: BoardMeta | null; error?: string }) {
     <Alert
       type={meta.bridgeMatched < meta.bridgeTotal ? "warning" : "info"}
       showIcon={meta.bridgeMatched < meta.bridgeTotal}
-      style={{ marginBottom: 10 }}
+      style={{ marginBottom: 12 }}
       message={
         <span style={{ fontSize: 12.5 }}>
           圣域（只读）：{meta.gradingDbPath ?? "路径未知"}
@@ -110,7 +115,7 @@ export function BoardTable(props: BoardTableProps) {
     {
       title: "学员",
       dataIndex: "code",
-      width: 130,
+      width: 150,
       valueType: "select",
       fieldProps: {
         placeholder: "不选=全部",
@@ -118,9 +123,21 @@ export function BoardTable(props: BoardTableProps) {
         showSearch: true,
         options: props.codes.map((c) => ({ value: c, label: c })),
       },
+      // 🔴 AI:PRD-009 打磨（检查单 §三·4 看到即可达）：代号原来是死的粗体字 ——
+      //    看板上看见一个人，却点不进他的学情页，闭环在这儿断了。
       render: (_, r) => (
         <Space size={4}>
-          <b>{r.student ?? "—"}</b>
+          {r.student ? (
+            <Tooltip
+              title={`看 ${r.student} 的学情（批次 / 考点掌握 / 诊断三态）`}
+            >
+              <Link href={`/student/${encodeURIComponent(r.student)}`}>
+                <b>{r.student}</b>
+              </Link>
+            </Tooltip>
+          ) : (
+            <b>—</b>
+          )}
           <Tag color={r.seg === "收件" ? "default" : "blue"}>{r.seg}</Tag>
         </Space>
       ),
@@ -175,7 +192,7 @@ export function BoardTable(props: BoardTableProps) {
         r.day === null ? (
           <span style={{ color: "#909399" }}>—</span>
         ) : (
-          <span>第 {r.day} 次</span>
+          <span style={数字}>第 {r.day} 次</span>
         ),
     },
     {
@@ -183,17 +200,39 @@ export function BoardTable(props: BoardTableProps) {
       dataIndex: "paper",
       search: false,
       width: 230,
+      // 🔴 检查单 §三·3 长文：未挂原因常是一整句话，原来整段铺下来把行撑到三四行高，
+      //    一屏看不了几批。这里截两行 + 悬停看全文（原文一个字不改，只是折起来）。
       render: (_, r) => (
-        <div style={{ fontSize: 12.5 }}>
-          {r.paper ?? <span style={{ color: "#909399" }}>没挂上桥</span>}
-          {r.paperNote ? (
-            <div
-              style={{ color: "#909399", marginTop: 2, whiteSpace: "pre-wrap" }}
-            >
-              {r.paperNote}
-            </div>
-          ) : null}
-        </div>
+        <Tooltip
+          title={
+            r.paperNote ? (
+              <span style={{ whiteSpace: "pre-wrap" }}>
+                {r.paper ? `${r.paper}\n` : ""}
+                {r.paperNote}
+              </span>
+            ) : (
+              (r.paper ?? undefined)
+            )
+          }
+        >
+          <div style={{ fontSize: 12.5 }}>
+            {r.paper ?? <span style={{ color: "#909399" }}>没挂上桥</span>}
+            {r.paperNote ? (
+              <div
+                style={{
+                  color: "#909399",
+                  marginTop: 2,
+                  display: "-webkit-box",
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: "vertical",
+                  overflow: "hidden",
+                }}
+              >
+                {r.paperNote}
+              </div>
+            ) : null}
+          </div>
+        </Tooltip>
       ),
     },
     {
@@ -223,7 +262,9 @@ export function BoardTable(props: BoardTableProps) {
         r.doubt === null ? (
           <span style={{ color: "#909399" }}>—</span>
         ) : r.doubt > 0 ? (
-          <Tag color="orange">{r.doubt} 题</Tag>
+          <Tag color="orange" style={数字}>
+            {r.doubt} 题
+          </Tag>
         ) : (
           <Tag color="green">0</Tag>
         ),
@@ -235,7 +276,12 @@ export function BoardTable(props: BoardTableProps) {
       width: 124,
       tooltip:
         "题数口径：分母已摘掉 skip（漏抄整条不进分子也不进分母，如 16/19 而不是 16/20）",
-      render: (_, r) => r.score ?? <span style={{ color: "#909399" }}>—</span>,
+      render: (_, r) =>
+        r.score ? (
+          <span style={数字}>{r.score}</span>
+        ) : (
+          <span style={{ color: "#909399" }}>—</span>
+        ),
     },
     {
       title: "放大预算",
@@ -310,6 +356,22 @@ export function BoardTable(props: BoardTableProps) {
 
   return (
     <>
+      {props.rosterError ? (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message="学员名册读不出来（原文照登）——「学员」下拉里会少人"
+          description={
+            <span style={{ fontSize: 12.5, whiteSpace: "pre-wrap" }}>
+              {props.rosterError}
+              {"\n"}🔴 下拉少了谁 ≠ 他不存在：批次表本身与 roster 无关（批改段以
+              审核.db 为准），照样列得全。要按代号筛，
+              直接把代号敲进下拉框也能搜。
+            </span>
+          }
+        />
+      ) : null}
       <MetaBar meta={meta} error={err} />
       <ProTable<BoardRow, QueryForm>
         actionRef={actionRef}
@@ -317,7 +379,7 @@ export function BoardTable(props: BoardTableProps) {
         size="small"
         cardBordered
         columns={columns}
-        scroll={{ x: 1360 }}
+        scroll={{ x: 1390 }}
         search={{ labelWidth: "auto", defaultCollapsed: false }}
         form={{
           initialValues: props.defaultCode ? { code: props.defaultCode } : {},

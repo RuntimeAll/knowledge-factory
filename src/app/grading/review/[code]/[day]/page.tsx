@@ -15,7 +15,7 @@
  */
 import Link from "next/link";
 
-import { DataSourceNote } from "~/components/console/ui";
+import { PageHead } from "~/components/console/page-head";
 import { safeCode } from "~/app/grading/paths";
 import { JudgeBoard } from "./judge";
 
@@ -51,28 +51,20 @@ export default async function ReviewBatchPage({
 
   return (
     <>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "baseline",
-          gap: 12,
-          marginBottom: 12,
-          flexWrap: "wrap",
-        }}
-      >
-        <h1 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>
-          逐题终审 · {code} 第 {day} 次打卡
-        </h1>
-        <span style={{ fontSize: 12.5, color: "#909399" }}>
-          黄底 = agent 存疑，必须人工定；全部定完才能确认保存
-        </span>
-        <span style={{ marginLeft: "auto" }}>
-          <DataSourceNote>
+      <PageHead
+        title={
+          <>
+            逐题终审 · {code} 第 {day} 次打卡
+          </>
+        }
+        sub={<>黄底 = agent 存疑，必须人工定；全部定完才能确认保存</>}
+        source={
+          <>
             审核.db（mode=ro：batches / items / feedback）+ 原卷照片（学员/
             目录只读）；写 = spawn 订阅特训/_产线/审核库.py
-          </DataSourceNote>
-        </span>
-      </div>
+          </>
+        }
+      />
 
       <JudgeBoard code={code} day={day} />
     </>

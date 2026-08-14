@@ -466,6 +466,16 @@ export function ReconcilePanels({ initial }: { initial: ReconcileReportView }) {
                     dataSource={f.punchOnly}
                     scroll={{ x: 800 }}
                     pagination={{ defaultPageSize: 10, showSizeChanger: true }}
+                    // 🔴 空态照口径原句：这一栏空着是**好事**，别让它长成一句
+                    //    看不懂的「暂无数据」（设计稿 §三·6）
+                    locale={{
+                      emptyText: (
+                        <EmptyHint>
+                          没有「只货架有」的成品文件 ——
+                          货架账上的每一份产物，本库都登记过一份同路径的。
+                        </EmptyHint>
+                      ),
+                    }}
                   />
                 </>
               ),
@@ -483,6 +493,15 @@ export function ReconcilePanels({ initial }: { initial: ReconcileReportView }) {
                     dataSource={f.kfOnly}
                     scroll={{ x: 800 }}
                     pagination={{ defaultPageSize: 10, showSizeChanger: true }}
+                    locale={{
+                      emptyText: (
+                        <EmptyHint>
+                          没有「只本库有」的成品文件。🔴 注意这一栏只数
+                          <b>记了 src 的</b>那些产出：没记 src
+                          的件没有可比的键，不计入任何一栏（数目见上方那条提示）。
+                        </EmptyHint>
+                      ),
+                    }}
                   />
                 </>
               ),

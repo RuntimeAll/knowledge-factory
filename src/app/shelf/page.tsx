@@ -20,7 +20,8 @@
 import { Alert, Card } from "antd";
 import Link from "next/link";
 
-import { DataSourceNote } from "~/components/console/ui";
+import { PageHead } from "~/components/console/page-head";
+import { EmptyHint } from "~/components/console/ui";
 import { listShelfDocs } from "~/core";
 import { ShelfTable } from "./table";
 import { SHELF_TYPE_ORDER, type ShelfFacetsView } from "./shared";
@@ -63,37 +64,18 @@ export default async function ShelfPage({
 
   return (
     <>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "baseline",
-          gap: 12,
-          marginBottom: 12,
-          flexWrap: "wrap",
-        }}
-      >
-        <h1
-          style={{
-            fontSize: 18,
-            fontWeight: 600,
-            margin: 0,
-            whiteSpace: "nowrap",
-          }}
-        >
-          资料货架
-        </h1>
-        <span style={{ fontSize: 12.5, color: "#909399" }}>
-          六类资料的总账（{SHELF_TYPE_ORDER.join(" / ")}）—— 只看不改
-        </span>
-        <span style={{ marginLeft: "auto", textAlign: "right" }}>
-          <DataSourceNote>
+      <PageHead
+        title={<>资料货架</>}
+        sub={<>六类资料的总账（{SHELF_TYPE_ORDER.join(" / ")}）—— 只看不改</>}
+        source={
+          <>
             core.listShelfDocs · <b>punch 库</b>（
             {dbPath || "举一反三产物/资料库.db"}
             ，mode=ro）表 doc / question / asset / material / doc_member —— 🔴
             同名异库，不是本库的 data/资料库.db
-          </DataSourceNote>
-        </span>
-      </div>
+          </>
+        }
+      />
 
       {loadError ? (
         <Alert
@@ -152,7 +134,22 @@ export default async function ShelfPage({
           {...(type ? { defaultType: type } : {})}
         />
       ) : loadError ? null : (
-        <Card size="small">货架库里一行 doc 都没有。</Card>
+        // 🔴 空态照口径原句写 + 给下一步（设计稿 §三·6）：
+        //    「货架上没有」不等于「没做过册子」—— 差的是产线那一步 import。
+        <Card size="small">
+          <EmptyHint>
+            货架库连上了，但 <b>doc 表一行都没有</b>。🔴
+            它的意思是「这个库里还没登记过任何一份资料」，
+            <b>不是</b>「本机没做过册子」—— 册子做完要跑一次产线的 import
+            才会登记进货架库。
+            <br />
+            先确认 <b>PUNCH_DB_URL</b> 指的是{" "}
+            <code>举一反三产物/资料库.db</code>（🔴 同名异库，别指到本库的
+            data/资料库.db 上，那边没有 doc 表）， 再去产线跑
+            import。两库对不对得上可以看{" "}
+            <Link href="/shelf/reconcile">资料对账</Link>。
+          </EmptyHint>
+        </Card>
       )}
     </>
   );

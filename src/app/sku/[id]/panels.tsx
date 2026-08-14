@@ -11,12 +11,17 @@
  * 🔴 `ord` 就是卷面题号（学情回流按它对位）—— **题单表永远按 ord 排，列头不给排序**：
  *    换个序看题单，第 7 题就不是第 7 题了。产物表没有这个理由，列头可排（见下半截）。
  */
-import { Button, Drawer, Table, Tag, Tooltip, Typography } from "antd";
+import { Button, Drawer, Table, Tag, Tooltip } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import Link from "next/link";
 import { useState } from "react";
 
-import { EmptyHint, StatusTag, TimeText } from "~/components/console/ui";
+import {
+  EmptyHint,
+  HashTail,
+  StatusTag,
+  TimeText,
+} from "~/components/console/ui";
 import { humanBytes } from "../shared";
 
 export interface SkuItemLite {
@@ -34,24 +39,6 @@ export interface SkuOutputLite {
   bytes: number | null;
   note: string | null;
   createdAt: string | null;
-}
-
-/**
- * 内容 hash 的短串 + 复制。
- * 🔴 与 ULID 的规矩（尾 6 位）不同：hash 认的是**前缀**（`a3f1c9…`），
- *    ~/components/console/ui 的 IdTail 是给 ULID 的，这里不套它。
- */
-export function HashTail({ hash }: { hash: string }) {
-  return (
-    <Tooltip title={hash}>
-      <Typography.Text
-        copyable={{ text: hash, tooltips: ["复制全 hash", "已复制"] }}
-        style={{ fontFamily: "Consolas, Menlo, monospace", fontSize: 12 }}
-      >
-        {hash.slice(0, 8)}…
-      </Typography.Text>
-    </Tooltip>
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -73,6 +60,9 @@ export function SkuItemsTable({ items }: { items: SkuItemLite[] }) {
     {
       title: "题面",
       dataIndex: "stemBrief",
+      // 🔴 stemBrief 是 core 截过的 140 字，仍会占两三行：截断 + 悬停全文，
+      //    让「第几题是哪道题」一眼扫得完。
+      ellipsis: true,
       render: (_, r) =>
         r.questionId === null ? (
           <span style={{ color: "#c45656" }}>
@@ -84,16 +74,21 @@ export function SkuItemsTable({ items }: { items: SkuItemLite[] }) {
             题 {r.questionId} 不在 question 表里（挂了个查无此行的 id）
           </span>
         ) : (
-          <Link href={`/question/${r.questionId}`} style={{ color: "inherit" }}>
-            <span
-              style={{
-                fontFamily: "Consolas, Menlo, monospace",
-                fontSize: 12.5,
-              }}
+          <Tooltip title={r.stemBrief} styles={{ root: { maxWidth: 560 } }}>
+            <Link
+              href={`/question/${r.questionId}`}
+              style={{ color: "inherit" }}
             >
-              {r.stemBrief}
-            </span>
-          </Link>
+              <span
+                style={{
+                  fontFamily: "Consolas, Menlo, monospace",
+                  fontSize: 12.5,
+                }}
+              >
+                {r.stemBrief}
+              </span>
+            </Link>
+          </Tooltip>
         ),
     },
     {
@@ -140,6 +135,9 @@ export function SkuItemsTable({ items }: { items: SkuItemLite[] }) {
         showSizeChanger: true,
         showTotal: (t) => `共 ${t} 题`,
       }}
+      // 🔴 手机上必须让表格自己横向滚：不给 scroll.x 时 antd 会把四列压进
+      //    390px，题面那列被挤成一字一行（整页跟着横向滚更糟）。
+      scroll={{ x: 680 }}
     />
   );
 }
@@ -241,6 +239,8 @@ export function SkuOutputsTable({
         ),
       }}
       pagination={false}
+      // 🔴 六列在手机上放不下：表格自己横向滚，页面本身不许横向滚
+      scroll={{ x: 760 }}
     />
   );
 }

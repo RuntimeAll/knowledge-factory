@@ -21,7 +21,8 @@
 import { Alert, Card, Descriptions, Tag, Tooltip } from "antd";
 import Link from "next/link";
 
-import { DataSourceNote, EmptyHint, StatusTag } from "~/components/console/ui";
+import { PageHead } from "~/components/console/page-head";
+import { EmptyHint, StatusTag } from "~/components/console/ui";
 import {
   assertNoSoldDuplicates,
   getQuestion,
@@ -59,7 +60,34 @@ export default async function SkuDedupPage({
   const sp = await searchParams;
   const 开语义 = one(sp, "similar") === "1";
 
-  const card = await getSku(id);
+  // 🔴 读不出来也要原文照登：不 catch 的话这一页直接 500 白屏，
+  //    人只看到「这页坏了」，看不到「库连不上」这条真消息（与详情页同一规矩）。
+  let card: Awaited<ReturnType<typeof getSku>> = null;
+  let 读卡错 = "";
+  try {
+    card = await getSku(id);
+  } catch (e) {
+    读卡错 = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+  }
+
+  if (读卡错) {
+    return (
+      <Alert
+        type="error"
+        showIcon
+        message="这本册子读不出来，排重没法跑（原文照登）"
+        description={
+          <div style={{ fontSize: 12.5, whiteSpace: "pre-wrap" }}>
+            {读卡错}
+            {"\n"}id = {id}
+            {"\n\n"}
+            <Link href={`/sku/${id}`}>回册子详情</Link> 再试一次。
+          </div>
+        }
+      />
+    );
+  }
+
   if (!card) {
     return (
       <Card size="small">
@@ -109,8 +137,12 @@ export default async function SkuDedupPage({
   }
   const ms = Date.now() - t0;
 
+  // 🔴 先把 id 取成 const：`card` 现在是 let（try/catch 要求），
+  //    而 TS 对 let 的窄化**进不了回调** —— 在下面这个箭头函数里写 card.id
+  //    会报「可能为 null」。（同一个坑在 model/[id]/page.tsx 里已经踩过一次。）
+  const 本册id = card.id;
   const 归属 = (skus: SkuOwner[]): OwnerView[] =>
-    skus.map((s) => ({ ...s, isThis: s.skuId === card.id }));
+    skus.map((s) => ({ ...s, isThis: s.skuId === 本册id }));
 
   const 撞车行: DupViewRow[] = (报告?.collisions ?? []).map((c) => {
     const 自己 = 位次题.get(c.seq) ?? null;
@@ -149,40 +181,46 @@ export default async function SkuDedupPage({
 
   return (
     <>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "baseline",
-          gap: 12,
-          marginBottom: 12,
-        }}
-      >
-        <h1 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>排重报告</h1>
-        <span style={{ fontSize: 12.5, color: "#909399" }}>{card.name}</span>
-        <StatusTag value={card.status} />
-        <span style={{ marginLeft: "auto" }}>
-          <DataSourceNote>
+      {/* 🔴 flexWrap：窄屏上不换行会把标题挤成竖排（全站页头一律 wrap） */}
+      <PageHead
+        title={<>排重报告</>}
+        tags={
+          <>
+            <span style={{ fontSize: 12.5, color: "#909399" }}>
+              {card.name}
+            </span>
+            <StatusTag value={card.status} />
+          </>
+        }
+        source={
+          <>
             core.assertNoSoldDuplicates（只读）· 题面正本取自 core.getQuestion ·
             归因表 sku_item / sku
-          </DataSourceNote>
-        </span>
-      </div>
+          </>
+        }
+      />
 
+      {/* 🔴 flexWrap + rowGap：手机上这一排要能折行 */}
       <div
         style={{
           display: "flex",
           gap: 14,
+          rowGap: 8,
           alignItems: "center",
           marginBottom: 12,
           fontSize: 13,
+          flexWrap: "wrap",
         }}
       >
         <Link href={`/sku/${card.id}`}>← 回册子详情</Link>
+        <Link href="/sku">回 SKU 台账</Link>
         {开语义 ? (
-          <Link href={`/sku/${card.id}/dedup`}>关掉语义轴（只看硬撞）</Link>
+          <Link href={`/sku/${card.id}/dedup`}>关掉语义轴（只看硬撞·快）</Link>
         ) : (
+          // 🔴 文案说清代价：点下去要跑整册句向量（本地 ONNX），一本 120 题的册子
+          //    要等好几秒 —— 等待期间由 loading.tsx 上骨架，不是没反应。
           <Link href={`/sku/${card.id}/dedup?similar=1`}>
-            开语义轴（慢：要跑整册句向量）
+            开语义轴（要跑整册句向量，等几秒）
           </Link>
         )}
       </div>
@@ -204,7 +242,8 @@ export default async function SkuDedupPage({
       <Card size="small" style={{ marginBottom: 12 }}>
         <Descriptions
           size="small"
-          column={4}
+          // 🔴 响应式：八个格子写死 column={4} 在手机上会挤成一列一个字
+          column={{ xs: 1, sm: 2, md: 3, lg: 4 }}
           items={[
             {
               key: "checked",

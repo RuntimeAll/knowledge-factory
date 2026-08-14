@@ -1,16 +1,25 @@
 /**
- * KG 治理 · 合并向导 第一步：挑 from / to（AI:PRD-002 · 002-D）
+ * KG 治理 · 合并向导 第一步：挑 from / to（AI:PRD-002 · 002-D；AI:PRD-009 换壳）
  *
  * 两个搜索框 = 两次 resolve_kp（服务端跑，候选带 confidence）。
  * 🔴 enqueue:false —— 人在页面上搜东西**不是** agent 的低置信信号：
  *    往 review_queue 里塞工单的判据是「agent 问不出来」，不是「人手一直在打字」。
  *    这条不设防的话，队列会被每一次按键翻页塞满噪音。
  * 🔴 这页不动任何数据。真正的合并在第二步（预览页）确认后才发生。
+ *
+ * ── AI:PRD-009 打磨（只动版面）──────────────────────────────────────────────
+ *   换 antd + console/ui（检查单 10）；候选列表改成表格（把握/命中路径成列，
+ *   长名字不再把行挤散，检查单 3）；空态给口径（检查单 6）；
+ *   「下一步」不满足条件时**明说缺什么**而不是只灰着（检查单 9）。
  */
+import { Alert, Card, Input, Space, Tag } from "antd";
 import Link from "next/link";
 
-import { Chip, Notice, PageHead, Panel, statusTone } from "~/components/kit";
+import { DataSourceNote, EmptyHint, StatusTag } from "~/components/console/ui";
 import { resolveKp, type KpCandidate } from "~/core";
+import { PlainSubmit } from "~/components/console/confirm";
+import { PageHead } from "~/components/console/page-head";
+import { MONO, TableBox, Td, Th } from "~/components/console/table";
 import { param } from "../shared";
 
 export const dynamic = "force-dynamic";
@@ -27,7 +36,7 @@ async function 搜(query: string): Promise<{
   } catch (e) {
     return {
       candidates: [],
-      error: e instanceof Error ? e.message : String(e),
+      error: e instanceof Error ? `${e.name}: ${e.message}` : String(e),
     };
   }
 }
@@ -47,44 +56,65 @@ function CandidateList({
 }) {
   if (items.length === 0) {
     return (
-      <div className="text-mut mt-2 text-[12.5px]">
-        {q ? "一条候选都没有 —— 换个说法试试。" : "上面输个词开始找。"}
+      <div style={{ marginTop: 8 }}>
+        <EmptyHint>
+          {q ? (
+            <>
+              按「{q}」一条候选都没有。🔴
+              这不等于「库里没有这个考点」——resolve_kp
+              走的是名字/别名的字面四路，
+              说法不一样就落空：换个更贴近考点名的说法再搜一次。
+            </>
+          ) : (
+            "上面输个词开始找（一句人话就行，如「绝对值」）。"
+          )}
+        </EmptyHint>
       </div>
     );
   }
   return (
-    <ul className="mt-2 space-y-1 text-[12.5px]">
-      {items.map((c) => {
-        // 选中一侧时另一侧保持不变，两个搜索词也带着走（刷新回来还在原处）
-        const next = new URLSearchParams();
-        next.set(side, c.kpId);
-        next.set(side === "from" ? "to" : "from", side === "from" ? to : from);
-        next.set(side === "from" ? "qf" : "qt", q);
-        return (
-          <li key={c.kpId} className="flex flex-wrap items-baseline gap-2">
-            <Link
-              href={`/kg/merge?${next.toString()}`}
-              className="text-acc-deep underline"
-            >
-              选它
-            </Link>
-            <span>{c.name}</span>
-            <Chip tone={statusTone(c.status)}>{c.status}</Chip>
-            <span className="num text-mut">{c.confidence}</span>
-            <span className="text-mut text-[11px]">
-              {c.matchedVia}
-              {c.aliasHit ? ` · 别名「${c.aliasHit}」` : ""}
-            </span>
-            <Link
-              href={`/kg/kp/${c.kpId}`}
-              className="text-mut ml-auto text-[11px] underline"
-            >
-              详情
-            </Link>
-          </li>
-        );
-      })}
-    </ul>
+    <div style={{ marginTop: 8 }}>
+      <TableBox>
+        <thead>
+          <tr>
+            <Th width={64}>选</Th>
+            <Th>考点</Th>
+            <Th width={64}>把握</Th>
+            <Th>怎么命中的</Th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((c) => {
+            // 选中一侧时另一侧保持不变，两个搜索词也带着走（刷新回来还在原处）
+            const next = new URLSearchParams();
+            next.set(side, c.kpId);
+            next.set(
+              side === "from" ? "to" : "from",
+              side === "from" ? to : from,
+            );
+            next.set(side === "from" ? "qf" : "qt", q);
+            return (
+              <tr key={c.kpId}>
+                <Td nowrap>
+                  <Link href={`/kg/merge?${next.toString()}`}>选它</Link>
+                </Td>
+                <Td>
+                  <Link href={`/kg/kp/${c.kpId}`}>{c.name}</Link>
+                  <StatusTag value={c.status} />
+                </Td>
+                <Td num>{c.confidence}</Td>
+                <Td>
+                  <span style={{ color: "#909399", fontSize: 11.5 }}>
+                    {c.matchedVia}
+                    {c.aliasHit ? ` · 别名「${c.aliasHit}」` : ""}
+                  </span>
+                </Td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </TableBox>
+    </div>
   );
 }
 
@@ -104,7 +134,11 @@ function SearchBox({
   qt: string;
 }) {
   return (
-    <form method="GET" action="/kg/merge" className="flex flex-wrap gap-2">
+    <form
+      method="GET"
+      action="/kg/merge"
+      style={{ display: "flex", flexWrap: "wrap", gap: 8 }}
+    >
       {/* GET 表单：另一侧的选择与搜索词用 hidden 带着，不然一搜就丢 */}
       <input type="hidden" name="from" value={from} />
       <input type="hidden" name="to" value={to} />
@@ -113,18 +147,14 @@ function SearchBox({
         name={side === "from" ? "qt" : "qf"}
         value={side === "from" ? qt : qf}
       />
-      <input
+      <Input
         name={side === "from" ? "qf" : "qt"}
         defaultValue={value}
+        size="small"
+        style={{ width: 220 }}
         placeholder="一句人话，如「绝对值」"
-        className="border-hair2 bg-sheet w-[240px] rounded-[2px] border px-2 py-[3px] text-[12.5px]"
       />
-      <button
-        type="submit"
-        className="border-hair2 hover:bg-sel rounded-[2px] border px-3 py-[3px] text-[12.5px]"
-      >
-        搜
-      </button>
+      <PlainSubmit label="搜" />
     </form>
   );
 }
@@ -152,20 +182,51 @@ export default async function MergePage({
         title="合并考点"
         sub="重复考点合成一个：引用整体搬家，被合并的那个留成壳（旧 id 仍查得到落点）"
         right={
-          <Link className="text-acc-deep text-[12.5px] underline" href="/kg">
-            ← 总览
-          </Link>
+          <DataSourceNote>
+            core.resolveKp（enqueue:false，页面搜索不入低置信队列）· 表 kp /
+            kp_alias
+          </DataSourceNote>
         }
       />
 
-      {err ? <Notice tone="err">{err}</Notice> : null}
-      {左.error ? <Notice tone="err">左侧搜索：{左.error}</Notice> : null}
-      {右.error ? <Notice tone="err">右侧搜索：{右.error}</Notice> : null}
+      {err ? (
+        <Alert
+          type="error"
+          showIcon
+          style={{ marginBottom: 10 }}
+          message={<span style={{ whiteSpace: "pre-wrap" }}>{err}</span>}
+        />
+      ) : null}
+      {左.error ? (
+        <Alert
+          type="error"
+          showIcon
+          style={{ marginBottom: 10 }}
+          message="左侧搜索没跑成（原文照登）"
+          description={<span style={{ fontSize: 12.5 }}>{左.error}</span>}
+        />
+      ) : null}
+      {右.error ? (
+        <Alert
+          type="error"
+          showIcon
+          style={{ marginBottom: 10 }}
+          message="右侧搜索没跑成（原文照登）"
+          description={<span style={{ fontSize: 12.5 }}>{右.error}</span>}
+        />
+      ) : null}
 
-      <div className="grid gap-3.5 lg:grid-cols-2">
-        <Panel
+      <div
+        style={{
+          display: "grid",
+          gap: 12,
+          gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+        }}
+      >
+        <Card
+          size="small"
           title="from · 被合并掉的那个"
-          right={from ? <Chip tone="a">已选</Chip> : <Chip tone="n">未选</Chip>}
+          extra={from ? <Tag color="orange">已选</Tag> : <Tag>未选</Tag>}
         >
           <SearchBox
             side="from"
@@ -176,9 +237,23 @@ export default async function MergePage({
             qt={qt}
           />
           {from ? (
-            <div className="border-hair mt-2 border-t pt-2 text-[12.5px]">
+            <div
+              style={{
+                marginTop: 8,
+                paddingTop: 8,
+                borderTop: "1px solid #ebeef5",
+                fontSize: 12.5,
+              }}
+            >
               已选：<b>{选中(from, 左.candidates)}</b>
-              <span className="text-mut ml-2 font-mono text-[10.5px]">
+              <span
+                style={{
+                  ...MONO,
+                  color: "#909399",
+                  fontSize: 10.5,
+                  marginInlineStart: 8,
+                }}
+              >
                 {from}
               </span>
             </div>
@@ -190,17 +265,32 @@ export default async function MergePage({
             to={to}
             q={qf}
           />
-        </Panel>
+        </Card>
 
-        <Panel
+        <Card
+          size="small"
           title="to · 留下的那个（必须 active）"
-          right={to ? <Chip tone="g">已选</Chip> : <Chip tone="n">未选</Chip>}
+          extra={to ? <Tag color="green">已选</Tag> : <Tag>未选</Tag>}
         >
           <SearchBox side="to" value={qt} from={from} to={to} qf={qf} qt={qt} />
           {to ? (
-            <div className="border-hair mt-2 border-t pt-2 text-[12.5px]">
+            <div
+              style={{
+                marginTop: 8,
+                paddingTop: 8,
+                borderTop: "1px solid #ebeef5",
+                fontSize: 12.5,
+              }}
+            >
               已选：<b>{选中(to, 右.candidates)}</b>
-              <span className="text-mut ml-2 font-mono text-[10.5px]">
+              <span
+                style={{
+                  ...MONO,
+                  color: "#909399",
+                  fontSize: 10.5,
+                  marginInlineStart: 8,
+                }}
+              >
                 {to}
               </span>
             </div>
@@ -212,31 +302,43 @@ export default async function MergePage({
             to={to}
             q={qt}
           />
-        </Panel>
+        </Card>
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center gap-3">
-        {from && to ? (
-          <Link
-            href={`/kg/merge/preview?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`}
-            className="border-acc/40 text-acc-deep bg-acc-soft rounded-[2px] border px-3 py-[5px] text-[12.5px] font-semibold"
-          >
-            下一步：看看会搬走什么 →
-          </Link>
-        ) : (
-          <span className="text-mut text-[12.5px]">
-            两边都选好才能进下一步。
-          </span>
-        )}
-        {from || to ? (
-          <Link href="/kg/merge" className="text-mut text-[12.5px] underline">
-            清空重选
-          </Link>
-        ) : null}
+      <div style={{ marginTop: 16 }}>
+        <Space size={14} wrap>
+          {from && to ? (
+            <Link
+              href={`/kg/merge/preview?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`}
+            >
+              下一步：看看会搬走什么 →
+            </Link>
+          ) : (
+            <span style={{ color: "#909399", fontSize: 12.5 }}>
+              还差
+              {!from && !to
+                ? "两侧都没选"
+                : !from
+                  ? "左边（from · 被合并掉的那个）"
+                  : "右边（to · 留下的那个）"}
+              —— 两边都选好才能看预览。
+            </span>
+          )}
+          {from || to ? <Link href="/kg/merge">清空重选</Link> : null}
+          <Link href="/kg">← 回总览</Link>
+        </Space>
       </div>
 
-      <hr className="rule-double my-5 border-0" />
-      <div className="text-mut text-[12px] leading-[1.9]">
+      <div
+        style={{
+          marginTop: 18,
+          paddingTop: 12,
+          borderTop: "1px solid #ebeef5",
+          color: "#909399",
+          fontSize: 12,
+          lineHeight: 1.9,
+        }}
+      >
         搜索走 resolve_kp（与 agent 同一口径、同一打分），
         <b>但页面搜索不入低置信队列</b> —— 队列记的是「agent
         问不出来」，不是人在打字。

@@ -15,7 +15,7 @@
  */
 import { Alert } from "antd";
 
-import { DataSourceNote } from "~/components/console/ui";
+import { PageHead } from "~/components/console/page-head";
 import { bridgeBatches, listRoster } from "~/core";
 import { inboxDir, inboxQueueFile, resolveRoot } from "../paths";
 import { IntakeForm } from "./form";
@@ -65,27 +65,22 @@ export default async function IntakePage() {
 
   return (
     <>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "baseline",
-          gap: 12,
-          marginBottom: 12,
-        }}
-      >
-        <h1 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>收卷录入</h1>
-        <span style={{ fontSize: 12.5, color: "#909399" }}>
-          选学员 → 传图 → 提交即入队；认卷、开批、存疑推送由流水线接手，不用你开
-          session
-        </span>
-        <span style={{ marginLeft: "auto" }}>
-          <DataSourceNote>
+      <PageHead
+        title={<>收卷录入</>}
+        sub={
+          <>
+            选学员 → 传图 →
+            提交即入队；认卷、开批、存疑推送由流水线接手，不用你开 session
+          </>
+        }
+        source={
+          <>
             写 = {inboxDir()}/&lt;代号&gt;/&lt;时间戳&gt;/ + 追加{" "}
             {inboxQueueFile()}（跨线契约 §二·6，append-only）· 学员 = core
             listRoster ∪ bridgeBatches（圣域 batches.student）
-          </DataSourceNote>
-        </span>
-      </div>
+          </>
+        }
+      />
 
       {strayError ? (
         <Alert
@@ -97,8 +92,28 @@ export default async function IntakePage() {
             <span style={{ fontSize: 12.5 }}>
               {strayError}
               <br />
-              🔴 后果：下拉里**只有名册那几个人** ——
+              {/* 🔴 检查单 §三·9 文案：这里原来写的是 Markdown 的 `**只有名册那几个人**`，
+                  JSX 不认 Markdown，星号原样印在页面上。 */}
+              🔴 后果：下拉里<b>只有名册那几个人</b> ——
               交过卷但没登记名册的学员这次选不到。 别当成「他不存在」。
+            </span>
+          }
+        />
+      ) : null}
+
+      {/* 🔴 检查单 §三·6 空态：一个候选都没有时，下拉是个点开什么都没有的空框 ——
+          得说清这是「还没有人」而不是「坏了」，并给下一步。 */}
+      {roster.length === 0 && strays.length === 0 && !rosterError ? (
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message="名册与圣域都没有代号 —— 现在还没有人可以选"
+          description={
+            <span style={{ fontSize: 12.5 }}>
+              这不是「没有学员」，是「还没有人交过卷、也没人登记过名册」。
+              登记走 upsertRoster（agent / MCP，🔴 只落代号不落真名）；
+              已经交过卷的人会自动出现在下拉的第二组里。
             </span>
           }
         />

@@ -12,7 +12,7 @@
  *    一个都没重写。
  * 🔴 `?ok=` / `?err=` 是 server action 回执带回来的原话，原文照登。
  */
-import { DataSourceNote } from "~/components/console/ui";
+import { PageHead } from "~/components/console/page-head";
 import { countOpenQueueByKind, listQuarantine } from "~/core";
 import { QueueBoard } from "./board";
 import { QUEUE_TABS, type QueueCounts, type QueueTab } from "./rows";
@@ -79,25 +79,18 @@ export default async function QueuePage({
 
   return (
     <>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "baseline",
-          gap: 12,
-          marginBottom: 12,
-        }}
-      >
-        <h1 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>处置台</h1>
-        <span style={{ fontSize: 12.5, color: "#909399" }}>
-          agent 拿不准的、管道拦下的、必须人看一眼的，都在这儿排队 ——
-          处置一条，链条就往前走一格
-        </span>
-        <span style={{ marginLeft: "auto" }}>
-          <DataSourceNote>
-            表 review_queue / quarantine（处置动作走 core 原语，全上审计链）
-          </DataSourceNote>
-        </span>
-      </div>
+      <PageHead
+        title={<>处置台</>}
+        sub={
+          <>
+            agent 拿不准的、管道拦下的、必须人看一眼的，都在这儿排队 ——
+            处置一条，链条就往前走一格
+          </>
+        }
+        source={
+          <>表 review_queue / quarantine（处置动作走 core 原语，全上审计链）</>
+        }
+      />
 
       <QueueBoard
         tab={tab}

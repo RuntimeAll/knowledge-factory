@@ -364,6 +364,8 @@ function QuestionGroups({
         columns={columns}
         dataSource={groups}
         pagination={false}
+        // 🔴 手机上让表格自己横向滚（页面本身不许横向滚）
+        scroll={{ x: 460 }}
         summary={() => (
           <Table.Summary.Row>
             <Table.Summary.Cell index={0}>合计</Table.Summary.Cell>
@@ -418,6 +420,8 @@ function PublishLedger({ logs }: { logs: ShelfPublishLogView[] }) {
       columns={columns}
       dataSource={logs}
       pagination={false}
+      // 🔴 手机上让表格自己横向滚（页面本身不许横向滚）
+      scroll={{ x: 480 }}
     />
   );
 }

@@ -62,10 +62,26 @@ async function 未处置(): Promise<{ label: string; total: number }> {
   }
 }
 
+/**
+ * 三态配色（集成收口②改：原来这条是全站最后一处「学术纸感」旧配色 ——
+ * Tailwind 的 `bg-code / text-mut / --acc 学术绿 #0e6b4f`，而管理台其余
+ * 25 页早已整体换成 antd 那套。它由壳**每页通栏**渲染，所以是检查单 ⑩
+ * 现存最刺眼的一处：同一屏上半截学术绿、下半截 antd 蓝。
+ *
+ * 🔴 只换颜色，不碰判定：`data-red-flag-state` / `role="alert"` / 灯的字形 /
+ *    三态文案 / redFlagView() 一个字没动 —— 这是条安全件，改的只有皮。
+ * 🔴 红仍然是红（#f56c6c 系）、绿仍然是绿、读不出仍然是灰：
+ *    三态在屏幕上必须一眼分得开，"统一配色"绝不能把红态调淡。
+ * 🔴 改成内联样式而不是换几个 Tailwind 类：那几个 token（--acc / --code /
+ *    --mut）现在只剩本文件在用，留着类名等于把一整套退役设计吊在这儿。
+ */
 const TONE = {
-  none: "border-l-hair2 bg-code text-mut",
-  red: "border-l-pen bg-pen-soft text-pen font-semibold",
-  green: "border-l-acc bg-acc-soft text-acc-deep",
+  // 灰：不知道 ≠ 没事（读不到库、还没跑过对账）
+  none: { border: "#c0c4cc", bg: "#f4f4f5", fg: "#909399", weight: 400 },
+  // 红：库不可信
+  red: { border: "#f56c6c", bg: "#fef0f0", fg: "#f56c6c", weight: 600 },
+  // 绿：最近一次对账全过
+  green: { border: "#67c23a", bg: "#f0f9eb", fg: "#529b2e", weight: 400 },
 } as const;
 
 /** 状态灯：红态用旗，其余用圆点（文案已在 headline 里，别在灯旁边重复一遍） */
@@ -75,29 +91,59 @@ export async function RedFlagBar() {
   const [{ view, error }, 工单] = await Promise.all([load(), 未处置()]);
   const { state } = view;
 
+  const tone = TONE[state];
+  const num: React.CSSProperties = { fontVariantNumeric: "tabular-nums" };
+
   return (
     <div
       data-red-flag-state={state}
       role={state === "red" ? "alert" : undefined}
-      className={`border-b-hair border-b border-l-[3px] px-[30px] py-[7px] text-[12.5px] ${TONE[state]}`}
+      style={{
+        // 🔴 内边距跟着壳走：窄屏 12px（壳的正文也是 12），桌面 30px。
+        //    用 clamp 不用媒体查询 —— 这是 server 组件，少一段 <style> 少一处漂。
+        padding: "7px clamp(12px, 4vw, 30px)",
+        fontSize: 12.5,
+        borderBottom: "1px solid #ebeef5",
+        borderLeft: `3px solid ${tone.border}`,
+        background: tone.bg,
+        color: tone.fg,
+        fontWeight: tone.weight,
+      }}
     >
-      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-        <span className="text-[10px]">{LAMP[state]}</span>
-        <span className="num break-words">{view.headline}</span>
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          alignItems: "baseline",
+          columnGap: 8,
+          rowGap: 4,
+        }}
+      >
+        <span style={{ fontSize: 10 }}>{LAMP[state]}</span>
+        <span style={{ ...num, wordBreak: "break-word" }}>{view.headline}</span>
         {/* red 态的 headline 只讲红旗，warn 数在这儿补一句（绿态 headline 已经带了） */}
         {state === "red" && view.warnCount > 0 ? (
-          <span className="text-amber font-normal">
+          <span style={{ color: "#e6a23c", fontWeight: 400 }}>
             另有 warn {view.warnCount} 项
           </span>
         ) : null}
 
-        {/* 🔴 工单是流程不是事故：amber 一枚徽章，点得进去，零 open 时整枚不出现 */}
+        {/* 🔴 工单是流程不是事故：橙一枚徽章，点得进去，零 open 时整枚不出现 */}
         {工单.total > 0 ? (
           <Link
             href="/queue"
-            className="border-amber/30 bg-amber-soft text-amber ml-auto rounded-[2px] border px-2 py-[1px] font-normal no-underline"
+            style={{
+              marginLeft: "auto",
+              border: "1px solid #f3d19e",
+              background: "#fdf6ec",
+              color: "#e6a23c",
+              borderRadius: 2,
+              padding: "1px 8px",
+              fontWeight: 400,
+              textDecoration: "none",
+            }}
           >
-            工单 open <span className="num">{工单.total}</span>
+            工单 open <span style={num}>{工单.total}</span>
             {工单.label ? `：${工单.label}` : ""}
           </Link>
         ) : null}
@@ -105,10 +151,13 @@ export async function RedFlagBar() {
 
       {/* red：逐项列出来——「红旗 3 项」不说是哪三项等于没说 */}
       {state === "red" ? (
-        <ul className="mt-1 space-y-0.5 font-normal">
+        <ul style={{ marginTop: 4, paddingLeft: 0, fontWeight: 400 }}>
           {view.items.map((it) => (
-            <li key={it.id} className="break-words">
-              <span className="num mr-2">{it.id}</span>
+            <li
+              key={it.id}
+              style={{ listStyle: "none", wordBreak: "break-word" }}
+            >
+              <span style={{ ...num, marginRight: 8 }}>{it.id}</span>
               {it.name}
             </li>
           ))}
@@ -117,14 +166,17 @@ export async function RedFlagBar() {
 
       {/* green 且有 warn：原生折叠，不为这点事拉 JS */}
       {state === "green" && view.items.length > 0 ? (
-        <details className="mt-1">
-          <summary className="text-mut cursor-pointer">
+        <details style={{ marginTop: 4 }}>
+          <summary style={{ cursor: "pointer", color: "#909399" }}>
             warn 明细（{view.items.length} 项 · 不拦路）
           </summary>
-          <ul className="text-mut mt-1 space-y-0.5">
+          <ul style={{ marginTop: 4, paddingLeft: 0, color: "#909399" }}>
             {view.items.map((it) => (
-              <li key={it.id} className="break-words">
-                <span className="num mr-2">{it.id}</span>
+              <li
+                key={it.id}
+                style={{ listStyle: "none", wordBreak: "break-word" }}
+              >
+                <span style={{ ...num, marginRight: 8 }}>{it.id}</span>
                 {it.name}
               </li>
             ))}
@@ -133,7 +185,9 @@ export async function RedFlagBar() {
       ) : null}
 
       {error ? (
-        <div className="text-mut mt-1 font-normal">读库失败：{error}</div>
+        <div style={{ marginTop: 4, color: "#909399", fontWeight: 400 }}>
+          读库失败：{error}
+        </div>
       ) : null}
     </div>
   );

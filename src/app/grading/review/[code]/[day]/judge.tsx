@@ -43,21 +43,35 @@ import {
   Typography,
   type TableColumnsType,
 } from "antd";
+import { LoadingOutlined } from "@ant-design/icons";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { EmptyHint, TimeText } from "~/components/console/ui";
+import { EmptyHint, STATUS_COLOR, TimeText } from "~/components/console/ui";
 import {
+  REVIEW_STATUS_LABEL,
+  REVIEW_STATUSES,
   VERDICTS,
   VERDICT_LABEL,
+  reviewStatusUnknownHint,
   type ReviewBatchDetail,
   type ReviewBatchResponse,
   type ReviewItem,
   type ReviewKpDict,
+  type ReviewStatus,
   type ReviewWriteResponse,
   type Verdict,
 } from "../../../shared";
+
+/** 数字列一律等宽数字（🔴 检查单 §三·3） */
+const 数字: React.CSSProperties = { fontVariantNumeric: "tabular-nums" };
+
+/**
+ * 弹窗在手机上不许比屏幕宽（🔴 检查单 §三·5）：antd 的 `width` 是死值，
+ * 640 的弹窗在 390px 的手机上会横向溢出，按钮被挤出屏幕外点不到。
+ */
+const 弹窗宽 = { maxWidth: "calc(100vw - 24px)" } as const;
 
 // ---------------------------------------------------------------------------
 // 小工具
@@ -115,13 +129,16 @@ function VerdictPicker({
   onPick: (v: Verdict) => void;
 }) {
   return (
-    <Space size={4}>
+    <Space size={6}>
       {VERDICTS.map((v) => {
         const on = value === v;
         return (
           <Tooltip key={v} title={VERDICT_LABEL[v]}>
             <Button
-              size="small"
+              // 🔴 AI:PRD-009 打磨（检查单 §三·5 触控目标）：这三个按钮是全站**手指点得最多**
+              //    的地方（一批 19 题就是 19 次），原来的 size="small"（高 24px）在手机上
+              //    低于可点阈值，挨着点常点错行。中号 = 32px 高 + 最小 44px 宽。
+              size="middle"
               disabled={disabled}
               onClick={() => onPick(v)}
               style={
@@ -131,9 +148,9 @@ function VerdictPicker({
                       borderColor: 判定色[v].border,
                       color: "#fff",
                       fontWeight: 700,
-                      minWidth: v === "skip" ? 52 : 38,
+                      minWidth: v === "skip" ? 58 : 44,
                     }
-                  : { minWidth: v === "skip" ? 52 : 38 }
+                  : { minWidth: v === "skip" ? 58 : 44 }
               }
             >
               {v === "skip" ? "去掉" : v}
@@ -302,7 +319,7 @@ export function JudgeBoard({ code, day }: { code: string; day: number }) {
         <Alert
           type="warning"
           showIcon
-          style={{ marginBottom: 10 }}
+          style={{ marginBottom: 12 }}
           message="读这一批时遇到的事（一条不吞）"
           description={
             <div style={{ fontSize: 12.5, lineHeight: 1.9 }}>
@@ -317,7 +334,7 @@ export function JudgeBoard({ code, day }: { code: string; day: number }) {
         <Alert
           type="warning"
           showIcon
-          style={{ marginBottom: 10 }}
+          style={{ marginBottom: 12 }}
           message="错因考点词表读不出来 —— 下面的「错因考点」只印原始码"
           description={
             <span style={{ fontSize: 12.5, whiteSpace: "pre-wrap" }}>
@@ -327,17 +344,19 @@ export function JudgeBoard({ code, day }: { code: string; day: number }) {
         />
       ) : null}
 
-      <BatchHead detail={detail} />
+      <BatchHead detail={detail} refreshing={loading} />
 
       {打回中 ? (
         <Alert
           type="error"
           showIcon
-          style={{ marginBottom: 10 }}
+          style={{ marginBottom: 12 }}
           message="这一批已打回 · 等 agent 重批"
           description={
+            // 🔴 检查单 §三·9 文案：原来这里写的是 Markdown 的 `**不能直接确认**`，
+            //    JSX 不认 Markdown，星号原样印在页面上。
             <span style={{ fontSize: 12.5 }}>
-              打回中**不能直接确认**（审核库.py 的闸：不许绕过重批出件）。 等
+              打回中<b>不能直接确认</b>（审核库.py 的闸：不许绕过重批出件）。 等
               agent 重批完（重批会重新 ingest，轮次 +1），或者你改主意了 →
               点下面的「撤回打回」。
             </span>
@@ -348,16 +367,24 @@ export function JudgeBoard({ code, day }: { code: string; day: number }) {
         <Alert
           type="success"
           showIcon
-          style={{ marginBottom: 10 }}
-          message={`这一批已确认（${detail.confirmedAt ?? "时间未记"} · 放行来源：${detail.auto ?? "人工"}）`}
+          style={{ marginBottom: 12 }}
+          message={
+            <span>
+              这一批已确认（
+              <TimeText iso={detail.confirmedAt} /> · 放行来源：
+              {detail.auto ?? "人工"}）
+            </span>
+          }
           description={
             <span style={{ fontSize: 12.5 }}>
-              下面是**库里已经落定的终审值**，可以看、可以改判后再确认一次；
+              下面是<b>库里已经落定的终审值</b>，可以看、可以改判后再确认一次；
               再确认会覆盖 confirmed_at 与放行来源，已出件的报告不会跟着重出，
               所以弹窗里要你显式点头。
-              {detail.exportedAt
-                ? `本批已于 ${detail.exportedAt} 出件。`
-                : null}
+              {detail.exportedAt ? (
+                <>
+                  本批已于 <TimeText iso={detail.exportedAt} /> 出件。
+                </>
+              ) : null}
             </span>
           }
         />
@@ -482,23 +509,32 @@ export function JudgeBoard({ code, day }: { code: string; day: number }) {
 // 批次头
 // ---------------------------------------------------------------------------
 
-function BatchHead({ detail }: { detail: ReviewBatchDetail }) {
+function BatchHead({
+  detail,
+  refreshing,
+}: {
+  detail: ReviewBatchDetail;
+  /** 🔴 检查单 §三·1：写完/刷新时页面上要有「正在读库」的动静，不能静静地站着 */
+  refreshing: boolean;
+}) {
+  const known = (REVIEW_STATUSES as readonly string[]).includes(detail.status);
   return (
     <Card size="small" styles={{ body: { padding: "10px 14px" } }}>
       <Space size={10} wrap>
         <b style={{ fontSize: 15 }}>
           {detail.student} · 第 {detail.day} 次打卡
         </b>
-        {detail.status === "pending" ? (
-          <Tag color="orange">待审核 · {detail.itemCount} 题</Tag>
-        ) : detail.status === "rework" ? (
-          <Tag color="red">已打回 · 待重批 · {detail.itemCount} 题</Tag>
-        ) : detail.status === "confirmed" ? (
-          <Tag color="green">已确认 · {detail.itemCount} 题</Tag>
-        ) : (
-          <Tag>
-            状态未知（{detail.status || "空"}）· {detail.itemCount} 题
+        {known ? (
+          <Tag color={STATUS_COLOR[detail.status as ReviewStatus]}>
+            {REVIEW_STATUS_LABEL[detail.status as ReviewStatus]} ·{" "}
+            {detail.itemCount} 题
           </Tag>
+        ) : (
+          <Tooltip title={reviewStatusUnknownHint(detail.status)}>
+            <Tag>
+              状态未知（{detail.status || "空"}）· {detail.itemCount} 题
+            </Tag>
+          </Tooltip>
         )}
         <Tag color="blue">第 {detail.round} 轮</Tag>
         {detail.doubtCount > 0 ? (
@@ -522,6 +558,11 @@ function BatchHead({ detail }: { detail: ReviewBatchDetail }) {
         <span style={{ fontSize: 12, color: "#909399" }}>
           入库 <TimeText iso={detail.createdAt} />
         </span>
+        {refreshing ? (
+          <Tag color="processing" icon={<LoadingOutlined />}>
+            正在重读 审核.db（mode=ro）
+          </Tag>
+        ) : null}
         <Link href="/grading/review" style={{ fontSize: 12 }}>
           ← 回终审台
         </Link>
@@ -531,6 +572,21 @@ function BatchHead({ detail }: { detail: ReviewBatchDetail }) {
         >
           看这个学员的全部批次
         </Link>
+        {/* 🔴 看到即可达：代号在这儿，学情页就得点得到 */}
+        <Link
+          href={`/student/${encodeURIComponent(detail.student)}`}
+          style={{ fontSize: 12 }}
+        >
+          看这个学员的学情
+        </Link>
+        {detail.exportedAt ? (
+          <Link
+            href={`/grading/reports?code=${encodeURIComponent(detail.student)}`}
+            style={{ fontSize: 12 }}
+          >
+            去报告架取件
+          </Link>
+        ) : null}
       </Space>
     </Card>
   );
@@ -561,13 +617,18 @@ function FeedbackHistory({ detail }: { detail: ReviewBatchDetail }) {
             lineHeight: 1.8,
           }}
         >
+          {/* 🔴 检查单 §三·3 时间统一：这三处原来直接印库里的整串 ISO，
+              与全站 `MM-DD HH:mm`（悬停看全量）两套写法。一律走 TimeText。 */}
           <Space size={8} wrap>
             <b>第 {f.round ?? "?"} 轮反馈</b>
             <span style={{ color: "#909399" }}>
-              {f.createdAt ?? "时间未记"}
+              <TimeText iso={f.createdAt} />
             </span>
             {f.resolvedAt ? (
-              <Tag color="green">agent 已重批（{f.resolvedAt}）</Tag>
+              <Tag color="green">
+                agent 已重批（
+                <TimeText iso={f.resolvedAt} />）
+              </Tag>
             ) : (
               <Tag color="orange">待重批</Tag>
             )}
@@ -723,7 +784,7 @@ function PageBlock({
     {
       title: "终审",
       key: "verdict",
-      width: 166,
+      width: 196,
       fixed: "right",
       render: (_, it) => (
         <VerdictPicker
@@ -797,7 +858,7 @@ function PageBlock({
             columns={columns}
             dataSource={items}
             pagination={false}
-            scroll={{ x: 760 }}
+            scroll={{ x: 800 }}
             onRow={(it) => ({
               style: it.needsHuman ? { background: "#fff8ec" } : undefined,
             })}
@@ -896,6 +957,7 @@ function ActionModal(props: {
           })
         }
         width={640}
+        style={弹窗宽}
       >
         <div style={{ fontSize: 13, lineHeight: 1.9 }}>
           <p style={{ marginBottom: 8 }}>
@@ -963,7 +1025,7 @@ function ActionModal(props: {
               onChange={(e) => props.setAck(e.target.checked)}
             >
               我知道这会<b>覆盖</b>上一次的确认记录（
-              {detail.confirmedAt ?? "时间未记"} · 放行来源{" "}
+              <TimeText iso={detail.confirmedAt} /> · 放行来源{" "}
               {detail.auto ?? "人工"}）
               {detail.exportedAt ? "，且已出件的报告不会跟着重出" : ""}
             </Checkbox>
@@ -986,6 +1048,7 @@ function ActionModal(props: {
         onCancel={props.onCancel}
         onOk={() => void props.onGo("rework", { body: fb.trim() })}
         width={620}
+        style={弹窗宽}
       >
         <div style={{ fontSize: 13, lineHeight: 1.9 }}>
           {空 ? (
@@ -1046,6 +1109,7 @@ function ActionModal(props: {
       onCancel={props.onCancel}
       onOk={() => void props.onGo("unrework", {})}
       width={600}
+      style={弹窗宽}
     >
       <div style={{ fontSize: 13, lineHeight: 1.9 }}>
         <p style={{ marginBottom: 6 }}>
@@ -1127,10 +1191,16 @@ function Receipt({ r }: { r: ReviewWriteResponse }) {
         <div style={{ fontSize: 12.5, marginTop: 8, lineHeight: 1.9 }}>
           <b>事后复核（跑完再用 mode=ro 读一遍库，这才是库里实际的样子）</b>：
           status=<b>{r.after.status}</b> · 第 {r.after.round} 轮 · 放行来源{" "}
-          {r.after.auto ?? "人工"} · 确认时间 {r.after.confirmedAt ?? "—"} ·
-          出件时间 {r.after.exportedAt ?? "—"} · 已终审 {r.after.judgedCount}/
-          {r.after.itemCount} 题 · 反馈 {r.after.feedbackCount} 条（
-          {r.after.openFeedbackCount} 条待重批）
+          {r.after.auto ?? "人工"} · 确认时间{" "}
+          {r.after.confirmedAt ? <TimeText iso={r.after.confirmedAt} /> : "—"} ·
+          出件时间{" "}
+          {r.after.exportedAt ? <TimeText iso={r.after.exportedAt} /> : "—"} ·
+          已终审{" "}
+          <span style={数字}>
+            {r.after.judgedCount}/{r.after.itemCount}
+          </span>{" "}
+          题 · 反馈 {r.after.feedbackCount} 条（{r.after.openFeedbackCount}{" "}
+          条待重批）
         </div>
       ) : null}
 

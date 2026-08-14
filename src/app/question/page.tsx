@@ -12,7 +12,7 @@
  *    把地址栏带来的初值（batch / kp / similar）解析好。
  *    枚举**不许在前端抄第二份**：抄出来的那份迟早跟契约漂。
  */
-import { DataSourceNote } from "~/components/console/ui";
+import { PageHead } from "~/components/console/page-head";
 import {
   DEFAULT_STATUSES,
   PROV_TYPES,
@@ -64,25 +64,16 @@ export default async function QuestionPage({
 
   return (
     <>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "baseline",
-          gap: 12,
-          marginBottom: 12,
-        }}
-      >
-        <h1 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>题目管理</h1>
-        <span style={{ fontSize: 12.5, color: "#909399" }}>
-          找题、盘题 —— 不管改题（录入线的事）、不管组卷（生产域）
-        </span>
-        <span style={{ marginLeft: "auto" }}>
-          <DataSourceNote>
+      <PageHead
+        title={<>题目管理</>}
+        sub={<>找题、盘题 —— 不管改题（录入线的事）、不管组卷（生产域）</>}
+        source={
+          <>
             core.searchQuestions（与 MCP search_questions 同一入口）· 表
             question / question_kp / question_fts / question_vec
-          </DataSourceNote>
-        </span>
-      </div>
+          </>
+        }
+      />
 
       <QuestionTable
         qtypes={QTYPES}

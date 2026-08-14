@@ -17,7 +17,8 @@
 import { Alert, Card, Descriptions, Tag, Tooltip } from "antd";
 import Link from "next/link";
 
-import { DataSourceNote, EmptyHint } from "~/components/console/ui";
+import { PageHead } from "~/components/console/page-head";
+import { EmptyHint } from "~/components/console/ui";
 import { getShelfDoc } from "~/core";
 import {
   CHECK_COLOR,
@@ -91,32 +92,30 @@ export default async function ShelfDocPage({
 
   return (
     <>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "baseline",
-          gap: 10,
-          marginBottom: 12,
-          flexWrap: "wrap",
-        }}
-      >
-        <h1 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>{d.name}</h1>
-        <Tooltip title={LANE_HINT[d.lane]}>
-          <Tag color={LANE_COLOR[d.lane]}>{d.lane}</Tag>
-        </Tooltip>
-        <Tag>{d.type}</Tag>
-        {d.form === "合刊" ? <Tag color="purple">合刊</Tag> : null}
-        {d.version ? (
-          <span style={{ fontSize: 12.5, color: "#909399" }}>{d.version}</span>
-        ) : null}
-        <span style={{ marginLeft: "auto", textAlign: "right" }}>
-          <DataSourceNote>
+      <PageHead
+        title={<>{d.name}</>}
+        tags={
+          <>
+            <Tooltip title={LANE_HINT[d.lane]}>
+              <Tag color={LANE_COLOR[d.lane]}>{d.lane}</Tag>
+            </Tooltip>
+            <Tag>{d.type}</Tag>
+            {d.form === "合刊" ? <Tag color="purple">合刊</Tag> : null}
+            {d.version ? (
+              <span style={{ fontSize: 12.5, color: "#909399" }}>
+                {d.version}
+              </span>
+            ) : null}
+          </>
+        }
+        source={
+          <>
             core.getShelfDoc · <b>punch 库</b>（{detail.dbPath}，mode=ro）表 doc
             / material / asset / doc_member / publish_log / question —— 🔴
             同名异库，不是本库的 data/资料库.db
-          </DataSourceNote>
-        </span>
-      </div>
+          </>
+        }
+      />
 
       <div
         style={{

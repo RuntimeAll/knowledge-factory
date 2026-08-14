@@ -14,7 +14,8 @@
  */
 import { Alert } from "antd";
 
-import { CopyCmd, DataSourceNote } from "~/components/console/ui";
+import { PageHead } from "~/components/console/page-head";
+import { CopyCmd } from "~/components/console/ui";
 import { verifyAuditChain } from "~/core";
 import { AuditTable } from "./table";
 
@@ -88,25 +89,11 @@ export default async function AuditPage() {
 
   return (
     <>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "baseline",
-          gap: 12,
-          marginBottom: 12,
-        }}
-      >
-        <h1 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>审计日志</h1>
-        <span style={{ fontSize: 12.5, color: "#909399" }}>
-          谁在什么时候动了库 —— 只读，页面永不长出写入口
-        </span>
-        <span style={{ marginLeft: "auto" }}>
-          <DataSourceNote>
-            core.verifyAuditChain（横幅 · 现跑整链重算）/
-            core.listAuditRows（列表）· 表 audit_log（kb-audit/v1 哈希链）
-          </DataSourceNote>
-        </span>
-      </div>
+      <PageHead
+        title="审计日志"
+        sub="谁在什么时候动了库 —— 只读，页面永不长出写入口"
+        source="core.verifyAuditChain（横幅 · 现跑整链重算）/ core.listAuditRows（列表）· 表 audit_log（kb-audit/v1 哈希链）"
+      />
 
       {banner}
 

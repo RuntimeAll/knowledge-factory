@@ -23,19 +23,26 @@ export interface LineageQuestionView {
   via?: string;
 }
 
+/** 🔴 两张表都横向可滚（手机上四列放不下；页面本身不许横向滚） */
+const 表宽 = { x: 720 } as const;
+
 const 题列: ColumnsType<LineageQuestionView> = [
   {
     title: "题面",
     dataIndex: "stemBrief",
+    // 🔴 题面截断 + 悬停全文：一行三十几字的题面会把整张表顶成三行
+    ellipsis: true,
     sorter: (a, b) => a.stemBrief.localeCompare(b.stemBrief),
     render: (_, r) => (
-      <Link href={`/question/${r.questionId}`} style={{ color: "inherit" }}>
-        <span
-          style={{ fontFamily: "Consolas, Menlo, monospace", fontSize: 12.5 }}
-        >
-          {r.stemBrief}
-        </span>
-      </Link>
+      <Tooltip title={r.stemBrief} styles={{ root: { maxWidth: 560 } }}>
+        <Link href={`/question/${r.questionId}`} style={{ color: "inherit" }}>
+          <span
+            style={{ fontFamily: "Consolas, Menlo, monospace", fontSize: 12.5 }}
+          >
+            {r.stemBrief}
+          </span>
+        </Link>
+      </Tooltip>
     ),
   },
   {
@@ -97,6 +104,7 @@ export function OriginTable({ rows }: { rows: LineageQuestionView[] }) {
         ),
       }}
       pagination={false}
+      scroll={表宽}
     />
   );
 }
@@ -124,6 +132,7 @@ export function DerivedTable({
         ),
       }}
       pagination={{ defaultPageSize: 20, showSizeChanger: true }}
+      scroll={表宽}
       footer={
         total === null
           ? undefined

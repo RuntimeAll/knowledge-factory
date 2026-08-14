@@ -143,6 +143,8 @@ export function IntegrityRecheck() {
             columns={columns}
             dataSource={res.report.checks}
             pagination={false}
+            // 检查单 ⑤：手机上让这张表自己横滚，别把整页拖成左右能划
+            scroll={{ x: 640 }}
             locale={{
               emptyText: (
                 <EmptyHint>对账返回了空的六项——这本身不正常。</EmptyHint>

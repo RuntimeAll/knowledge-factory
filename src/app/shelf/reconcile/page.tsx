@@ -15,7 +15,7 @@
 import { Alert } from "antd";
 import Link from "next/link";
 
-import { DataSourceNote } from "~/components/console/ui";
+import { PageHead } from "~/components/console/page-head";
 import { reconcileShelf } from "~/core";
 import type { ReconcileReportView } from "../shared";
 import { ReconcilePanels } from "./panels";
@@ -33,37 +33,18 @@ export default async function ShelfReconcilePage() {
 
   return (
     <>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "baseline",
-          gap: 12,
-          marginBottom: 12,
-          flexWrap: "wrap",
-        }}
-      >
-        <h1
-          style={{
-            fontSize: 18,
-            fontWeight: 600,
-            margin: 0,
-            whiteSpace: "nowrap",
-          }}
-        >
-          资料对账
-        </h1>
-        <span style={{ fontSize: 12.5, color: "#909399" }}>
-          货架成品 ↔ 本库 SKU / 网盘指针 —— 差异只报，不动任何一边
-        </span>
-        <span style={{ marginLeft: "auto", textAlign: "right" }}>
-          <DataSourceNote>
+      <PageHead
+        title={<>资料对账</>}
+        sub={<>货架成品 ↔ 本库 SKU / 网盘指针 —— 差异只报，不动任何一边</>}
+        source={
+          <>
             core.reconcileShelf · <b>punch 库</b>（
             {report?.punchDbPath ?? "举一反三产物/资料库.db"}
             ，mode=ro）asset / doc + <b>本库</b> sku / sku_output / asset —— 🔴
             两个库同名不同物
-          </DataSourceNote>
-        </span>
-      </div>
+          </>
+        }
+      />
 
       {loadError ? (
         <Alert

@@ -14,7 +14,8 @@
 import { Alert, Card, Tag } from "antd";
 import Link from "next/link";
 
-import { DataSourceNote, IdTail, StatusTag } from "~/components/console/ui";
+import { PageHead } from "~/components/console/page-head";
+import { IdTail, StatusTag, TimeText } from "~/components/console/ui";
 import { param } from "../../kg/shared";
 import { mapErrCodeAction } from "../actions";
 import { causeOptions, describeKp, findErrCodeMap } from "../lookup";
@@ -29,25 +30,13 @@ const MONO: React.CSSProperties = {
 
 function Head() {
   return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "baseline",
-        gap: 12,
-        marginBottom: 12,
-        flexWrap: "wrap",
-      }}
-    >
-      <h1 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>补错因映射</h1>
-      <span style={{ fontSize: 12.5, ...灰 }}>
-        登记一条 (考点, 码) → 错因 的翻译 · 🔴 页面写操作，按两次才生效
-      </span>
-      <span style={{ marginLeft: "auto" }}>
-        <DataSourceNote>
-          core.mapErrCode（写，落审计行）· 表 err_code_map(kp_id, err_code)
-        </DataSourceNote>
-      </span>
-    </div>
+    <PageHead
+      title={<>补错因映射</>}
+      sub={<>登记一条 (考点, 码) → 错因 的翻译 · 🔴 页面写操作，按两次才生效</>}
+      source={
+        <>core.mapErrCode（写，落审计行）· 表 err_code_map(kp_id, err_code)</>
+      }
+    />
   );
 }
 
@@ -82,11 +71,42 @@ export default async function MapErrCodePage({
   }
 
   // ── 第二步：预览 + 确认 ───────────────────────────────────────────────
-  const [kp, 现有, options] = await Promise.all([
-    describeKp(kpId),
-    findErrCodeMap(kpId, errCode),
-    causeOptions(),
-  ]);
+  // 🔴 AI:PRD-009 打磨（检查单 §三·2 错误态）：这三个 await 原来是**裸的** ——
+  //    错因台账读不出来（库锁了 / 表没了）整页直接 500，人只看得见 Next 的白页，
+  //    连「刚才要补哪一组映射」都没了。捞住、原文照登、并且**不给写按钮**：
+  //    候选都没读出来时点确认只会撞一个更难懂的错。
+  let kp: Awaited<ReturnType<typeof describeKp>>;
+  let 现有: Awaited<ReturnType<typeof findErrCodeMap>>;
+  let options: Awaited<ReturnType<typeof causeOptions>>;
+  try {
+    [kp, 现有, options] = await Promise.all([
+      describeKp(kpId),
+      findErrCodeMap(kpId, errCode),
+      causeOptions(),
+    ]);
+  } catch (e) {
+    return (
+      <>
+        <Head />
+        <Alert
+          type="error"
+          showIcon
+          message="错因台账读不出来（原文照登）—— 这一步不给写按钮"
+          description={
+            <div style={{ fontSize: 12.5, lineHeight: 1.9 }}>
+              <pre style={{ whiteSpace: "pre-wrap", margin: "0 0 6px" }}>
+                {e instanceof Error ? `${e.name}: ${e.message}` : String(e)}
+              </pre>
+              要补的这一组：考点 <code>{kpId}</code> × 码 <code>{errCode}</code>
+              （地址栏里还在，修好库刷新本页即可继续）。
+              <br />
+              <Link href="/cause">← 回错因管理</Link>
+            </div>
+          }
+        />
+      </>
+    );
+  }
 
   return (
     <>
@@ -119,8 +139,14 @@ export default async function MapErrCodePage({
           }
           description={
             <div style={{ fontSize: 12.5, lineHeight: 1.9 }}>
-              由 {现有.mappedBy ?? "（没记谁定的）"} 于{" "}
-              {现有.mappedAt ?? "（没记时间）"} 定的。
+              {/* 🔴 检查单 §三·3 时间统一：原来直接印整串 ISO */}由{" "}
+              {现有.mappedBy ?? "（没记谁定的）"} 于{" "}
+              {现有.mappedAt ? (
+                <TimeText iso={现有.mappedAt} />
+              ) : (
+                "（没记时间）"
+              )}{" "}
+              定的。
               <br />
               🔴 这里<b>不覆盖</b>，页面上也<b>没有</b>
               改指/摘除的口子（写操作白名单 §六 D2
@@ -164,6 +190,25 @@ export default async function MapErrCodePage({
           </tbody>
         </table>
 
+        {/* 🔴 检查单 §三·6 空态：一个错因实体都没有时，下面那个下拉是**空的** ——
+            人对着一个选不出东西的表单，不知道是坏了还是没数据。说清楚 + 给下一步。 */}
+        {options.length === 0 ? (
+          <Alert
+            type="warning"
+            showIcon
+            style={{ marginBottom: 14 }}
+            message="错因域一个实体都没有 —— 这条映射现在补不了"
+            description={
+              <span style={{ fontSize: 12.5 }}>
+                映射是「(考点, 码) → <b>错因实体</b>
+                」，没有实体就没有可指的对象。
+                这是「种子还没灌」的诚实形态，不是故障：建错因实体走 agent /
+                MCP（页面不做），灌完回本页刷新即可。
+              </span>
+            }
+          />
+        ) : null}
+
         <form action={mapErrCodeAction}>
           <input type="hidden" name="kpId" value={kp.kpId} />
           <input type="hidden" name="errCode" value={errCode} />
@@ -175,13 +220,15 @@ export default async function MapErrCodePage({
             name="causeId"
             required
             defaultValue=""
+            disabled={options.length === 0}
             style={{
-              minWidth: 460,
-              maxWidth: "100%",
-              padding: "5px 8px",
+              // 🔴 检查单 §三·5：原来是 minWidth 460 —— 在 390px 的手机上顶宽整页
+              width: "100%",
+              maxWidth: 460,
+              padding: "6px 8px",
               fontSize: 13,
-              border: "1px solid #dcdfe6",
-              borderRadius: 2,
+              border: "1px solid #d9d9d9",
+              borderRadius: 3,
             }}
           >
             <option value="" disabled>
@@ -214,20 +261,24 @@ export default async function MapErrCodePage({
             报告里。
           </label>
 
+          {/* 🔴 检查单 §三·9 文案 + §三·10 一致性：按钮上要写清点下去发生什么
+              （「确认补映射」→「确认写入这条映射」），配色对齐 antd 的 danger 主按钮
+              （终审台那三个写动作也是这个红），不再自成一套 element-ui 浅红。 */}
           <button
             type="submit"
+            disabled={options.length === 0}
             style={{
-              border: "1px solid #c45656",
-              color: "#c45656",
-              background: "#fef0f0",
-              borderRadius: 2,
-              padding: "5px 14px",
-              fontSize: 12.5,
+              border: "1px solid transparent",
+              color: "#fff",
+              background: options.length === 0 ? "#ffa39e" : "#ff4d4f",
+              borderRadius: 3,
+              padding: "6px 16px",
+              fontSize: 13,
               fontWeight: 600,
-              cursor: "pointer",
+              cursor: options.length === 0 ? "not-allowed" : "pointer",
             }}
           >
-            确认补映射
+            确认写入这条映射
           </button>
           <Link
             href="/cause"

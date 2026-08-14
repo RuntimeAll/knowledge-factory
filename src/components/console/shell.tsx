@@ -19,11 +19,13 @@
  */
 import "@ant-design/v5-patch-for-react-19";
 
+import { MenuOutlined } from "@ant-design/icons";
 import { ProLayout, type ProLayoutProps } from "@ant-design/pro-components";
-import { Breadcrumb, ConfigProvider } from "antd";
+import { Breadcrumb, Button, ConfigProvider } from "antd";
 import zhCN from "antd/locale/zh_CN";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
 
 import { CONSOLE_MENU, crumbsFor, selectedPathFor } from "./menu";
 
@@ -41,6 +43,31 @@ const ROUTES: NonNullable<RouteNode["children"]> = CONSOLE_MENU.map((g) => ({
     hint: it.hint,
   })),
 }));
+
+/**
+ * 壳的响应式（AI:PRD-009 · 检查单 ⑤「移动端」）。
+ *
+ * 🔴 用 `<style>` + media query，不用 `Grid.useBreakpoint()` 条件渲染：
+ *    断点 hook 首帧在服务端拿不到窗口宽度，SSR 出来的 DOM 与水合后的第一帧
+ *    会不一致（顶栏那句字先出现再消失，肉眼可见地闪一下）。CSS 没有这个问题。
+ * 🔴 内边距只写在 class 里、不写 inline：inline style 覆盖 class，
+ *    写了 inline 手机上的 12px 就永远不生效。
+ */
+const RESPONSIVE_CSS = `
+.kf-topbar { height: 48px; background: #fff; border-bottom: 1px solid #e4e7ed;
+  display: flex; align-items: center; gap: 14px; padding: 0 20px; }
+.kf-topbar-note { margin-left: auto; font-size: 12.5px; color: #606266; white-space: nowrap; }
+.kf-content { padding: 16px 20px 64px; max-width: 1280px; }
+/* 🔴 汉堡键只在手机上出现：桌面有侧栏，多一个按钮是噪音 */
+.kf-menu-toggle { display: none; }
+/* 窄屏：顶栏那句权限说明让位给面包屑（它是一句常识性说明，不是当前页的信息） */
+@media (max-width: 900px) { .kf-topbar-note { display: none; } }
+@media (max-width: 767px) {
+  .kf-topbar { padding: 0 12px; gap: 8px; }
+  .kf-content { padding: 12px 12px 56px; }
+  .kf-menu-toggle { display: inline-flex; }
+}
+`;
 
 /** 若依/element 系侧栏配色（过稿模版 console-mockup.html 的 --side 那组） */
 const SIDER_TOKEN = {
@@ -71,6 +98,17 @@ export function ConsoleShell({
   const crumbs = crumbsFor(pathname);
   const selected = selectedPathFor(pathname);
 
+  /**
+   * 🔴🔴 手机上打不开菜单的坑（AI:PRD-009 · 检查单 ⑤）：
+   *   ProLayout 在窄屏会把侧栏变成 Drawer 并默认收起，而**开这个抽屉的那个汉堡键
+   *   长在它自带的 header 上** —— 本壳 `headerRender={false}`（顶栏我们自己画），
+   *   于是手机上整站只剩当前这一页，换页只能手改地址栏。
+   *   解法：受控 `collapsed` + 顶栏自画一枚汉堡（桌面用 CSS 藏掉）。
+   * 🔴 初值 `undefined` 是刻意的：交给 ProLayout 自己按断点决定初始收放，
+   *    我们只在人点了之后接管（写死 false 会让手机首屏糊一层抽屉遮罩）。
+   */
+  const [collapsed, setCollapsed] = useState<boolean | undefined>(undefined);
+
   return (
     <ConfigProvider
       locale={zhCN}
@@ -94,6 +132,8 @@ export function ConsoleShell({
         fixedHeader
         route={{ path: "/", children: ROUTES }}
         location={{ pathname: selected }}
+        collapsed={collapsed}
+        onCollapse={setCollapsed}
         // type=group：一级组显示成分组标题（过稿模版就是这个样子——所有二级页一屏看完）
         menu={{ type: "group" }}
         // 面包屑自己画在顶栏（ProLayout 自带的那份要配 PageContainer 才出现）
@@ -159,39 +199,55 @@ export function ConsoleShell({
         }
         contentStyle={{ padding: 0, margin: 0 }}
       >
+        <style dangerouslySetInnerHTML={{ __html: RESPONSIVE_CSS }} />
+
         {/* ── 顶栏：面包屑 + 那句权限说明（过稿模版的 .topbar）───────────────── */}
-        <div
-          style={{
-            height: 48,
-            background: "#fff",
-            borderBottom: "1px solid #e4e7ed",
-            display: "flex",
-            alignItems: "center",
-            gap: 14,
-            padding: "0 20px",
-          }}
-        >
+        <div className="kf-topbar">
+          {/* 手机上唯一的「回菜单」入口。40×40 触控目标：贴着 44px 指南的下限，
+              再大就把 48px 高的顶栏顶破了（检查单 ⑤ 的触控目标那条） */}
+          <Button
+            className="kf-menu-toggle"
+            type="text"
+            size="small"
+            aria-label="打开导航菜单"
+            icon={<MenuOutlined />}
+            onClick={() => setCollapsed(collapsed === false)}
+            style={{ minWidth: 40, height: 40 }}
+          />
           <Breadcrumb
             style={{ fontSize: 13 }}
             items={[
               { title: <Link href="/">知识工厂</Link> },
               ...(crumbs
-                ? [{ title: crumbs.group }, { title: <b>{crumbs.name}</b> }]
+                ? [
+                    { title: crumbs.group },
+                    // 🔴 详情页补一层**可点的**列表页（检查单 ④⑧）：
+                    //    「知识工厂 / 题库管理 / 题目详情」里中间那层是组名、点不动，
+                    //    从详情页回列表页原先只能靠浏览器后退。父页正本在 menu.ts。
+                    ...(crumbs.parent
+                      ? [
+                          {
+                            title: (
+                              <Link href={crumbs.parent.path}>
+                                {crumbs.parent.name}
+                              </Link>
+                            ),
+                          },
+                        ]
+                      : []),
+                    { title: <b>{crumbs.name}</b> },
+                  ]
                 : []),
             ]}
           />
-          <span
-            style={{ marginLeft: "auto", fontSize: 12.5, color: "#606266" }}
-          >
+          <span className="kf-topbar-note">
             无登录无权限（内部单人）· 写操作走 core / MCP
           </span>
         </div>
 
         {/* 🔴 红旗条留在内容区顶部、通栏（它回答「这库现在可不可信」，比任何一页都靠前） */}
         {flags}
-        <div style={{ padding: "16px 20px 64px", maxWidth: 1280 }}>
-          {children}
-        </div>
+        <div className="kf-content">{children}</div>
       </ProLayout>
     </ConfigProvider>
   );
