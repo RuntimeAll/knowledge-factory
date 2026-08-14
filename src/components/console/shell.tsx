@@ -20,7 +20,7 @@
 import "@ant-design/v5-patch-for-react-19";
 
 import { ProLayout, type ProLayoutProps } from "@ant-design/pro-components";
-import { Breadcrumb, ConfigProvider, Tag } from "antd";
+import { Breadcrumb, ConfigProvider } from "antd";
 import zhCN from "antd/locale/zh_CN";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -104,25 +104,28 @@ export function ConsoleShell({
           const todo = item.disabled === true;
           if (todo) {
             return (
+              // 🔴 这里**不复用 dom**：dom 自带一层行高，套进来两行会被 40px 的
+              //    菜单条从中间切开（实测：字被腰斩、「待开发」压在下一行）。
+              //    置灰项自己画一行 flex，名字省略号、标签不换行。
               <span
                 aria-disabled="true"
                 title={`${typeof item.hint === "string" ? item.hint + " · " : ""}页还没建（AI:PRD-008 分期建设）`}
-                style={{ cursor: "not-allowed", opacity: 0.55 }}
+                style={{
+                  cursor: "not-allowed",
+                  // 只调色不调透明度：叠上侧栏本来就低的对比度，opacity 会让这几项
+                  // **几乎看不见** —— 灰是「点不了」，不是「不给你看」。
+                  color: "#93a2b5",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  overflow: "hidden",
+                  whiteSpace: "nowrap",
+                }}
               >
-                {dom}
-                <Tag
-                  bordered={false}
-                  style={{
-                    marginInlineStart: 6,
-                    fontSize: 10,
-                    lineHeight: "16px",
-                    background: "transparent",
-                    border: "1px solid #46586e",
-                    color: "#8a97a8",
-                  }}
-                >
-                  待开发
-                </Tag>
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {item.name}
+                </span>
+                <span style={{ fontSize: 10, color: "#7d8ea3" }}>待开发</span>
               </span>
             );
           }
@@ -135,22 +138,9 @@ export function ConsoleShell({
             </Link>
           );
         }}
-        headerContentRender={() => (
-          <Breadcrumb
-            style={{ fontSize: 13 }}
-            items={[
-              { title: <Link href="/">知识工厂</Link> },
-              ...(crumbs
-                ? [{ title: crumbs.group }, { title: <b>{crumbs.name}</b> }]
-                : []),
-            ]}
-          />
-        )}
-        rightContentRender={() => (
-          <span style={{ fontSize: 12.5, color: "#606266" }}>
-            无登录无权限（内部单人）· 写操作走 core / MCP
-          </span>
-        )}
+        // 🔴 header 自己画（见下面的顶栏）：layout="side" 时 ProLayout 不出顶栏，
+        //    rightContentRender 会被塞进侧栏底部 —— 面包屑和那句权限小字就都跑偏了。
+        headerRender={false}
         menuFooterRender={(props) =>
           props?.collapsed ? null : (
             <div
@@ -169,6 +159,34 @@ export function ConsoleShell({
         }
         contentStyle={{ padding: 0, margin: 0 }}
       >
+        {/* ── 顶栏：面包屑 + 那句权限说明（过稿模版的 .topbar）───────────────── */}
+        <div
+          style={{
+            height: 48,
+            background: "#fff",
+            borderBottom: "1px solid #e4e7ed",
+            display: "flex",
+            alignItems: "center",
+            gap: 14,
+            padding: "0 20px",
+          }}
+        >
+          <Breadcrumb
+            style={{ fontSize: 13 }}
+            items={[
+              { title: <Link href="/">知识工厂</Link> },
+              ...(crumbs
+                ? [{ title: crumbs.group }, { title: <b>{crumbs.name}</b> }]
+                : []),
+            ]}
+          />
+          <span
+            style={{ marginLeft: "auto", fontSize: 12.5, color: "#606266" }}
+          >
+            无登录无权限（内部单人）· 写操作走 core / MCP
+          </span>
+        </div>
+
         {/* 🔴 红旗条留在内容区顶部、通栏（它回答「这库现在可不可信」，比任何一页都靠前） */}
         {flags}
         <div style={{ padding: "16px 20px 64px", maxWidth: 1280 }}>
