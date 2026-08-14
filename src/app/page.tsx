@@ -1,34 +1,38 @@
 /**
- * 首页 = 系统底座状态页（AI:PRD-001 · WP6）
+ * 首页 · 工作台（AI:PRD-008 · 地基；原件 = AI:PRD-001 WP6 的「系统底座」页）
  *
- * 三张卡：库体检 / 对账 / 备份 —— 「地基还在不在」的一屏答案。
- * 🔴 本卡只做状态展示，没有任何按钮能改库：写操作一律走 core（MCP / 脚本）。
+ * 设计稿 §二·1：开台第一眼——库有多大、有没有红灯、今天该去哪。
+ *   统计卡一排（点卡跳对应列表）+ 红旗条（在 layout 里，全站通栏）+ 待办卡。
+ * **不管**任何明细：本页所有内容都是"跳过去"的入口。
  *
- * 全部 server component + 现算：本地 SQLite 毫秒级，不上任何 client 状态管理，
- * 也不做缓存（缓存过的「健康」是最没用的健康）。
- * force-dynamic 的理由见 layout.tsx 文件头。
+ * 🔴 全 server component + 现算：本地 SQLite 毫秒级，不上 client 状态、不做缓存
+ *    （缓存过的「健康」是最没用的健康）。force-dynamic 的理由见 layout.tsx 文件头。
+ * 🔴 本页没有任何按钮能改库：写操作一律走 core（MCP / 脚本）。
+ * 🔴 目标页还没建的卡**不给链接**（StatCard 的 todo）：点进去 404 比不能点更糟。
  */
-import { Chip, Panel, Row } from "~/components/kit";
+import { Alert, Card, Col, Row, Tag } from "antd";
+import Link from "next/link";
+
+import { DataSourceNote, StatCard, TimeText } from "~/components/console/ui";
 import {
+  QUESTION_STATUSES,
+  SOLUTION_GRADES,
+  countOpenQueueByKind,
   getLatestIntegritySummary,
   health,
+  kgOverview,
   listBackups,
+  listModels,
+  listQuarantine,
+  listRoster,
+  listSkus,
+  searchQuestions,
   type BackupSnapshotInfo,
   type HealthReport,
   type IntegritySummary,
 } from "~/core";
 
 export const dynamic = "force-dynamic";
-
-// ---------------------------------------------------------------------------
-// 版式小件在 ~/components/kit（本页原地长出来的那三件，002-D 提出去共用了）
-// ---------------------------------------------------------------------------
-
-function bytesText(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
-  return `${(n / 1024 / 1024).toFixed(1)} MB`;
-}
 
 /** 读不动就把错误如实端出来（本地工具页，藏错误没有任何好处） */
 async function safe<T>(fn: () => Promise<T>): Promise<T | string> {
@@ -39,225 +43,307 @@ async function safe<T>(fn: () => Promise<T>): Promise<T | string> {
   }
 }
 
-function Broken({ what, err }: { what: string; err: string }) {
-  return (
-    <div className="text-pen text-[12.5px]">
-      {what}读不出来：<span className="break-all">{err}</span>
-    </div>
-  );
+function bytesText(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
-// ---------------------------------------------------------------------------
-// 三张卡
-// ---------------------------------------------------------------------------
+const TH: React.CSSProperties = {
+  background: "#f5f7fa",
+  color: "#606266",
+  fontWeight: 500,
+  fontSize: 12.5,
+  textAlign: "left",
+  padding: "8px 10px",
+  borderBottom: "1px solid #ebeef5",
+};
+const TD: React.CSSProperties = {
+  padding: "8px 10px",
+  borderBottom: "1px solid #ebeef5",
+  fontSize: 13,
+  verticalAlign: "top",
+};
 
-function HealthCard({ r }: { r: HealthReport | string }) {
-  if (typeof r === "string") {
-    return (
-      <Panel title="库体检">
-        <Broken what="体检" err={r} />
-      </Panel>
-    );
-  }
-  return (
-    <Panel title="库体检">
-      <div className="mb-2">
-        {r.ok ? (
-          <Chip tone="g">库活着 · 闸静息</Chip>
-        ) : (
-          <Chip tone="r">不健康</Chip>
-        )}
-        <span className="text-mut text-[11.5px]">{r.checkedAt}</span>
-      </div>
-      <Row
-        k="表数"
-        v={
-          <>
-            <span className="num text-[16px]">{r.tableCount}</span>
-            <span className="text-mut ml-2 text-[11.5px]">
-              张（WP2 基线 41）
-            </span>
-          </>
-        }
-      />
-      <Row
-        k="审计链尾"
-        v={
-          <>
-            <span className="num">seq {r.auditHeadSeq ?? "—（空链）"}</span>
-            <span className="text-mut ml-2 font-mono text-[11px]">
-              next prev_hash {r.auditNextPrevHash.slice(0, 16)}…
-            </span>
-          </>
-        }
-      />
-      <Row
-        k="写闸"
-        v={
-          r.gateResting ? (
-            <Chip tone="g">静息 allowed=0</Chip>
-          ) : (
-            <Chip tone="r">allowed={r.writeGate} · 闸没关！</Chip>
-          )
-        }
-      />
-      <Row
-        k="journal"
-        v={
-          <span className="text-[12.5px]">
-            {r.journalMode} · 外键 {r.foreignKeys ? "ON" : "OFF"} · busy_timeout{" "}
-            {r.busyTimeoutMs}ms
-          </span>
-        }
-      />
-      <Row
-        k="库"
-        v={<span className="font-mono text-[11.5px]">{r.url}</span>}
-      />
-    </Panel>
-  );
-}
+export default async function WorkbenchPage() {
+  const [q, kg, skus, models, roster, h, byKind, qr, integ, backups] =
+    await Promise.all([
+      // 🔴 题目总数走检索层的候选计数（core 没有单独的 count 口子，而检索是唯一入口）：
+      //    状态/判档都放全，拿到的就是全库题数；metric:false = 这一下不落打点。
+      safe(() =>
+        searchQuestions(
+          {
+            statuses: [...QUESTION_STATUSES],
+            solutionGrade: [...SOLUTION_GRADES],
+            limit: 1,
+          },
+          { metric: false },
+        ),
+      ),
+      safe(() => kgOverview()),
+      safe(() => listSkus({ limit: 500 })),
+      safe(() => listModels({ limit: 500 })),
+      safe(() => listRoster()),
+      safe(() => health()),
+      safe(() => countOpenQueueByKind()),
+      safe(() => listQuarantine({ state: "open", limit: 500 })),
+      safe(() => getLatestIntegritySummary()),
+      safe(() => listBackups({ limit: 3 })),
+    ]);
 
-function IntegrityCard({ s }: { s: IntegritySummary | null | string }) {
-  if (typeof s === "string") {
-    return (
-      <Panel title="对账">
-        <Broken what="对账摘要" err={s} />
-      </Panel>
-    );
-  }
-  if (!s) {
-    return (
-      <Panel title="对账">
-        <div className="text-mut text-[12.5px]">
-          还没跑过对账。跑一次：
-          <div className="bg-code mt-1.5 rounded-[2px] p-2 font-mono text-[11.5px]">
-            pnpm exec tsx --env-file=.env scripts/integrity-check.ts
-          </div>
-          <div className="mt-1.5">或调 MCP 工具 integrity_check。</div>
-        </div>
-      </Panel>
-    );
-  }
-  return (
-    <Panel title="对账">
-      <div className="mb-2">
-        {s.ok ? (
-          <Chip tone="g">全绿 · 无红旗</Chip>
-        ) : (
-          <Chip tone="r">红旗 {s.red.length} 项</Chip>
-        )}
-        {s.warn.length > 0 ? <Chip tone="a">warn {s.warn.length}</Chip> : null}
-        <span className="text-mut text-[11.5px]">{s.ts ?? "时间未知"}</span>
-      </div>
-      {/* 🔴 没有对账详情页可跳（那是后面的卡），所以逐项就地展开 */}
-      {s.items.length > 0 ? (
-        <ul className="space-y-1 text-[12.5px]">
-          {s.items.map((it) => (
-            <li key={it.id} className="flex items-baseline gap-2">
-              <span className="num text-mut w-[22px] shrink-0">{it.id}</span>
-              {it.ok ? (
-                <Chip tone="g">ok</Chip>
-              ) : it.level === "red" ? (
-                <Chip tone="r">red</Chip>
-              ) : (
-                <Chip tone="a">warn</Chip>
-              )}
-              {/* 🔴 break-words 少不得：check 名里带 question_kp/node_kp_map/…
-                  这种长 ASCII 串，不给断词点就会整条撑破面板 */}
-              <span className="min-w-0 flex-1 break-words">{it.name}</span>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <div className="text-mut text-[12.5px]">
-          这条摘要是 WP6 之前的老口径（没有逐项明细）： 红{" "}
-          {s.red.join("、") || "无"} · warn {s.warn.join("、") || "无"}
-          。重跑一次对账即可看到六项全名。
-        </div>
-      )}
-    </Panel>
-  );
-}
-
-function BackupCard({ list }: { list: BackupSnapshotInfo[] | string }) {
-  if (typeof list === "string") {
-    return (
-      <Panel title="备份">
-        <Broken what="快照目录" err={list} />
-      </Panel>
-    );
-  }
-  if (list.length === 0) {
-    return (
-      <Panel title="备份">
-        <div className="text-mut text-[12.5px]">
-          <Chip tone="r">一份快照都没有</Chip>
-          <div className="bg-code mt-1.5 rounded-[2px] p-2 font-mono text-[11.5px]">
-            pnpm exec tsx --env-file=.env scripts/backup.ts
-          </div>
-        </div>
-      </Panel>
-    );
-  }
-  const [latest, ...rest] = list;
-  return (
-    <Panel title="备份">
-      <div className="mb-2">
-        <Chip tone="g">最近快照</Chip>
-        <span className="num text-[12.5px]">{latest!.mtime}</span>
-      </div>
-      <div className="font-mono text-[11.5px] break-all">{latest!.file}</div>
-      <div className="text-mut mt-1 text-[12px]">
-        {bytesText(latest!.bytes)} · reason={latest!.reason}
-      </div>
-      {rest.length > 0 ? (
-        <table className="mt-2.5 w-full text-[11.5px]">
-          <tbody>
-            {rest.map((b) => (
-              <tr key={b.path} className="border-hair border-t">
-                <td className="text-mut num py-1 pr-2 whitespace-nowrap">
-                  {b.mtime}
-                </td>
-                <td className="text-mut py-1 text-right whitespace-nowrap">
-                  {bytesText(b.bytes)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      ) : null}
-    </Panel>
-  );
-}
-
-// ---------------------------------------------------------------------------
-
-export default async function HomePage() {
-  const [h, s, b] = await Promise.all([
-    safe(() => health()),
-    safe(() => getLatestIntegritySummary()),
-    // 5 份足够看出「今天有没有、隔多久打一次」，再多就是翻目录的事
-    safe(() => listBackups({ limit: 5 })),
-  ]);
+  const 题数 = typeof q === "string" ? "读不出" : q.candidateCount;
+  const 考点数 = typeof kg === "string" ? "读不出" : kg.kpTotal;
+  const 别名数 = typeof kg === "string" ? null : kg.aliasTotal;
+  const skuList = typeof skus === "string" ? [] : skus;
+  const draftSku = skuList.filter((s) => s.status === "draft");
+  const 队列 = typeof byKind === "string" ? [] : byKind;
+  const 队列未处置 = 队列.reduce((a, b) => a + b.count, 0);
+  const 隔离未结 = typeof qr === "string" ? 0 : qr.length;
+  const 体检 = typeof h === "string" ? null : (h as HealthReport);
+  const 对账 =
+    typeof integ === "string" ? null : (integ as IntegritySummary | null);
+  const 快照 =
+    typeof backups === "string" ? [] : (backups as BackupSnapshotInfo[]);
 
   return (
     <>
-      <h1 className="font-serif text-[23px] font-bold tracking-[1px]">
-        系统底座
-      </h1>
-      <div className="text-mut mt-[3px] mb-5 text-[12.5px]">
-        库还在不在 · 数据自不自洽 · 丢了能不能捞回来
+      <div
+        style={{
+          display: "flex",
+          alignItems: "baseline",
+          gap: 12,
+          marginBottom: 14,
+        }}
+      >
+        <h1 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>工作台</h1>
+        <span style={{ fontSize: 12.5, color: "#909399" }}>
+          库有多大 · 有没有红灯 · 今天该去哪
+        </span>
+        <span style={{ marginLeft: "auto" }}>
+          <DataSourceNote>
+            searchQuestions / kgOverview / listSkus / listModels / listRoster /
+            health（全部现算）
+          </DataSourceNote>
+        </span>
       </div>
 
-      <div className="grid gap-3.5 lg:grid-cols-3">
-        <HealthCard r={h} />
-        <IntegrityCard s={s} />
-        <BackupCard list={b} />
-      </div>
+      {/* ── 统计卡一排 ─────────────────────────────────────────────────── */}
+      <Row gutter={[12, 12]}>
+        <Col xs={12} sm={8} lg={4}>
+          <StatCard
+            label="题目"
+            value={题数}
+            sub="全状态全判档"
+            href="/question"
+          />
+        </Col>
+        <Col xs={12} sm={8} lg={4}>
+          <StatCard
+            label="考点"
+            value={考点数}
+            sub={别名数 === null ? "" : `+${别名数} 别名`}
+            href="/kg"
+          />
+        </Col>
+        <Col xs={12} sm={8} lg={4}>
+          <StatCard
+            label="SKU 册/卷"
+            value={typeof skus === "string" ? "读不出" : skuList.length}
+            sub={`draft ${draftSku.length}`}
+            todo
+          />
+        </Col>
+        <Col xs={12} sm={8} lg={4}>
+          <StatCard
+            label="考察模型"
+            value={typeof models === "string" ? "读不出" : models.length}
+            todo
+          />
+        </Col>
+        <Col xs={12} sm={8} lg={4}>
+          <StatCard
+            label="学员"
+            value={typeof roster === "string" ? "读不出" : roster.length}
+            sub="全代号"
+            todo
+          />
+        </Col>
+        <Col xs={12} sm={8} lg={4}>
+          <StatCard
+            label="审计链 seq"
+            value={体检?.auditHeadSeq ?? "空链"}
+            todo
+          />
+        </Col>
+      </Row>
 
-      <hr className="rule-double my-5 border-0" />
-      <div className="text-mut text-[12px] leading-[1.9]">
+      {/* ── 待办 ───────────────────────────────────────────────────────── */}
+      <Card
+        size="small"
+        title="待办"
+        style={{ marginTop: 14 }}
+        extra={
+          <span style={{ fontSize: 11.5, color: "#909399" }}>
+            这三行是"今天该去哪"的全部——它们清零 = 没有人等你拍板
+          </span>
+        }
+      >
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr>
+              <th style={TH}>类型</th>
+              <th style={TH}>内容</th>
+              <th style={{ ...TH, width: 90 }}>数量</th>
+              <th style={{ ...TH, width: 140 }}>入口</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td style={TD}>审查队列</td>
+              <td style={TD}>
+                未处置工单
+                {队列.length > 0
+                  ? `（${队列
+                      .filter((k) => k.count > 0)
+                      .map((k) => `${k.kind}${k.count}`)
+                      .join(" · ")}）`
+                  : "（各类均为 0）"}
+              </td>
+              <td style={TD}>
+                <Tag color={队列未处置 > 0 ? "orange" : "green"}>
+                  {队列未处置}
+                </Tag>
+              </td>
+              <td style={TD}>
+                <Link href="/queue">去处置台 →</Link>
+              </td>
+            </tr>
+            <tr>
+              <td style={TD}>审查队列</td>
+              <td style={TD}>隔离区未清（管道拒了的题，原样 payload 留着）</td>
+              <td style={TD}>
+                <Tag color={隔离未结 > 0 ? "red" : "green"}>{隔离未结}</Tag>
+              </td>
+              <td style={TD}>
+                <Link href="/queue?tab=quarantine">去隔离区 →</Link>
+              </td>
+            </tr>
+            <tr>
+              <td style={TD}>生产</td>
+              <td style={TD}>
+                draft 状态 SKU
+                {draftSku.length > 0
+                  ? `（${draftSku
+                      .slice(0, 3)
+                      .map((s) => s.name)
+                      .join("、")}${draftSku.length > 3 ? " …" : ""}）`
+                  : ""}
+              </td>
+              <td style={TD}>
+                <Tag color={draftSku.length > 0 ? "blue" : "green"}>
+                  {draftSku.length}
+                </Tag>
+              </td>
+              <td style={TD}>
+                <span style={{ color: "#909399" }}>SKU 台账待开发</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </Card>
+
+      {/* ── 系统底座（明细页 /health 未建之前，这几项留在工作台上）─────────── */}
+      <Card
+        size="small"
+        title="系统底座"
+        style={{ marginTop: 14 }}
+        extra={
+          <span style={{ fontSize: 11.5, color: "#909399" }}>
+            备份与对账明细页（/health）待开发，先在这儿摆着——地基不该看不见
+          </span>
+        }
+      >
+        {typeof h === "string" ? (
+          <Alert type="error" showIcon message={`库体检读不出来：${h}`} />
+        ) : null}
+        <Row gutter={[12, 12]}>
+          <Col xs={24} lg={8}>
+            <div style={{ fontSize: 12.5, lineHeight: 2 }}>
+              <b>库体检</b>
+              <br />
+              {体检 ? (
+                <>
+                  <Tag color={体检.ok ? "green" : "red"}>
+                    {体检.ok ? "库活着 · 闸静息" : "不健康"}
+                  </Tag>
+                  <br />
+                  表数 {体检.tableCount} 张 · 审计链尾 seq{" "}
+                  {体检.auditHeadSeq ?? "—（空链）"}
+                  <br />
+                  写闸 allowed={体检.writeGate}（正常恒为 0）·{" "}
+                  {体检.journalMode} · 外键 {体检.foreignKeys ? "ON" : "OFF"}
+                </>
+              ) : (
+                "—"
+              )}
+            </div>
+          </Col>
+          <Col xs={24} lg={8}>
+            <div style={{ fontSize: 12.5, lineHeight: 2 }}>
+              <b>对账（最近一次的摘要，不是现跑）</b>
+              <br />
+              {对账 ? (
+                <>
+                  <Tag color={对账.ok ? "green" : "red"}>
+                    {对账.ok ? "全绿 · 无红旗" : `红旗 ${对账.red.length} 项`}
+                  </Tag>
+                  {对账.warn.length > 0 ? (
+                    <Tag color="orange">warn {对账.warn.length}</Tag>
+                  ) : null}
+                  <br />
+                  <TimeText iso={对账.ts} />
+                </>
+              ) : (
+                <>
+                  还没跑过对账（或读不出摘要）。跑一次：
+                  <br />
+                  <code style={{ fontSize: 11.5 }}>
+                    pnpm exec tsx --env-file=.env scripts/integrity-check.ts
+                  </code>
+                </>
+              )}
+            </div>
+          </Col>
+          <Col xs={24} lg={8}>
+            <div style={{ fontSize: 12.5, lineHeight: 2 }}>
+              <b>备份</b>
+              <br />
+              {快照.length === 0 ? (
+                <>
+                  <Tag color="red">一份快照都没有</Tag>
+                  <br />
+                  <code style={{ fontSize: 11.5 }}>
+                    pnpm exec tsx --env-file=.env scripts/backup.ts
+                  </code>
+                </>
+              ) : (
+                <>
+                  <Tag color="green">最近快照</Tag>
+                  <TimeText iso={快照[0]!.mtime} />
+                  <br />
+                  {bytesText(快照[0]!.bytes)} · reason={快照[0]!.reason}
+                  <br />
+                  <span style={{ color: "#909399" }}>
+                    另有 {Math.max(0, 快照.length - 1)} 份更早的
+                  </span>
+                </>
+              )}
+            </div>
+          </Col>
+        </Row>
+      </Card>
+
+      <div style={{ marginTop: 14, fontSize: 12, color: "#909399" }}>
         本页只读、现算，没有缓存。要动库请走 MCP 工具或 scripts/ —— 页面壳与
         agent 共用同一个 core，绕过去就没有审计行。
       </div>
