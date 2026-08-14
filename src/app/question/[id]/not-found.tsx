@@ -24,17 +24,25 @@ export default function QuestionNotFound() {
         message="这道题不在库里"
         description={
           <span style={{ fontSize: 12.5 }}>
-            🔴 题 id 是纯 ULID，里面读不出任何语义，所以这里给不出「最像的候选」——
+            🔴 题 id 是纯
+            ULID，里面读不出任何语义，所以这里给不出「最像的候选」——
             给了也是瞎猜。
           </span>
         }
       />
 
       <Card size="small" title="下一步">
-        <ul style={{ margin: 0, paddingInlineStart: 18, fontSize: 12.5, lineHeight: 2 }}>
+        <ul
+          style={{
+            margin: 0,
+            paddingInlineStart: 18,
+            fontSize: 12.5,
+            lineHeight: 2,
+          }}
+        >
           <li>
-            回 <Link href="/question">题目管理</Link>{" "}
-            按考点 / 关键词 / 语意把它找出来，点「查看」进来 —— 链接里的 id 一定是真的。
+            回 <Link href="/question">题目管理</Link> 按考点 / 关键词 /
+            语意把它找出来，点「查看」进来 —— 链接里的 id 一定是真的。
           </li>
           <li>
             id 是从别处抄来的？先确认它抄全了（ULID 26 位，少一位就是另一道题，

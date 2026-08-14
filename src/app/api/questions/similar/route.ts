@@ -23,7 +23,9 @@ export async function GET(req: Request): Promise<NextResponse> {
   const id = (sp.get("id") ?? "").trim();
   const n = Number(sp.get("limit"));
   const limit =
-    Number.isFinite(n) && n > 0 ? Math.min(Math.floor(n), MAX_LIMIT) : DEFAULT_LIMIT;
+    Number.isFinite(n) && n > 0
+      ? Math.min(Math.floor(n), MAX_LIMIT)
+      : DEFAULT_LIMIT;
 
   if (!id) {
     const body: SimilarResponse = {

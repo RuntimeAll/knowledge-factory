@@ -122,10 +122,12 @@ export default async function MapErrCodePage({
               由 {现有.mappedBy ?? "（没记谁定的）"} 于{" "}
               {现有.mappedAt ?? "（没记时间）"} 定的。
               <br />
-              🔴 这里<b>不覆盖</b>，页面上也<b>没有</b>改指/摘除的口子（写操作白名单
-              §六 D2 只有「补错因映射」这一类，删映射行不在其内）：
-              要改判走 agent/MCP —— core 的 <code>unmapErrCode</code> 先摘、
-              <code>mapErrCode</code> 再挂，两条审计行，翻账看得见「什么时候改的、从谁改到谁」。
+              🔴 这里<b>不覆盖</b>，页面上也<b>没有</b>
+              改指/摘除的口子（写操作白名单 §六 D2
+              只有「补错因映射」这一类，删映射行不在其内）： 要改判走 agent/MCP
+              —— core 的 <code>unmapErrCode</code> 先摘、
+              <code>mapErrCode</code>{" "}
+              再挂，两条审计行，翻账看得见「什么时候改的、从谁改到谁」。
             </div>
           }
         />

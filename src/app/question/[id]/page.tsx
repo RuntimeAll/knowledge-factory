@@ -107,7 +107,9 @@ function 族谱题({ q, 我 }: { q: LineageQuestion; 我?: boolean }) {
         <Link href={`/question/${q.questionId}`}>看 → </Link>
       )}
       <span>{q.stemBrief}</span>
-      {q.qtype ? <span style={{ ...灰, marginInlineStart: 6 }}>{q.qtype}</span> : null}
+      {q.qtype ? (
+        <span style={{ ...灰, marginInlineStart: 6 }}>{q.qtype}</span>
+      ) : null}
       {q.status === "active" ? null : (
         <span style={{ ...灰, marginInlineStart: 6 }}>[{q.status}]</span>
       )}
@@ -166,9 +168,10 @@ function 血缘({ lin, meId }: { lin: LineageView; meId: string }) {
             <span style={灰}>↑ 该模型的母题（从哪几道真题归纳出来）：</span>
             {lin.bornOf.origins.length === 0 ? (
               <div style={{ color: "#c45656", fontSize: 12.5, marginTop: 2 }}>
-                🔴 一道都没记 —— 族谱在这儿断了：这个模型已经在出题，却说不出自己
-                照着什么归纳的。补法：core 的 setModelOrigins(modelId, [母题 qid])
-                （脚本口，MCP 没有这个工具）。
+                🔴 一道都没记 ——
+                族谱在这儿断了：这个模型已经在出题，却说不出自己
+                照着什么归纳的。补法：core 的 setModelOrigins(modelId, [母题
+                qid]) （脚本口，MCP 没有这个工具）。
               </div>
             ) : (
               <ul style={{ marginTop: 2, marginLeft: 18 }}>
@@ -442,7 +445,9 @@ function 出处({ card }: { card: QuestionCard }) {
     items.push({
       key: "pipe",
       label: "产线标识",
-      children: <span style={{ ...MONO, fontSize: 11.5 }}>{p.pipelineRef}</span>,
+      children: (
+        <span style={{ ...MONO, fontSize: 11.5 }}>{p.pipelineRef}</span>
+      ),
     });
   }
 
@@ -624,7 +629,9 @@ export default async function QuestionDetailPage({
                 )}
                 <figcaption style={{ marginTop: 4, fontSize: 11 }}>
                   <Tag color={fig.role === "stem" ? "orange" : "default"}>
-                    {fig.role === "stem" ? "题干图（必审）" : (fig.role ?? "角色未填")}
+                    {fig.role === "stem"
+                      ? "题干图（必审）"
+                      : (fig.role ?? "角色未填")}
                   </Tag>
                   <StatusTag value={fig.reviewState} />
                   <span style={MONO}>{fig.hash?.slice(0, 12) ?? ""}</span>
@@ -667,7 +674,9 @@ export default async function QuestionDetailPage({
       {/* ── 徽章条：一眼看清这道题「能不能直接拿去用」 ────────────────────── */}
       <Space size={4} wrap style={{ marginBottom: 12 }}>
         <StatusTag value={card.status} />
-        <Tooltip title={实算过 ? "机器实算过（逐行恒等校验也过了）" : undefined}>
+        <Tooltip
+          title={实算过 ? "机器实算过（逐行恒等校验也过了）" : undefined}
+        >
           <span>
             <StatusTag value={card.solutionGrade} />
           </span>

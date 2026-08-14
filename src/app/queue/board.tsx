@@ -389,7 +389,8 @@ export function QueueBoard(props: QueueBoardProps) {
           dataIndex: "precheckOk",
           width: 150,
           // 全绿的排一头、有红灯的排另一头（null=没有预检记录，落中间）
-          sorter: (a, b) => Number(a.precheckOk ?? -1) - Number(b.precheckOk ?? -1),
+          sorter: (a, b) =>
+            Number(a.precheckOk ?? -1) - Number(b.precheckOk ?? -1),
           render: (_, r) =>
             r.precheckOk === null || r.precheckOk === undefined ? (
               <span style={{ color: "#909399" }}>没有预检记录</span>
@@ -620,12 +621,18 @@ export function QueueBoard(props: QueueBoardProps) {
                       okText="确认通过"
                       cancelText="再想想"
                       description={
-                        <div style={{ fontSize: 12.5, maxWidth: 420, lineHeight: 1.8 }}>
+                        <div
+                          style={{
+                            fontSize: 12.5,
+                            maxWidth: 420,
+                            lineHeight: 1.8,
+                          }}
+                        >
                           逐条独立事务、逐条留审计行：
                           <b>一条红了不影响其余</b>，回执逐条原文照登。
                           <br />
-                          🔴 其中的「模型转正」会真把模型改成 active（core
-                          的 activateModel），「图片」会顺手摘掉该题的必审位。
+                          🔴 其中的「模型转正」会真把模型改成 active（core 的
+                          activateModel），「图片」会顺手摘掉该题的必审位。
                         </div>
                       }
                       onConfirm={() => 批量表单.current?.requestSubmit()}

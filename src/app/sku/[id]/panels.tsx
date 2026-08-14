@@ -129,8 +129,8 @@ export function SkuItemsTable({ items }: { items: SkuItemLite[] }) {
         emptyText: (
           <EmptyHint>
             这本册子还没装题（sku_item 一行都没有）—— 🔴 登记 ≠ 装题。装题走 MCP
-            的 <b>register_sku</b>（传 sku_id + items 往这本册子里补，
-            ord 就是卷面题号），页面不做。
+            的 <b>register_sku</b>（传 sku_id + items 往这本册子里补， ord
+            就是卷面题号），页面不做。
           </EmptyHint>
         ),
       }}
@@ -193,8 +193,7 @@ export function SkuOutputsTable({
       title: "登记时间",
       dataIndex: "createdAt",
       width: 106,
-      sorter: (a, b) =>
-        (a.createdAt ?? "").localeCompare(b.createdAt ?? ""),
+      sorter: (a, b) => (a.createdAt ?? "").localeCompare(b.createdAt ?? ""),
       render: (_, r) => <TimeText iso={r.createdAt} />,
     },
     {

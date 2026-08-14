@@ -69,4 +69,3 @@ export async function mapErrCodeAction(fd: FormData): Promise<void> {
   revalidatePath("/cause");
   redirect(withMsg("/cause", msg));
 }
-

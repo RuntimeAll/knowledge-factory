@@ -97,8 +97,8 @@ export default async function IntakePage() {
             <span style={{ fontSize: 12.5 }}>
               {strayError}
               <br />
-              🔴 后果：下拉里**只有名册那几个人** —— 交过卷但没登记名册的学员这次选不到。
-              别当成「他不存在」。
+              🔴 后果：下拉里**只有名册那几个人** ——
+              交过卷但没登记名册的学员这次选不到。 别当成「他不存在」。
             </span>
           }
         />

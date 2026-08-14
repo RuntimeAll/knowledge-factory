@@ -100,7 +100,10 @@ export function CollisionTable({ rows }: { rows: DupViewRow[] }) {
       render: (_, r) => (
         <div style={{ fontSize: 12.5 }}>
           {r.questionId ? (
-            <Link href={`/question/${r.questionId}`} style={{ color: "inherit" }}>
+            <Link
+              href={`/question/${r.questionId}`}
+              style={{ color: "inherit" }}
+            >
               {r.stemBrief}
             </Link>
           ) : (

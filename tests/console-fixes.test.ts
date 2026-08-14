@@ -66,10 +66,12 @@ describe("② sortWindow / parseSort：窗口内排序的两条纪律", () => {
       field: "bytes",
       desc: true, // 默认降序：点一下多半想看最大的/最新的那一头
     });
-    expect(parseSort(new URLSearchParams("sort=bytes&order=asc"), allow)).toEqual(
-      { field: "bytes", desc: false },
-    );
-    expect(parseSort(new URLSearchParams("sort=drop%20table"), allow)).toBeNull();
+    expect(
+      parseSort(new URLSearchParams("sort=bytes&order=asc"), allow),
+    ).toEqual({ field: "bytes", desc: false });
+    expect(
+      parseSort(new URLSearchParams("sort=drop%20table"), allow),
+    ).toBeNull();
     expect(parseSort(new URLSearchParams(""), allow)).toBeNull();
   });
 });

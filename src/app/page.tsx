@@ -260,8 +260,7 @@ export default async function WorkbenchPage() {
         style={{ marginTop: 14 }}
         extra={
           <span style={{ fontSize: 11.5, color: "#909399" }}>
-            投料的台账 —— 明细/闸报告在{" "}
-            <Link href="/ingest">录入批次 →</Link>
+            投料的台账 —— 明细/闸报告在 <Link href="/ingest">录入批次 →</Link>
           </span>
         }
       >

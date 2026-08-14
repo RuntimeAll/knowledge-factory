@@ -194,11 +194,7 @@ export async function GET(req: Request): Promise<NextResponse> {
    *   · 其余 ⇒ 按需取
    */
   const target =
-    provFilter || sort !== null
-      ? MAX_ROUNDS * CAP
-      : axisActive
-        ? CAP
-        : need;
+    provFilter || sort !== null ? MAX_ROUNDS * CAP : axisActive ? CAP : need;
 
   try {
     const first = await searchQuestions(

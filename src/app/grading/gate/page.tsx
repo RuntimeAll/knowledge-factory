@@ -340,7 +340,8 @@ export default async function GradingGatePage() {
             {全量.judgedAuto > 0 ? (
               <Tooltip title="静默批次的 verdict_final 是产线照抄机器预判写进去的（直批.py 的 DB.confirm(..., auto='L1静默')），final ≡ pre 是结构决定的 —— 拿它们凑「零翻案」等于自证">
                 <span style={{ color: "#e6a23c", marginInlineStart: 8 }}>
-                  （另有 {全量.judgedAuto} 题次来自 L1静默批次，未计入 —— 人从未终审）
+                  （另有 {全量.judgedAuto} 题次来自 L1静默批次，未计入 ——
+                  人从未终审）
                 </span>
               </Tooltip>
             ) : null}
@@ -362,12 +363,14 @@ export default async function GradingGatePage() {
           </div>
           <div style={{ color: "#909399" }}>
             🔴 口径：翻案 = 用户终审值与 agent 预判值不一致。两类题次
-            <b>不进分母</b>：① agent 自标存疑（?/doubt/missing）—— 那些本来就是交给人的，
-            人改了不算翻案；② <b>L1静默批次</b>（batches.auto 非空）—— 那些批次的终审值
+            <b>不进分母</b>：① agent 自标存疑（?/doubt/missing）——
+            那些本来就是交给人的， 人改了不算翻案；② <b>L1静默批次</b>
+            （batches.auto 非空）—— 那些批次的终审值
             是产线照抄机器预判写的，人从未看过，结构上不可能出现翻案，
             算进来就是拿自证的数字支撑升档。
             <br />
-            这与正本 §四 的回放口径一致（08-13：122 题<b>人工</b>非存疑判定，用户翻案 0）。
+            这与正本 §四 的回放口径一致（08-13：122 题<b>人工</b>
+            非存疑判定，用户翻案 0）。
           </div>
         </div>
       </Card>

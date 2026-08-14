@@ -255,9 +255,7 @@ function SimilarDrawer({
               showIcon
               style={{ marginBottom: 10 }}
               message="相似题查不出来（原文照登）"
-              description={
-                <span style={{ fontSize: 12.5 }}>{data.error}</span>
-              }
+              description={<span style={{ fontSize: 12.5 }}>{data.error}</span>}
             />
           ) : null}
           {data?.degraded ? (

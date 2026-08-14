@@ -1189,7 +1189,8 @@ export async function listSkusOfQuestion(
     type: r.type,
     status: r.status,
     ord: Number(r.ord),
-    taskId: r.taskId === null || r.taskId === undefined ? null : Number(r.taskId),
+    taskId:
+      r.taskId === null || r.taskId === undefined ? null : Number(r.taskId),
     createdAt: r.createdAt,
   }));
 }

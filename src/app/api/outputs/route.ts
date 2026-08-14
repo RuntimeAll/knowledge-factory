@@ -31,13 +31,7 @@ const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
 
 /** 可排序的列（口径与两条排序纪律见 ~/lib/sort-window） */
-const SORT_FIELDS = [
-  "sku",
-  "kind",
-  "bytes",
-  "createdAt",
-  "note",
-] as const;
+const SORT_FIELDS = ["sku", "kind", "bytes", "createdAt", "note"] as const;
 type SortField = (typeof SORT_FIELDS)[number];
 
 const SORT_OF: Record<SortField, (r: OutputRow) => string | number | null> = {

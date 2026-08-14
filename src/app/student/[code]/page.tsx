@@ -392,13 +392,16 @@ function CauseTriState({ view }: { view: StudentViewResult }) {
               <div style={{ fontSize: 12.5, lineHeight: 1.9 }}>
                 老批次 / 没走归因链：<b>兜底档，该题所挂考点全扣</b>。
                 <div style={{ marginTop: 4, color: "#e6a23c" }}>
-                  🔴 它与②那一列 fallbackAll <b>不是同一个数</b>，对不上不是库坏了：
+                  🔴 它与②那一列 fallbackAll <b>不是同一个数</b>
+                  ，对不上不是库坏了：
                   <br />· 这里是<b>题数</b>（一题算一次），fallbackAll 是
                   <b>题次</b>（一题挂 N 个考点就记 N 次）；
                   <br />· 这里只数<b>判 ×</b> 的题，fallbackAll 数的是
-                  <b>「没判对」</b>的行（既非 √ 也非 × 的脏行也进它、不进这里）；
-                  <br />· 对位不到题 / 题没挂考点的那些进这里，但落不到任何考点上，
-                  所以在 fallbackAll 里一次都不出现。
+                  <b>「没判对」</b>的行（既非 √ 也非 ×
+                  的脏行也进它、不进这里）；
+                  <br />· 对位不到题 /
+                  题没挂考点的那些进这里，但落不到任何考点上， 所以在
+                  fallbackAll 里一次都不出现。
                 </div>
                 <div style={{ marginTop: 6, ...灰 }}>
                   样本：

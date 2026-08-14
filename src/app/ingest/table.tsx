@@ -581,7 +581,9 @@ export function IngestTable() {
                         >
                           🔴 2026-08-14 起 core 的检索层**有**录入批次这一维了
                           （searchParams.ingestBatchIds，硬过滤）：
-                          <Link href={`/question?batch=${encodeURIComponent(d.id)}`}>
+                          <Link
+                            href={`/question?batch=${encodeURIComponent(d.id)}`}
+                          >
                             在题目管理里看这一批 →
                           </Link>
                           。下面仍然把 id 逐个摆出来（点一个进一个的正本），

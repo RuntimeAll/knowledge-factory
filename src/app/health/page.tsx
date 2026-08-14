@@ -116,7 +116,8 @@ export default async function HealthPage() {
           <DataSourceNote>
             core.health / core.getLatestIntegritySummary（metric_event 的
             integrity_check 最近一行）/ core.listBackups（data/backup/）/
-            core.getLatestRegressionSummary（metric_event 的 regression 最近一行）
+            core.getLatestRegressionSummary（metric_event 的 regression
+            最近一行）
           </DataSourceNote>
         </span>
       </div>
@@ -321,8 +322,8 @@ export default async function HealthPage() {
         style={{ marginBottom: 14 }}
         extra={
           <span style={{ fontSize: 11.5, color: "#909399" }}>
-            读 metric_event(kind=regression) 最近一行 —— 本页**不跑**回归（十几分钟
-            + 它自己会写库），只显示上一跑留下的账
+            读 metric_event(kind=regression) 最近一行 ——
+            本页**不跑**回归（十几分钟 + 它自己会写库），只显示上一跑留下的账
           </span>
         }
       >
@@ -350,8 +351,8 @@ export default async function HealthPage() {
               ) : null}
               <span style={{ color: "#909399" }}>
                 最近一跑：
-                <TimeText iso={回归.ts} />
-                （{回归.secs}s · metric_event #{回归.metricId}）
+                <TimeText iso={回归.ts} />（{回归.secs}s · metric_event #
+                {回归.metricId}）
               </span>
             </div>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -406,8 +407,9 @@ export default async function HealthPage() {
           <EmptyHint>
             还没有战报（metric_event 里没有 kind=regression 的行）。
             <br />
-            🔴 「没有战报」不等于「回归没过」—— 它只说明这库还没跑过一轮带落账的回归
-            （2026-08-14 之前的跑法不写账）。照下面第③条命令跑一轮就有了。
+            🔴 「没有战报」不等于「回归没过」——
+            它只说明这库还没跑过一轮带落账的回归 （2026-08-14
+            之前的跑法不写账）。照下面第③条命令跑一轮就有了。
           </EmptyHint>
         )}
 
