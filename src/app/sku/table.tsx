@@ -154,6 +154,7 @@ export function SkuTable(props: SkuTableProps) {
     {
       title: "名称",
       dataIndex: "name",
+      sorter: true,
       width: 300,
       tooltip:
         "在取回的窗口里按「包含」匹配（core 的 listSkus 没有名称这一维）",
@@ -167,6 +168,7 @@ export function SkuTable(props: SkuTableProps) {
     {
       title: "类型",
       dataIndex: "type",
+      sorter: true,
       width: 76,
       valueType: "select",
       valueEnum: toEnum(props.types),
@@ -176,6 +178,7 @@ export function SkuTable(props: SkuTableProps) {
     {
       title: "状态",
       dataIndex: "status",
+      sorter: true,
       width: 88,
       valueType: "select",
       valueEnum: toEnum(props.statuses),
@@ -186,6 +189,7 @@ export function SkuTable(props: SkuTableProps) {
     {
       title: "题数",
       dataIndex: "items",
+      sorter: true,
       search: false,
       width: 64,
       tooltip: "sku_item 行数 = 题单里有多少题（0 = 登记了还没装题）",
@@ -201,6 +205,7 @@ export function SkuTable(props: SkuTableProps) {
     {
       title: "产物",
       dataIndex: "outputs",
+      sorter: true,
       search: false,
       width: 64,
       tooltip: "sku_output 行数（PDF/题单 JSON/物料）",
@@ -222,6 +227,7 @@ export function SkuTable(props: SkuTableProps) {
     {
       title: "版式",
       dataIndex: "layout",
+      sorter: true,
       width: 96,
       tooltip: "sku.layout（punch 的 layout_key）。窗口内按「包含」匹配",
       fieldProps: { placeholder: "daily_v1" },
@@ -235,6 +241,7 @@ export function SkuTable(props: SkuTableProps) {
     {
       title: "版本语境",
       dataIndex: "edition",
+      sorter: true,
       width: 96,
       tooltip: "sku.edition_ctx（生产动作显式带的版本）。窗口内按「包含」匹配",
       fieldProps: { placeholder: "人教七上 / 七上" },
@@ -262,6 +269,7 @@ export function SkuTable(props: SkuTableProps) {
     {
       title: "建档",
       dataIndex: "createdAt",
+      sorter: true,
       search: false,
       width: 106,
       render: (_, r) => <TimeText iso={r.createdAt} />,
@@ -331,10 +339,17 @@ export function SkuTable(props: SkuTableProps) {
           ),
         }}
         toolBarRender={() => [
+          // 🔴 一个工具通吃三件事（2026-08-14 修）：MCP 表面上**没有**
+          //    add_sku_items / register_sku_output 这两个工具（它们是 core 函数名，
+          //    只有一次性脚本直调）。粘一句查无此工具的命令 = 让人白撞一次。
           <CopyCmd
             key="reg"
-            label="建册/装题/登记产出走 MCP"
-            cmd="register_sku → add_sku_items → register_sku_output"
+            label="建册/装题/登记产出走 MCP 的 register_sku（一次编排到底；分步就传 sku_id 往里补）"
+            cmd={
+              'register_sku {"type":"打卡","name":"<册名>",' +
+              '"items":[{"question_id":"q_…","ord":1}],' +
+              '"outputs":[{"kind":"pdf_q","file_path":"…/题目卷.pdf"}]}'
+            }
           />,
         ]}
         pagination={{
@@ -343,7 +358,7 @@ export function SkuTable(props: SkuTableProps) {
           showSizeChanger: true,
           showTotal: (t, range) => `第 ${range[0]}-${range[1]} 条 / 共 ${t} 条`,
         }}
-        request={async (params) => {
+        request={async (params, sort) => {
           const q = new URLSearchParams();
           q.set("page", String(params.current ?? 1));
           q.set("pageSize", String(params.pageSize ?? 20));
@@ -352,6 +367,13 @@ export function SkuTable(props: SkuTableProps) {
           if (params.status) q.set("status", params.status);
           if (params.layout) q.set("layout", params.layout);
           if (params.edition) q.set("edition", params.edition);
+
+          // 🔴 排序丢给服务端（本表是服务端切片的，前端排只会排当前这一页）
+          const [sf, so] = Object.entries(sort ?? {})[0] ?? [];
+          if (sf && so) {
+            q.set("sort", sf);
+            q.set("order", so === "ascend" ? "asc" : "desc");
+          }
 
           const res = await fetch(`/api/skus?${q.toString()}`);
           const j = (await res.json()) as SkuListResponse;

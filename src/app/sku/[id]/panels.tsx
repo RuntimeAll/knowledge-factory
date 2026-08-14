@@ -8,7 +8,8 @@
  * 🔴 这里是 client 组件的理由只有一个：表格的列要写 render 函数、抽屉要开合状态，
  *    而 server component 不能把函数传下来。**数据全是 server 现算好传进来的**，
  *    本文件一行库都不读。
- * 🔴 `ord` 就是卷面题号（学情回流按它对位）—— 排序永远按 ord，不给人换。
+ * 🔴 `ord` 就是卷面题号（学情回流按它对位）—— **题单表永远按 ord 排，列头不给排序**：
+ *    换个序看题单，第 7 题就不是第 7 题了。产物表没有这个理由，列头可排（见下半截）。
  */
 import { Button, Drawer, Table, Tag, Tooltip, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
@@ -83,7 +84,7 @@ export function SkuItemsTable({ items }: { items: SkuItemLite[] }) {
             题 {r.questionId} 不在 question 表里（挂了个查无此行的 id）
           </span>
         ) : (
-          <Link href={`/q/${r.questionId}`} style={{ color: "inherit" }}>
+          <Link href={`/question/${r.questionId}`} style={{ color: "inherit" }}>
             <span
               style={{
                 fontFamily: "Consolas, Menlo, monospace",
@@ -108,9 +109,9 @@ export function SkuItemsTable({ items }: { items: SkuItemLite[] }) {
       render: (_, r) =>
         r.questionId ? (
           <>
-            <Link href={`/q/${r.questionId}`}>查看</Link>
+            <Link href={`/question/${r.questionId}`}>查看</Link>
             <span style={{ color: "#dcdfe6" }}> · </span>
-            <Link href={`/search?similar=${r.questionId}`}>相似题</Link>
+            <Link href={`/question?similar=${r.questionId}`}>相似题</Link>
           </>
         ) : (
           <span style={{ color: "#909399" }}>—</span>
@@ -128,7 +129,8 @@ export function SkuItemsTable({ items }: { items: SkuItemLite[] }) {
         emptyText: (
           <EmptyHint>
             这本册子还没装题（sku_item 一行都没有）—— 🔴 登记 ≠ 装题。装题走 MCP
-            的 add_sku_items，页面不做。
+            的 <b>register_sku</b>（传 sku_id + items 往这本册子里补，
+            ord 就是卷面题号），页面不做。
           </EmptyHint>
         ),
       }}
@@ -158,12 +160,14 @@ export function SkuOutputsTable({
       title: "类型",
       dataIndex: "kind",
       width: 84,
+      sorter: (a, b) => (a.kind ?? "").localeCompare(b.kind ?? ""),
       render: (_, r) => (r.kind ? <Tag>{r.kind}</Tag> : <Tag>未标类型</Tag>),
     },
     {
       title: "字节",
       dataIndex: "bytes",
       width: 92,
+      sorter: (a, b) => (a.bytes ?? -1) - (b.bytes ?? -1),
       render: (_, r) => (
         <Tooltip title={r.bytes ?? "asset 登记行里没有字节数"}>
           <span style={{ fontVariantNumeric: "tabular-nums" }}>
@@ -189,11 +193,14 @@ export function SkuOutputsTable({
       title: "登记时间",
       dataIndex: "createdAt",
       width: 106,
+      sorter: (a, b) =>
+        (a.createdAt ?? "").localeCompare(b.createdAt ?? ""),
       render: (_, r) => <TimeText iso={r.createdAt} />,
     },
     {
       title: "附注",
       dataIndex: "note",
+      sorter: (a, b) => (a.note ?? "").localeCompare(b.note ?? ""),
       render: (_, r) =>
         r.note ? (
           <span style={{ fontSize: 12.5 }}>{r.note}</span>
@@ -229,7 +236,8 @@ export function SkuOutputsTable({
         emptyText: (
           <EmptyHint>
             还没登记过产出（sku_output 一行都没有）—— 🔴 出了 PDF
-            不等于登记了：登记走 register_sku_output，字节按 sha256 进内容仓。
+            不等于登记了：登记走 MCP 的 <b>register_sku</b>（传 sku_id +
+            outputs），字节按 sha256 进内容仓。
           </EmptyHint>
         ),
       }}

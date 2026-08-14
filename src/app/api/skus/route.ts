@@ -30,6 +30,7 @@ import {
   type SkuStatus,
   type SkuType,
 } from "~/core";
+import { parseSort, sortWindow } from "~/lib/sort-window";
 import {
   parseNetdisk,
   type NetdiskPointer,
@@ -43,6 +44,30 @@ export const dynamic = "force-dynamic";
 const CAP = 500;
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
+
+/** 可排序的列（口径与两条排序纪律见 ~/lib/sort-window） */
+const SORT_FIELDS = [
+  "name",
+  "type",
+  "status",
+  "items",
+  "outputs",
+  "layout",
+  "edition",
+  "createdAt",
+] as const;
+type SortField = (typeof SORT_FIELDS)[number];
+
+const SORT_OF: Record<SortField, (r: SkuRow) => string | number | null> = {
+  name: (r) => r.name,
+  type: (r) => r.type,
+  status: (r) => r.status,
+  items: (r) => r.items,
+  outputs: (r) => r.outputs,
+  layout: (r) => r.layout,
+  edition: (r) => r.editionCtx,
+  createdAt: (r) => r.createdAt,
+};
 
 function intParam(sp: URLSearchParams, key: string, dflt: number): number {
   const n = Number(sp.get(key));
@@ -72,6 +97,7 @@ export async function GET(req: Request): Promise<NextResponse> {
   const name = (sp.get("name") ?? "").trim();
   const layout = (sp.get("layout") ?? "").trim();
   const edition = (sp.get("edition") ?? "").trim();
+  const sort = parseSort<SortField>(sp, SORT_FIELDS);
 
   const t0 = Date.now();
   try {
@@ -145,6 +171,9 @@ export async function GET(req: Request): Promise<NextResponse> {
       );
     }
 
+    // 🔴 先排后切（窗口本来就是一次取尽的 500 本，所以排序覆盖整个窗口）
+    if (sort) sortWindow(filtered, SORT_OF[sort.field], sort.desc);
+
     const start = (page - 1) * pageSize;
     const body: SkuListResponse = {
       ok: true,
@@ -158,6 +187,7 @@ export async function GET(req: Request): Promise<NextResponse> {
         capped: briefs.length >= CAP,
         filtered: filtered.length,
         windowFilters,
+        sort,
         enriched: rows.length,
         ms: Date.now() - t0,
         warnings,

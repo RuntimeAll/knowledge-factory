@@ -13,6 +13,15 @@
  * 🔴 第五个 tab「其他工单」是本卡加的（设计稿只写了四类）：模型转正 / KG 提议
  *    这些 kind 否则在页面上**无处可见**，而它们同样等着人拍板。
  * 🔴 空态一律用口径原句（队列空是好事，不是"暂无数据"）。
+ *
+ * ── 批量勾选 / 批量处置（2026-08-14 补 · 设计稿 §二·14 明写，之前整块没做）──
+ *   · 只有 state='open' 的行勾得动（终态不重裁，勾了也没意义）；
+ *   · 批量只做**通过**一个方向 —— 驳回要理由，二十条同一句理由不叫理由，
+ *     那条路仍然走确认页；
+ *   · 隔离区 tab 不给勾选：那不是「裁一下」，是「改 payload 重投 / 废弃」，
+ *     每一条都得看着办（core 的 resolveQuarantine 也要逐条的 payload）。
+ * 🔴 列头排序：本表数据是**一次取回全量**（/api/queue 一把取 200 条），
+ *    所以 sorter 用比较函数在前端排就是对的 —— 与 /sku 那类服务端切片的表不同。
  */
 import {
   ProTable,
@@ -23,6 +32,7 @@ import {
   Alert,
   Badge,
   Button,
+  Popconfirm,
   Segmented,
   Space,
   Tabs,
@@ -40,6 +50,7 @@ import {
   TimeText,
 } from "~/components/console/ui";
 import {
+  batchPassAction,
   passFigureAction,
   promoteDraftAction,
   verdictQueueAction,
@@ -103,14 +114,19 @@ export interface QueueBoardProps {
 export function QueueBoard(props: QueueBoardProps) {
   const router = useRouter();
   const actionRef = useRef<ActionType>(null);
+  const 批量表单 = useRef<HTMLFormElement>(null);
   const [counts, setCounts] = useState<QueueCounts>(props.counts);
   const [listErr, setListErr] = useState<string | undefined>(undefined);
+  const [选中, set选中] = useState<string[]>([]);
 
   const tab = props.tab;
   const state = props.state;
   const 隔离 = tab === "quarantine";
+  /** 🔴 隔离区不给批量：那不是「裁一下」，每条都要看着改 payload 或废弃 */
+  const 可批量 = !隔离 && state === "open";
 
   function go(nextTab: QueueTab, nextState: string): void {
+    set选中([]);
     router.push(`/queue?tab=${nextTab}&state=${nextState}`);
   }
 
@@ -119,12 +135,15 @@ export function QueueBoard(props: QueueBoardProps) {
       title: "进队时间",
       dataIndex: "createdAt",
       width: 106,
+      // 🔴 时间是本地 ISO 串（core/time.ts 口径），字典序 = 时序，直接比串
+      sorter: (a, b) => (a.createdAt ?? "").localeCompare(b.createdAt ?? ""),
       render: (_, r) => <TimeText iso={r.createdAt} />,
     },
     {
       title: "状态",
       dataIndex: "state",
       width: 88,
+      sorter: (a, b) => a.state.localeCompare(b.state),
       render: (_, r) => (
         <Tooltip
           title={
@@ -167,6 +186,7 @@ export function QueueBoard(props: QueueBoardProps) {
           title: "批次",
           dataIndex: "batchId",
           width: 120,
+          sorter: (a, b) => (a.batchId ?? "").localeCompare(b.batchId ?? ""),
           render: (_, r) =>
             r.batchId ? <IdTail id={r.batchId} /> : <span>—</span>,
         },
@@ -213,6 +233,7 @@ export function QueueBoard(props: QueueBoardProps) {
           title: "问不出来的说法",
           dataIndex: "query",
           width: 160,
+          sorter: (a, b) => (a.query ?? "").localeCompare(b.query ?? ""),
           render: (_, r) =>
             r.query ? (
               <b>「{r.query}」</b>
@@ -271,7 +292,7 @@ export function QueueBoard(props: QueueBoardProps) {
               {r.stem ?? "（题不在库里了）"}
               {r.questionId ? (
                 <div style={{ color: "#909399", marginTop: 2 }}>
-                  <Link href={`/q/${r.questionId}`}>看这道题 →</Link>
+                  <Link href={`/question/${r.questionId}`}>看这道题 →</Link>
                   {r.reviewRequired ? " · review_required=1" : ""}
                 </div>
               ) : null}
@@ -367,6 +388,8 @@ export function QueueBoard(props: QueueBoardProps) {
           title: "预检",
           dataIndex: "precheckOk",
           width: 150,
+          // 全绿的排一头、有红灯的排另一头（null=没有预检记录，落中间）
+          sorter: (a, b) => Number(a.precheckOk ?? -1) - Number(b.precheckOk ?? -1),
           render: (_, r) =>
             r.precheckOk === null || r.precheckOk === undefined ? (
               <span style={{ color: "#909399" }}>没有预检记录</span>
@@ -414,13 +437,26 @@ export function QueueBoard(props: QueueBoardProps) {
 
     // other
     return [
-      { title: "类别", dataIndex: "kind", width: 110 },
+      {
+        title: "类别",
+        dataIndex: "kind",
+        width: 110,
+        sorter: (a, b) => (a.kind ?? "").localeCompare(b.kind ?? ""),
+        render: (_, r) =>
+          r.kind === "模型转正" ? (
+            <Tooltip title="点「通过」= core 的 activateModel：模型 proposed→active + 本工单同一事务关掉（不是只关工单）">
+              <Tag color="blue">{r.kind}</Tag>
+            </Tooltip>
+          ) : (
+            <span>{r.kind ?? "（未分类）"}</span>
+          ),
+      },
       原因列,
       ...时间列,
       {
         title: "操作",
         valueType: "option",
-        width: 150,
+        width: 170,
         fixed: "right",
         render: (_, r) =>
           已裁(r)
@@ -439,7 +475,7 @@ export function QueueBoard(props: QueueBoardProps) {
                   <input type="hidden" name="verdict" value="passed" />
                   <Back tab={tab} state={state} />
                   <Button size="small" htmlType="submit">
-                    通过
+                    {r.kind === "模型转正" ? "转正（模型→active）" : "通过"}
                   </Button>
                 </form>,
                 <Link key="reject" href={`/queue/${r.id}/reject`}>
@@ -550,6 +586,59 @@ export function QueueBoard(props: QueueBoardProps) {
               {TAB_HINT[tab]}
             </span>
           </span>
+        }
+        rowSelection={
+          可批量
+            ? {
+                selectedRowKeys: 选中,
+                onChange: (keys) => set选中(keys.map((k) => String(k))),
+                // 🔴 终态不重裁 ⇒ 已裁的行勾不动（勾了也只会撞 ALREADY_DECIDED）
+                getCheckboxProps: (r) => ({ disabled: r.state !== "open" }),
+              }
+            : undefined
+        }
+        tableAlertRender={
+          可批量
+            ? ({ selectedRowKeys }) => (
+                <span style={{ fontSize: 12.5 }}>
+                  已勾 <b>{selectedRowKeys.length}</b> 条 —— 🔴
+                  批量只做「通过」这一个方向：驳回要写理由（二十条同一句理由不叫理由），
+                  仍然逐条走确认页。
+                </span>
+              )
+            : false
+        }
+        tableAlertOptionRender={
+          可批量
+            ? () => (
+                <Space size={10}>
+                  <form ref={批量表单} action={batchPassAction}>
+                    <input type="hidden" name="ids" value={选中.join(",")} />
+                    <Back tab={tab} state={state} />
+                    <Popconfirm
+                      title={`批量通过这 ${选中.length} 条？`}
+                      okText="确认通过"
+                      cancelText="再想想"
+                      description={
+                        <div style={{ fontSize: 12.5, maxWidth: 420, lineHeight: 1.8 }}>
+                          逐条独立事务、逐条留审计行：
+                          <b>一条红了不影响其余</b>，回执逐条原文照登。
+                          <br />
+                          🔴 其中的「模型转正」会真把模型改成 active（core
+                          的 activateModel），「图片」会顺手摘掉该题的必审位。
+                        </div>
+                      }
+                      onConfirm={() => 批量表单.current?.requestSubmit()}
+                    >
+                      <Button size="small" type="primary" ghost>
+                        批量通过（{选中.length}）
+                      </Button>
+                    </Popconfirm>
+                  </form>
+                  <a onClick={() => set选中([])}>取消勾选</a>
+                </Space>
+              )
+            : false
         }
         toolBarRender={() => [
           <Segmented

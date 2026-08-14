@@ -16,10 +16,14 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import {
+  MODEL_QUEUE_KIND,
+  activateModel,
+  getQueueItem,
   passFigureReview,
   passQueueWithAlias,
   promoteDraftQuestion,
   rejectFigureReview,
+  rejectModel,
   resolveQuarantine,
   verdictQueueItem,
   type PrecheckRed,
@@ -46,6 +50,19 @@ function 红灯人话(reds: PrecheckRed[]): string {
 // 通用裁决（kp低置信 / KG提议 / 其他）
 // ---------------------------------------------------------------------------
 
+/**
+ * 通用裁决。
+ *
+ * 🔴🔴 **kind='模型转正' 必须走模型链**（2026-08-14 修 · AI:PRD-008 验收缺陷）：
+ *    裸的 verdictQueueItem 只 update review_queue，**一个字都不碰 exam_model**——
+ *    于是「处置台点通过」之后模型仍是 proposed，而工单已终态，
+ *    activateModel 只认 open 工单 ⇒ 那个模型再也扶不正了
+ *    （core/model.ts 文件头管这种行叫「谁也扶不正的僵尸行」）。
+ *    页面把人往「去处置台看转正工单」引，那条路就必须真能走通：
+ *    这里按 kind 分派到 activateModel / rejectModel（core 的单事务：改模型态 + 关工单）。
+ * 🔴 驳回模型 core 要求写理由 —— 列表页的「通过」按钮不带 note，驳回一律走确认页
+ *    （/queue/<id>/reject 的 textarea 是 required），所以这里不另做兜底文案。
+ */
 export async function verdictQueueAction(fd: FormData): Promise<void> {
   const id = field(fd, "id");
   const verdict = field(fd, "verdict") === "rejected" ? "rejected" : "passed";
@@ -54,19 +71,120 @@ export async function verdictQueueAction(fd: FormData): Promise<void> {
 
   let msg: { ok?: string; err?: string };
   try {
-    const r = await verdictQueueItem(id, verdict, {
-      by: PAGE_ACTOR,
-      note: note || undefined,
-      actor: PAGE_ACTOR,
-    });
-    msg = {
-      ok: `工单 ${id} 已${verdict === "passed" ? "通过" : "驳回"}（审计行 seq ${r.seq}）`,
-    };
+    // 🔴 先看这条是什么类别：读不出来（id 写错/库读不动）就让下面的原语去报错，
+    //    别在这儿替它编一个「不是模型工单」的结论。
+    const item = await getQueueItem(id).catch(() => null);
+
+    if (item?.kind === MODEL_QUEUE_KIND) {
+      const r =
+        verdict === "passed"
+          ? await activateModel(id, {
+              by: PAGE_ACTOR,
+              note: note || undefined,
+              actor: PAGE_ACTOR,
+            })
+          : await rejectModel(id, {
+              by: PAGE_ACTOR,
+              note,
+              actor: PAGE_ACTOR,
+            });
+      msg = {
+        ok:
+          `模型「${r.name}」${verdict === "passed" ? "已转正" : "已驳回"}：` +
+          `${r.from} → ${r.to}，工单同一事务里关掉（审计行 seq ${r.seq}）。` +
+          (verdict === "passed"
+            ? "🔴 此后 prov.type='model' 引用它的题才过得了录题闸②。"
+            : "🔴 落 deprecated 而不是留在 proposed —— 留着就是谁也扶不正的僵尸行；要翻案请 propose_model 重开一张卡。"),
+      };
+    } else {
+      const r = await verdictQueueItem(id, verdict, {
+        by: PAGE_ACTOR,
+        note: note || undefined,
+        actor: PAGE_ACTOR,
+      });
+      msg = {
+        ok: `工单 ${id} 已${verdict === "passed" ? "通过" : "驳回"}（审计行 seq ${r.seq}）`,
+      };
+    }
   } catch (e) {
     msg = { err: humanError(e) };
   }
 
   revalidatePath("/queue");
+  revalidatePath("/model");
+  redirect(withMsg(back, msg));
+}
+
+/**
+ * 批量通过（设计稿 §二·14「每 tab = 标准表格 + 批量勾选」的处置那一半）。
+ *
+ * 🔴 只做**通过**这一个方向：驳回要理由（core 的模型链干脆强制），
+ *    而「给二十条工单写同一句理由」不是理由，是走过场 —— 驳回一律留在确认页。
+ * 🔴 逐条独立跑、逐条独立事务：一条红了**不影响其余**，回执逐条原文照登
+ *    （批量最怕的就是"失败了 3 条"这种没有指名道姓的汇报）。
+ * 🔴 类别照样分派：模型转正走 activateModel（见 {@link verdictQueueAction} 的注释），
+ *    图片工单走 passFigureReview（它要顺手摘题的必审位），其余走 verdictQueueItem。
+ */
+export async function batchPassAction(fd: FormData): Promise<void> {
+  const ids = field(fd, "ids")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const back = 回队列(fd);
+
+  if (ids.length === 0) {
+    redirect(withMsg(back, { err: "一条都没勾 —— 先勾选再点批量通过。" }));
+  }
+
+  const 成: string[] = [];
+  const 败: string[] = [];
+  for (const id of ids) {
+    try {
+      const item = await getQueueItem(id).catch(() => null);
+      if (item?.kind === MODEL_QUEUE_KIND) {
+        const r = await activateModel(id, {
+          by: PAGE_ACTOR,
+          actor: PAGE_ACTOR,
+        });
+        成.push(`${id} 模型「${r.name}」→ ${r.to}（seq ${r.seq}）`);
+      } else if (item?.kind === "图片") {
+        const r = await passFigureReview(id, {
+          by: PAGE_ACTOR,
+          actor: PAGE_ACTOR,
+        });
+        成.push(
+          `${id} 图审通过：${r.figureIds.length} 张判 passed，` +
+            (r.reviewRequired === 0
+              ? `题 ${r.questionId} 已摘必审`
+              : `题 ${r.questionId} 还挂着必审`) +
+            `（seq ${r.seq}）`,
+        );
+      } else {
+        const r = await verdictQueueItem(id, "passed", {
+          by: PAGE_ACTOR,
+          actor: PAGE_ACTOR,
+        });
+        成.push(`${id} 已通过（seq ${r.seq}）`);
+      }
+    } catch (e) {
+      败.push(`${id}：${humanError(e)}`);
+    }
+  }
+
+  const msg =
+    败.length === 0
+      ? {
+          ok: `批量通过 ${成.length} 条：\n${成.join("\n")}`,
+        }
+      : {
+          err:
+            `批量通过：${成.length} 条成了、${败.length} 条没成（逐条原文如下；` +
+            "🔴 成了的那些**不回滚**，各自是独立事务、各自留了审计行）：\n" +
+            [...成.map((s) => `✓ ${s}`), ...败.map((s) => `✗ ${s}`)].join("\n"),
+        };
+
+  revalidatePath("/queue");
+  revalidatePath("/model");
   redirect(withMsg(back, msg));
 }
 

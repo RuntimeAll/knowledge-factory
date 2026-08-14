@@ -54,6 +54,8 @@ export interface SkuListMeta {
    * 空数组 = 本次全是 core 侧的硬过滤，总数就是库口径。
    */
   windowFilters: string[];
+  /** 当前按哪一列排（null = 没排，用默认的稳定序）。🔴 排序是**窗口内**排的 */
+  sort: { field: string; desc: boolean } | null;
   /** 富化（逐本 getSku 读 layout/edition/recipe）跑了几本 */
   enriched: number;
   ms: number;

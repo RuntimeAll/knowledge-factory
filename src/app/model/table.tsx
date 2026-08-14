@@ -4,14 +4,17 @@
  * 考察模型 · 三段式列表（AI:PRD-008 · P2 · 设计稿 §二·9）
  *
  * 职责：exam_model 的台账 —— 每个模型出过多少题、指回哪个生成器文件。
- * **不管**建模/转正（proposeModel → activateModel 走 MCP，工具栏只给命令提示）。
+ * **不管**建模（propose_model 走 MCP，工具栏给命令提示）。
+ * 🔴 转正**不是 MCP 工具**（MCP 表面没有 activate_model 这个名字）：它是
+ *    「处置台点通过」这个人的动作 —— 那条链走 core 的 activateModel（模型 active +
+ *    工单 passed，单事务）。本页只把人指过去，不编一个不存在的工具名。
  *
  * 🔴 「生成器文件」那一列是**真去盘上查过**的（existsSync，见 /api/models）：
  *    ✓ 在盘 / ✗ 不在盘 / 没记 dsl_ref 三态分明 —— 模型指不回生成器，
  *    「照这个模型再出一批题」就无从谈起，这是本页存在的头号理由。
- * 🔴 「看题」跳的是 004-C 的检索页并按**该模型的归位考点**筛：
+ * 🔴 「看题」跳题目管理并按**该模型的归位考点**筛：
  *    core 的检索硬过滤**没有 model_id 这一维**，所以它不等于「本模型出的题」——
- *    列头与悬停都写明了，不含糊过去。
+ *    列头与悬停都写明了，不含糊过去。（要看真·本模型出的题，走「族谱」。）
  */
 import {
   ProTable,
@@ -120,6 +123,7 @@ export function ModelTable(props: ModelTableProps) {
     {
       title: "模型名",
       dataIndex: "name",
+      sorter: true,
       width: 240,
       tooltip: "窗口内按「包含」匹配模型名或考点名",
       fieldProps: { placeholder: "绝对值 / 合并同类项" },
@@ -132,6 +136,7 @@ export function ModelTable(props: ModelTableProps) {
     {
       title: "归位考点",
       dataIndex: "kpName",
+      sorter: true,
       search: false,
       width: 220,
       render: (_, r) =>
@@ -148,6 +153,7 @@ export function ModelTable(props: ModelTableProps) {
     {
       title: "状态",
       dataIndex: "status",
+      sorter: true,
       width: 100,
       valueType: "select",
       valueEnum: toEnum(props.statuses),
@@ -170,6 +176,7 @@ export function ModelTable(props: ModelTableProps) {
     {
       title: "出题数",
       dataIndex: "questionCount",
+      sorter: true,
       search: false,
       width: 76,
       tooltip: "question.model_id 指向它的题有多少道",
@@ -185,6 +192,7 @@ export function ModelTable(props: ModelTableProps) {
     {
       title: "母题",
       dataIndex: "originCount",
+      sorter: true,
       search: false,
       width: 64,
       tooltip:
@@ -199,6 +207,7 @@ export function ModelTable(props: ModelTableProps) {
     {
       title: "难度",
       dataIndex: "difficulty",
+      sorter: true,
       search: false,
       width: 60,
       render: (_, r) =>
@@ -211,6 +220,7 @@ export function ModelTable(props: ModelTableProps) {
     {
       title: "生成器文件",
       dataIndex: "onDisk",
+      sorter: true,
       width: 230,
       valueType: "select",
       valueEnum: {
@@ -254,6 +264,7 @@ export function ModelTable(props: ModelTableProps) {
     {
       title: "转正时间",
       dataIndex: "activatedAt",
+      sorter: true,
       search: false,
       width: 106,
       render: (_, r) => <TimeText iso={r.activatedAt} />,
@@ -277,9 +288,9 @@ export function ModelTable(props: ModelTableProps) {
         </Link>,
         <Tooltip
           key="q"
-          title="跳检索页，按「该模型的归位考点」筛 —— 🔴 core 的硬过滤没有 model_id 这一维，所以这不等于「本模型出的题」"
+          title="跳题目管理，按「该模型的归位考点」筛 —— 🔴 core 的硬过滤没有 model_id 这一维，所以这不等于「本模型出的题」（那个看「族谱」）"
         >
-          <Link href={`/search?f=1&kp=${r.kpId}`}>看题</Link>
+          <Link href={`/question?kp=${r.kpId}`}>看题</Link>
         </Tooltip>,
       ],
     },
@@ -312,16 +323,28 @@ export function ModelTable(props: ModelTableProps) {
             <EmptyHint>
               没有符合条件的模型。🔴
               模型是「归纳出来的出题法」，不是自动长出来的：建模走 MCP 的
-              propose_model，转正要人在处置台拍板。
+              propose_model，转正要人在
+              <Link href="/queue?tab=other">处置台</Link>点通过。
             </EmptyHint>
           ),
         }}
         toolBarRender={() => [
+          // 🔴 2026-08-14 修：MCP 表面上**没有** activate_model —— 转正是**人在处置台点**
+          //    （处置台的「模型转正」工单走 core 的 activateModel 单事务：模型 active + 工单关）。
+          //    页面只给真存在的那一步命令，转正那一步给链接，不给假工具名。
           <CopyCmd
             key="propose"
-            label="建模/转正走 MCP"
-            cmd="propose_model → （处置台拍板）→ activate_model"
+            label="建模走 MCP 的 propose_model（转正另说，见右）"
+            cmd={
+              'propose_model {"kp":"<考点名/别名>","name":"<模型名>",' +
+              '"dsl_ref":"<册>/_源/qbank.py#类名或函数名"}'
+            }
           />,
+          <span key="how" style={{ fontSize: 12, color: "#909399" }}>
+            转正 = 人在
+            <Link href="/queue?tab=other">处置台「其他工单」</Link>
+            点通过（提议者不给自己发批准）
+          </span>,
         ]}
         pagination={{
           defaultPageSize: 20,
@@ -329,7 +352,7 @@ export function ModelTable(props: ModelTableProps) {
           showSizeChanger: true,
           showTotal: (t, range) => `第 ${range[0]}-${range[1]} 条 / 共 ${t} 条`,
         }}
-        request={async (params) => {
+        request={async (params, sort) => {
           const q = new URLSearchParams();
           q.set("page", String(params.current ?? 1));
           q.set("pageSize", String(params.pageSize ?? 20));
@@ -341,6 +364,13 @@ export function ModelTable(props: ModelTableProps) {
           //    **未加锚点**的 `models/`（本意是拦 95MB 的 ONNX 模型目录），
           //    它会把任何一层的 `models/` 一起吞掉 —— `src/app/api/models/`
           //    在 `git status` 里根本不出现，提交时静默丢文件。改名绕开。
+          // 🔴 排序丢给服务端（本表是服务端切片的，前端排只会排当前这一页）
+          const [sf, so] = Object.entries(sort ?? {})[0] ?? [];
+          if (sf && so) {
+            q.set("sort", sf);
+            q.set("order", so === "ascend" ? "asc" : "desc");
+          }
+
           const res = await fetch(`/api/exam-models?${q.toString()}`);
           const j = (await res.json()) as ModelListResponse;
           setMeta(j.meta);

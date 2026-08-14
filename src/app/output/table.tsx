@@ -139,6 +139,7 @@ export function OutputTable(props: OutputTableProps) {
     {
       title: "所属 SKU",
       dataIndex: "sku",
+      sorter: true,
       width: 300,
       valueType: "select",
       fieldProps: {
@@ -163,6 +164,7 @@ export function OutputTable(props: OutputTableProps) {
     {
       title: "类型",
       dataIndex: "kind",
+      sorter: true,
       width: 88,
       valueType: "select",
       valueEnum: Object.fromEntries(props.kinds.map((k) => [k, { text: k }])),
@@ -173,6 +175,7 @@ export function OutputTable(props: OutputTableProps) {
     {
       title: "字节",
       dataIndex: "bytes",
+      sorter: true,
       search: false,
       width: 92,
       render: (_, r) => (
@@ -206,6 +209,7 @@ export function OutputTable(props: OutputTableProps) {
     {
       title: "登记时间",
       dataIndex: "createdAt",
+      sorter: true,
       search: false,
       width: 106,
       render: (_, r) => <TimeText iso={r.createdAt} />,
@@ -213,7 +217,9 @@ export function OutputTable(props: OutputTableProps) {
     {
       title: "附注",
       dataIndex: "note",
-      tooltip: "register_sku_output 登记时写的那句（窗口内按「包含」匹配）",
+      sorter: true,
+      tooltip:
+        "登记产出时（MCP 的 register_sku，outputs[].note）写的那句（窗口内按「包含」匹配）",
       fieldProps: { placeholder: "答案卷 / 网盘版" },
       render: (_, r) =>
         r.note ? (
@@ -296,7 +302,8 @@ export function OutputTable(props: OutputTableProps) {
           emptyText: (
             <EmptyHint>
               没有符合条件的产出。🔴 「没有产出」不等于「没出过件」： 出了 PDF
-              也要 register_sku_output 登记一次、字节进内容仓，才在这张表上。
+              也要走 MCP 的 <b>register_sku</b>（传 sku_id + outputs）
+              登记一次、字节进内容仓，才在这张表上。
             </EmptyHint>
           ),
         }}
@@ -306,13 +313,20 @@ export function OutputTable(props: OutputTableProps) {
           showSizeChanger: true,
           showTotal: (t, range) => `第 ${range[0]}-${range[1]} 条 / 共 ${t} 条`,
         }}
-        request={async (params) => {
+        request={async (params, sort) => {
           const q = new URLSearchParams();
           q.set("page", String(params.current ?? 1));
           q.set("pageSize", String(params.pageSize ?? 20));
           if (params.sku) q.set("sku", params.sku);
           if (params.kind) q.set("kind", params.kind);
           if (params.note) q.set("note", params.note);
+
+          // 🔴 排序丢给服务端（本表是服务端切片的，前端排只会排当前这一页）
+          const [sf, so] = Object.entries(sort ?? {})[0] ?? [];
+          if (sf && so) {
+            q.set("sort", sf);
+            q.set("order", so === "ascend" ? "asc" : "desc");
+          }
 
           const res = await fetch(`/api/outputs?${q.toString()}`);
           const j = (await res.json()) as OutputListResponse;

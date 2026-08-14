@@ -38,6 +38,8 @@ export interface ModelListMeta {
   filtered: number;
   /** 窗口内过滤的维度（core 的 listModels 只吃 kpId/status 两维） */
   windowFilters: string[];
+  /** 当前按哪一列排（null = 没排，用默认的稳定序）。🔴 排序是**窗口内**排的 */
+  sort: { field: string; desc: boolean } | null;
   ms: number;
   warnings: string[];
 }

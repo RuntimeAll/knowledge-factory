@@ -26,6 +26,7 @@ import { existsSync } from "node:fs";
 import { NextResponse } from "next/server";
 
 import { MODEL_STATUSES, getModel, listModels, type ModelStatus } from "~/core";
+import { parseSort, sortWindow } from "~/lib/sort-window";
 import {
   splitDslRef,
   type ModelListResponse,
@@ -36,6 +37,31 @@ export const dynamic = "force-dynamic";
 
 /** listModels 的上限（core zod: max(500)）——本地库 22 个模型 */
 const CAP = 500;
+/** 可排序的列（口径与两条排序纪律见 ~/lib/sort-window） */
+const SORT_FIELDS = [
+  "name",
+  "kpName",
+  "status",
+  "questionCount",
+  "originCount",
+  "difficulty",
+  "onDisk",
+  "activatedAt",
+] as const;
+type SortField = (typeof SORT_FIELDS)[number];
+
+const SORT_OF: Record<SortField, (r: ModelRow) => string | number | null> = {
+  name: (r) => r.name,
+  kpName: (r) => r.kpName,
+  status: (r) => r.status,
+  questionCount: (r) => r.questionCount,
+  originCount: (r) => r.originCount,
+  difficulty: (r) => r.difficulty,
+  // 在盘 > 不在盘 > 没记 dsl_ref（把"能重跑的模型"排到一头）
+  onDisk: (r) => (r.dslOnDisk === null ? 0 : r.dslOnDisk ? 2 : 1),
+  activatedAt: (r) => r.activatedAt,
+};
+
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
 
@@ -59,6 +85,7 @@ export async function GET(req: Request): Promise<NextResponse> {
   const kpId = (sp.get("kp") ?? "").trim();
   const name = (sp.get("name") ?? "").trim();
   const onDiskRaw = (sp.get("onDisk") ?? "").trim();
+  const sort = parseSort<SortField>(sp, SORT_FIELDS);
 
   const t0 = Date.now();
   try {
@@ -151,6 +178,9 @@ export async function GET(req: Request): Promise<NextResponse> {
       );
     }
 
+    // 🔴 先排后切（窗口是一次取尽的 500 条，排序覆盖整个窗口）
+    if (sort) sortWindow(filtered, SORT_OF[sort.field], sort.desc);
+
     const start = (page - 1) * pageSize;
     const body: ModelListResponse = {
       ok: true,
@@ -164,6 +194,7 @@ export async function GET(req: Request): Promise<NextResponse> {
         capped: briefs.length >= CAP,
         filtered: filtered.length,
         windowFilters,
+        sort,
         ms: Date.now() - t0,
         warnings,
       },

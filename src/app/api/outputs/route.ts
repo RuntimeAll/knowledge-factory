@@ -1,7 +1,9 @@
 /**
  * GET /api/outputs —— 产物仓页（/output）的取数口（AI:PRD-008 · P2 生产管理）
  *
- * 🔴 **零写**：列产出而已。出件/登记（register_sku_output）是产线与 MCP 的活。
+ * 🔴 **零写**：列产出而已。出件/登记是产线与 MCP 的活 —— MCP 那头的工具叫
+ *    `register_sku`（传 sku_id + outputs 往一本已存在的册子里补），
+ *    🔴 **没有** `register_sku_output` 这个工具名（那是 core 的函数名，只有脚本直调）。
  * 🔴 app 层不许碰 db：只 import `~/core`（eslint 红线）。
  *
  * ════════════════════════════════════════════════════════════════════════════
@@ -18,6 +20,7 @@
 import { NextResponse } from "next/server";
 
 import { SKU_OUTPUT_KINDS, getSku, listSkus } from "~/core";
+import { parseSort, sortWindow } from "~/lib/sort-window";
 import type { OutputListResponse, OutputRow } from "~/app/output/shared";
 
 export const dynamic = "force-dynamic";
@@ -26,6 +29,24 @@ export const dynamic = "force-dynamic";
 const CAP = 500;
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
+
+/** 可排序的列（口径与两条排序纪律见 ~/lib/sort-window） */
+const SORT_FIELDS = [
+  "sku",
+  "kind",
+  "bytes",
+  "createdAt",
+  "note",
+] as const;
+type SortField = (typeof SORT_FIELDS)[number];
+
+const SORT_OF: Record<SortField, (r: OutputRow) => string | number | null> = {
+  sku: (r) => r.skuName,
+  kind: (r) => r.kind,
+  bytes: (r) => r.bytes,
+  createdAt: (r) => r.createdAt,
+  note: (r) => r.note,
+};
 
 function intParam(sp: URLSearchParams, key: string, dflt: number): number {
   const n = Number(sp.get(key));
@@ -46,6 +67,7 @@ export async function GET(req: Request): Promise<NextResponse> {
     ? kindRaw
     : "";
   const note = (sp.get("note") ?? "").trim();
+  const sort = parseSort<SortField>(sp, SORT_FIELDS);
 
   const t0 = Date.now();
   try {
@@ -109,6 +131,9 @@ export async function GET(req: Request): Promise<NextResponse> {
       );
     }
 
+    // 🔴 先排后切；不点列头时保持上面那个「新的在前」的稳定序
+    if (sort) sortWindow(filtered, SORT_OF[sort.field], sort.desc);
+
     const start = (page - 1) * pageSize;
     const body: OutputListResponse = {
       ok: true,
@@ -123,6 +148,7 @@ export async function GET(req: Request): Promise<NextResponse> {
         total: rows.length,
         filtered: filtered.length,
         windowFilters,
+        sort,
         ms: Date.now() - t0,
         warnings,
       },

@@ -2,7 +2,8 @@
  * 生产管理 · 模型族谱（AI:PRD-008 · P2 · 设计稿 §二·9「操作列 → 族谱」）
  *
  * 一个考察模型的全貌 + 它的族谱（母题 → 本模型 → 派生变式）。
- * **不管**建模/转正（proposeModel → activateModel 走 MCP）。
+ * **不管**建模（MCP 的 propose_model）与转正（人在处置台点通过 → core.activateModel；
+ * 🔴 MCP 表面没有 activate_model 这个工具，别在页面上写它）。
  *
  * ════════════════════════════════════════════════════════════════════════════
  * 🔴 族谱是**从母题那一侧进去的**（core 的 getLineage 吃的是 questionId）：
@@ -12,7 +13,9 @@
  *    ⚠️ 所以：**模型没记母题（origin_qids_json 空）时，这条路进不去** ——
  *    core 没有「按 model_id 列题」的只读函数（getModel 只给一个 questionCount
  *    这个数）。这时页面照实说「出题数 N 是真的，但列不出是哪 N 道」，
- *    绝不拿别的东西冒充族谱。补母题走 MCP 的 set_model_origins。
+ *    绝不拿别的东西冒充族谱。补母题：建模时 propose_model 带 origin_qids，
+ *    已建好的走 scripts/model-origins-*.ts（core.setModelOrigins）——
+ *    🔴 没有 set_model_origins 这个 MCP 工具。
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { existsSync } from "node:fs";
@@ -185,11 +188,13 @@ export default async function ModelDetailPage({
         }}
       >
         <Link href="/model">← 回模型台账</Link>
-        <Link href={`/search?f=1&kp=${card.kpId}`}>
+        <Link href={`/question?kp=${card.kpId}`}>
           看这个考点下的题（不等于本模型出的题）
         </Link>
         {card.openQueueId ? (
-          <Link href="/queue?tab=other">去处置台看转正工单</Link>
+          <Tooltip title="处置台点「通过」= core 的 activateModel：模型 proposed→active + 工单同一事务关掉（不是只关工单）">
+            <Link href="/queue?tab=other">去处置台裁这张转正工单 →</Link>
+          </Tooltip>
         ) : null}
       </div>
 
@@ -313,7 +318,10 @@ export default async function ModelDetailPage({
                 但列不出是哪几道。页面不拿别的东西冒充族谱。
               </div>
               <div>
-                · 补母题走 MCP 的 set_model_origins，补完这一页自然长出来。
+                · 补母题<b>没有 MCP 工具</b>（set_model_origins 是 core
+                的函数名，不是工具名）：建模时 <code>propose_model</code> 带{" "}
+                <code>origin_qids</code>，已建好的走{" "}
+                <code>scripts/model-origins-*.ts</code>。补完这一页自然长出来。
               </div>
             </div>
           }

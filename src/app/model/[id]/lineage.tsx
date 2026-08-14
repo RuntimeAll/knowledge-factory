@@ -5,6 +5,8 @@
  *
  * 🔴 只画，不算：母题、派生题全是 server 侧 core 的 getLineage 给的，
  *    本文件一行血缘判断都没有。
+ * 🔴 列头可排序（设计稿 §〇·1）：这两张表的数据是**一次全给**的（不分页取数），
+ *    所以比较函数在前端排就是对的 —— 与 /model 那张服务端切片的表不同。
  */
 import { Collapse, Table, Tag, Tooltip } from "antd";
 import type { ColumnsType } from "antd/es/table";
@@ -25,8 +27,9 @@ const 题列: ColumnsType<LineageQuestionView> = [
   {
     title: "题面",
     dataIndex: "stemBrief",
+    sorter: (a, b) => a.stemBrief.localeCompare(b.stemBrief),
     render: (_, r) => (
-      <Link href={`/q/${r.questionId}`} style={{ color: "inherit" }}>
+      <Link href={`/question/${r.questionId}`} style={{ color: "inherit" }}>
         <span
           style={{ fontFamily: "Consolas, Menlo, monospace", fontSize: 12.5 }}
         >
@@ -39,12 +42,14 @@ const 题列: ColumnsType<LineageQuestionView> = [
     title: "题型",
     dataIndex: "qtype",
     width: 84,
+    sorter: (a, b) => (a.qtype ?? "").localeCompare(b.qtype ?? ""),
     render: (_, r) => (r.qtype ? <Tag>{r.qtype}</Tag> : <Tag>题型未填</Tag>),
   },
   {
     title: "状态",
     dataIndex: "status",
     width: 96,
+    sorter: (a, b) => a.status.localeCompare(b.status),
     render: (_, r) =>
       r.status === "missing" ? (
         <Tooltip title="origin_qids_json 指了个查无此行的 id —— 血缘断在这儿">
@@ -63,9 +68,9 @@ const 题列: ColumnsType<LineageQuestionView> = [
         <span style={{ color: "#909399" }}>—</span>
       ) : (
         <>
-          <Link href={`/q/${r.questionId}`}>查看</Link>
+          <Link href={`/question/${r.questionId}`}>查看</Link>
           <span style={{ color: "#dcdfe6" }}> · </span>
-          <Link href={`/search?similar=${r.questionId}`}>相似题</Link>
+          <Link href={`/question?similar=${r.questionId}`}>相似题</Link>
         </>
       ),
   },
@@ -82,8 +87,12 @@ export function OriginTable({ rows }: { rows: LineageQuestionView[] }) {
         emptyText: (
           <EmptyHint>
             这个模型没记母题（origin_qids_json 空）—— 🔴
-            族谱从母题侧就断了：谁也说不出它是从哪几道真题归纳来的。 补血缘走
-            MCP 的 set_model_origins。
+            族谱从母题侧就断了：谁也说不出它是从哪几道真题归纳来的。
+            <br />
+            🔴 补血缘<b>没有 MCP 工具</b>（别去找 set_model_origins，那是 core
+            的函数名不是工具名）：建模时用 <code>propose_model</code> 的{" "}
+            <code>origin_qids</code> 一次带上；已经建好的走脚本口{" "}
+            <code>scripts/model-origins-*.ts</code>（core.setModelOrigins）。
           </EmptyHint>
         ),
       }}

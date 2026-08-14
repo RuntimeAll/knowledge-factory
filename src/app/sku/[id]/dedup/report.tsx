@@ -100,7 +100,7 @@ export function CollisionTable({ rows }: { rows: DupViewRow[] }) {
       render: (_, r) => (
         <div style={{ fontSize: 12.5 }}>
           {r.questionId ? (
-            <Link href={`/q/${r.questionId}`} style={{ color: "inherit" }}>
+            <Link href={`/question/${r.questionId}`} style={{ color: "inherit" }}>
               {r.stemBrief}
             </Link>
           ) : (
@@ -124,7 +124,7 @@ export function CollisionTable({ rows }: { rows: DupViewRow[] }) {
               ) : (
                 <Tag color="red">重复</Tag>
               )}
-              <Link href={`/q/${h.questionId}`}>{h.stemBrief}</Link>
+              <Link href={`/question/${h.questionId}`}>{h.stemBrief}</Link>
               <span style={{ marginInlineStart: 6 }}>
                 <StatusTag value={h.status} />
               </span>
@@ -183,7 +183,7 @@ export function SimilarTable({ rows }: { rows: SimilarViewRow[] }) {
       render: (_, r) => (
         <div style={{ fontSize: 12.5 }}>
           {r.self ? <Tag color="default">送检题自己</Tag> : null}
-          <Link href={`/q/${r.questionId}`}>{r.stemBrief}</Link>
+          <Link href={`/question/${r.questionId}`}>{r.stemBrief}</Link>
         </div>
       ),
     },
