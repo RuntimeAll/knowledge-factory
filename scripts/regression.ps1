@@ -196,7 +196,7 @@ $gates = @(
 
   [pscustomobject]@{
     Id     = 'REG-B'
-    Name   = 'KG 金标（B1 十条 / B2 双版本 / B3 合并无悬挂 / B4 编造 id）'
+    Name   = 'KG 金标（B1 金标 / B2 双版本 / B3 合并无悬挂 / B4 编造 id）'
     Action = {
       # 🔴 单跑金标文件：触发矩阵「KG 数据变更 → B 全 + A1②」时 -Only B 就够了。
       #    金标 B1/B2/B4 直接打**真库**且只读（文件末尾有行数自证），
