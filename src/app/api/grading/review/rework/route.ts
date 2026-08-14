@@ -1,0 +1,120 @@
+/**
+ * `POST /api/grading/review/rework` —— 打回重批（AI:PRD-009 · 写操作白名单第六类）
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * 🔴🔴 本产品对审核.db 没有写句柄。这条路由 spawn 圣域自己的原语：
+ *
+ *          cwd=订阅特训/_产线
+ *          python 审核库.py rework <代号> <天> <哪里不对>
+ *
+ *      落库的是 `审核库.py::rework`：feedback 插一行（记在**当前轮**）+
+ *      batches.status 置 'rework'。🔴 它**不改 round** —— 轮次要等 agent 重批时
+ *      ingest/直批 看到上一状态是 rework 才 +1。页面不许自己解释成「轮次已+1」。
+ *
+ * 🔴 反馈正文原样递一个 argv（不 join、不裁行）。
+ *    审核库.py CLI 那头是 `' '.join(sys.argv[4:])`：单个 argv 元素 join 出来就是它自己，
+ *    换行/多空格原样保留 —— 前提是**不经 shell**（本仓 spawn 不开 shell）。
+ *
+ * 🔴 同名异库警示：只碰圣域 `订阅特训/_产线/审核.db`；punch 库与本产品库都不碰。
+ * ════════════════════════════════════════════════════════════════════════════
+ */
+import { NextResponse } from "next/server";
+
+import { runReviewCli } from "~/app/grading/review/spawn";
+import { 复核, 现状, 读学员天 } from "~/app/grading/review/write-guard";
+import { 原文 } from "~/app/grading/review/query";
+import { type ReviewWriteResponse } from "~/app/grading/shared";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+function 拒(error: string): NextResponse {
+  const body: ReviewWriteResponse = {
+    ok: false,
+    error,
+    argv: [],
+    cwd: "",
+    exitCode: null,
+    stdout: "",
+    stderr: "",
+    timedOut: false,
+    after: null,
+    notes: [],
+  };
+  return NextResponse.json(body, { status: 200 });
+}
+
+export async function POST(req: Request): Promise<NextResponse> {
+  let raw: unknown;
+  try {
+    raw = await req.json();
+  } catch (e) {
+    return 拒(`请求体不是合法 JSON：${原文(e)}`);
+  }
+
+  const p = 读学员天(raw);
+  if (!p.ok) return 拒(p.err);
+  const { student, day } = p.v;
+
+  const o = raw as Record<string, unknown>;
+  const body文 = typeof o.body === "string" ? o.body.trim() : "";
+  if (!body文) {
+    return 拒(
+      "打回必须写清哪里不对 —— 空反馈等于没说，agent 不知道要改什么" +
+        "（审核库.py 的第一道 assert 就是这条）。",
+    );
+  }
+
+  const cur = await 现状(student, day);
+  if (!cur.ok) return 拒(cur.err);
+  const d = cur.detail;
+
+  if (d.status === "confirmed") {
+    return 拒(
+      `「${student} 第${day}天」已确认` +
+        `${d.exportedAt ? `并已于 ${d.exportedAt} 出件` : ""}，不能再打回` +
+        "（审核库.py：「要改先重新 ingest」）。\n" +
+        `重批这一批要产线那头重跑 python 审核库.py ingest ${student} ${day} ——` +
+        "那条原语**不在管理台的白名单里**：它要跑锚定闸、读转录 JSON、整批 DELETE+INSERT 覆盖 items，是产线执行权。",
+    );
+  }
+  if (d.status === "rework") {
+    // CLI 允许对 rework 的批次再打回一次（会再插一条 feedback）。不拦，但要说清楚。
+    return 拒(
+      `「${student} 第${day}天」已经是**已打回 · 待重批**（第 ${d.round} 轮，` +
+        `${d.openFeedbackCount} 条反馈还没被 agent 处理）。再打一次只会在同一轮里多插一条反馈 ——` +
+        "要补充说明，建议直接改在原来那条里说不清的地方（或等重批完再看）。",
+    );
+  }
+
+  const run = await runReviewCli("rework", [student, String(day), body文]);
+  const { after, note } = await 复核(student, day);
+  const notes: string[] = [];
+  if (note) notes.push(note);
+  notes.push(
+    "🔴 打回**不动轮次**：round 要等 agent 重批（ingest/直批 看到上一状态是 rework）时才 +1。",
+  );
+
+  const 成 = !run.spawnError && run.exitCode === 0;
+  const res: ReviewWriteResponse = {
+    ok: 成,
+    ...(成
+      ? {}
+      : {
+          error:
+            run.spawnError ??
+            (run.timedOut
+              ? "审核库.py 跑超时被杀（>60s）——多半是库被别的进程锁着。"
+              : `审核库.py 拒绝了这次打回（exit ${String(run.exitCode)}）——原文见下方 stderr。`),
+        }),
+    argv: run.argv,
+    cwd: run.cwd,
+    exitCode: run.exitCode,
+    stdout: run.stdout,
+    stderr: run.stderr,
+    timedOut: run.timedOut,
+    after,
+    notes,
+  };
+  return NextResponse.json(res);
+}

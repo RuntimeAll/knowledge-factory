@@ -5,8 +5,9 @@
  *
  * 搜索区（学员 / 状态 / 日期）→ 工具栏 → 表格 + 分页，与 /question 同一套骨架。
  *
- * 🔴 本页**没有一个写按钮**：终审要点的地方是审核台（:7801，PRD-027 自己的进程），
- *    这里只给直链。看板改不了任何判定，这是产线执行权的边界。
+ * 🔴 本页**没有一个写按钮**：看板改不了任何判定，这是产线执行权的边界。
+ *    要点判定去终审台 `/grading/review/<代号>/<打卡次>`（AI:PRD-009 内化，
+ *    此前这一列是外链 :7801；写仍由圣域的 审核库.py 落库，只是 UI 搬进来了）。
  * 🔴 状态色不新调：一律映射到 console/ui 的 STATUS_COLOR 那张表（设计稿 §三 五档）。
  * 🔴 「放大预算」列现在**算不出**：审核.db items 没有 zooms 列（PRD-027 包① 遗留 L2），
  *    页面照实说「算不出」，绝不拿别的数凑一个看起来像的。
@@ -23,7 +24,6 @@ import { useRef, useState } from "react";
 import { EmptyHint, STATUS_COLOR, TimeText } from "~/components/console/ui";
 import {
   BOARD_STATES,
-  REVIEW_CONSOLE_URL,
   type BoardMeta,
   type BoardResponse,
   type BoardRow,
@@ -275,16 +275,27 @@ export function BoardTable(props: BoardTableProps) {
       key: "option",
       width: 150,
       fixed: "right",
+      // 🔴 2026-08-14（AI:PRD-009 · D-A）：原来这里是「去审核台」外链 :7801
+      //    （PRD-027 自己的进程，没起就打不开）。终审已内化 ⇒ 一律走内链
+      //    /grading/review/<代号>/<打卡次>，同一个壳里点完就回来。
+      //    收件段的行**没有**这个入口：它还没落进 审核.db，压根没有批次可审。
       render: (_, r) => [
-        <a
-          key="review"
-          href={REVIEW_CONSOLE_URL}
-          target="_blank"
-          rel="noreferrer"
-          title="审核台是 PRD-027 自己的进程（:7801）——没起就打不开，那不是本页的故障"
-        >
-          去审核台
-        </a>,
+        r.seg === "批改" && r.student && r.day !== null ? (
+          <Link
+            key="review"
+            href={`/grading/review/${encodeURIComponent(r.student)}/${r.day}`}
+            title="逐题终审：左原卷照片、右题单判定。写仍由圣域的 审核库.py 落库"
+          >
+            {r.state === "待审核" ? "去终审" : "看判定"}
+          </Link>
+        ) : (
+          <Tooltip
+            key="review"
+            title="收件段还没落进 审核.db（认卷/批改是产线那一步）——现在没有批次可审"
+          >
+            <span style={{ color: "#c0c4cc" }}>去终审</span>
+          </Tooltip>
+        ),
         r.exportedAt && r.student ? (
           <Link
             key="report"

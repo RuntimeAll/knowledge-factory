@@ -140,7 +140,7 @@ export async function GET(req: Request): Promise<NextResponse> {
         state = "待审核";
         note =
           (a?.doubt ?? 0) > 0
-            ? `${a?.doubt ?? 0} 题存疑，等你上审核台终审`
+            ? `${a?.doubt ?? 0} 题存疑，等你去终审台逐题定（右边「去终审」）`
             : "零存疑却仍是 pending —— 多半是打回重批轮（round>1，任何档位都不静默）或档位在 L0";
       } else {
         state = "状态未知";

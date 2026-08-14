@@ -1,5 +1,5 @@
 /**
- * 批改流水线四页的线上契约（AI:PRD-008 · PRD-027 交互面）
+ * 批改流水线各页的线上契约（AI:PRD-008 起 · PRD-027 交互面；AI:PRD-009 加终审台）
  *
  * 🔴 与 question/shared.ts、queue/rows.ts 同一个理由：`/api/grading/*`（server）
  *    与四张页面的 client 组件要说同一种话，类型放这儿两边 import。
@@ -189,8 +189,219 @@ export interface BoardResponse {
   meta: BoardMeta | null;
 }
 
-/** 审核台（PRD-027 自己的页，独立进程）—— 看板只给直链，不代管 */
+/**
+ * 旧审核台（PRD-027 自己的进程 :7801）。
+ * 🔴 AI:PRD-009 起终审已内化到 `/grading/review`，这个地址只作**可退役的旧 UI**
+ *    在终审台页脚留一句话 —— 看板/终审的按钮一律指内链，不再往外送人。
+ */
 export const REVIEW_CONSOLE_URL = "http://127.0.0.1:7801";
+
+// ---------------------------------------------------------------------------
+// 终审台（AI:PRD-009 · 设计稿 §一 D-A「审核内化 = 换 UI 不碰写逻辑」）
+// ---------------------------------------------------------------------------
+
+/**
+ * 终审三态 —— 🔴 逐字等于 `审核库.py` 的 `VERDICTS = ('√', '×', SKIP)`。
+ * 一个字都不许在这边发明：这三个字符会原样写进 `items.verdict_final`，
+ * 下游 `批改.py` / `photo_mark.py` 按它们出卷面与报告。
+ *
+ *   √     对
+ *   ×     错（2026-08-11 起替代老库的 ○，老库已被 PRAGMA user_version=1 迁过）
+ *   skip  「去掉」：不算对、不算错、**不进分母**、不进考点统计、不上卷面
+ */
+export const VERDICTS = ["√", "×", "skip"] as const;
+export type Verdict = (typeof VERDICTS)[number];
+
+export const VERDICT_LABEL: Record<Verdict, string> = {
+  "√": "对",
+  "×": "错",
+  skip: "去掉（不计入这次批改）",
+};
+
+/**
+ * 批次状态。🔴 schema 注释只写了 pending/confirmed，`rework` 是后加的（实库三值）。
+ * 认不出的值一律原样端出来标「状态未知」，不猜。
+ */
+export const REVIEW_STATUSES = ["pending", "rework", "confirmed"] as const;
+export type ReviewStatus = (typeof REVIEW_STATUSES)[number];
+
+export const REVIEW_STATUS_LABEL: Record<ReviewStatus, string> = {
+  pending: "待审核",
+  rework: "已打回 · 待重批",
+  confirmed: "已确认",
+};
+
+/** 「近期已确认」取多少条 —— 审核台 `/api/confirmed` 把 limit 写死 10，这里照抄 */
+export const REVIEW_CONFIRMED_LIMIT = 10;
+
+/** 存疑的预判值面（与看板 DOUBT_PRE 同口径；`?` 不是合法终审值） */
+export const DOUBT_VERDICT_PRE = ["?", "doubt", "missing"] as const;
+
+/** 一道题（= 审核.db items 一行，列名转驼峰） */
+export interface ReviewItem {
+  qno: number;
+  /** items.page（INTEGER DEFAULT 1）；ingest 缺省回落 `1 if qno<=10 else 2` */
+  page: number;
+  /** 题面：入库时已 `tex2txt()` 归一化，**前端原样印**，不再渲染 LaTeX */
+  qtext: string | null;
+  refAns: string | null;
+  answerRaw: string | null;
+  /** items.lines 存的 JSON 数组（解析不了就空数组 + 把原文挂 linesRaw） */
+  lines: string[];
+  linesRaw: string | null;
+  note: string | null;
+  /**
+   * 错因考点码。
+   * 🔴 三态分明：`null` = 库里就是 NULL（整段不显示）；`[]` = 显示「不归因(非技能失分)」；
+   *    有码 = 按 err_kp.json 正本翻中文。
+   * 🔴 审核台的 `/api/pending` 这一列给的是**字符串**（只 parse 了 lines），
+   *    前端再 `JSON.parse` 一次；本产品在服务端就 parse 好，坏 JSON 走 errorKpError。
+   */
+  errorKp: string[] | null;
+  errorKpRaw: string | null;
+  errorKpError?: string;
+  /** '√' / '×' / '?'（`?` = 交人工，**不是**合法终审值） */
+  verdictPre: string | null;
+  /** '√' / '×' / 'skip' / null=未终审 */
+  verdictFinal: string | null;
+  needsHuman: boolean;
+  confidence: number | null;
+}
+
+/** 一条打回反馈（feedback 表，新的在前） */
+export interface ReviewFeedback {
+  round: number | null;
+  body: string;
+  createdAt: string | null;
+  /** 非空 = agent 已重批（ingest/撤回时统一标记） */
+  resolvedAt: string | null;
+}
+
+/** 列表页一行 = 一个批次（批次 = UNIQUE(student, day)） */
+export interface ReviewBatchBrief {
+  key: string;
+  batchId: number;
+  student: string;
+  day: number;
+  /** 原样端出（三值之外的原样保留，页面标「状态未知」） */
+  status: string;
+  round: number;
+  createdAt: string | null;
+  confirmedAt: string | null;
+  exportedAt: string | null;
+  /** null=人工 / 'L1静默' / 'L2静默' / 'L2代审' */
+  auto: string | null;
+  itemCount: number;
+  /** verdict_pre ∈ {?,doubt,missing} 或 needs_human=1 */
+  doubtCount: number;
+  doubtQnos: number[];
+  /** 已落 verdict_final 的题数（未终审 = itemCount - judgedCount） */
+  judgedCount: number;
+  pages: number[];
+  feedbackCount: number;
+  /** 还没被标 resolved_at 的反馈条数（= agent 还没重批） */
+  openFeedbackCount: number;
+}
+
+/** 一页原图在不在盘上（不在也要列出来，并说清找的是哪条路径） */
+export interface ReviewPhoto {
+  page: number;
+  exists: boolean;
+  /** 绝对路径原文（页面上要看得见我们找的是哪儿） */
+  path: string;
+}
+
+export interface ReviewBatchDetail extends ReviewBatchBrief {
+  items: ReviewItem[];
+  feedback: ReviewFeedback[];
+  photos: ReviewPhoto[];
+}
+
+/** 错因码 → 中文（正本 = `_产线/err_kp.json`；读不到就 ok=false，绝不退化成空表） */
+export interface ReviewKpDict {
+  ok: boolean;
+  version: string | null;
+  path: string;
+  cn: Record<string, string>;
+  error?: string;
+}
+
+export interface ReviewConfirmedRow {
+  key: string;
+  student: string;
+  day: number;
+  confirmedAt: string | null;
+  round: number;
+  auto: string | null;
+}
+
+export interface ReviewListResponse {
+  ok: boolean;
+  error?: string;
+  data: ReviewBatchBrief[];
+  total: number;
+  /** 页尾只读小节（放行来源看得见才追得回责） */
+  confirmed: ReviewConfirmedRow[];
+  gradingDbPath: string | null;
+  warnings: string[];
+}
+
+export interface ReviewBatchResponse {
+  ok: boolean;
+  error?: string;
+  data: ReviewBatchDetail | null;
+  kp: ReviewKpDict;
+  gradingDbPath: string | null;
+  warnings: string[];
+}
+
+// ── 三个写动作的入参（🔴 每一个都对应 审核库.py 的一条 CLI 原语） ─────────────
+
+export interface ConfirmRequest {
+  student: string;
+  day: number;
+  /** {题号: '√'|'×'|'skip'}，🔴 必须**全题**都给（缺一道 CLI 就拒） */
+  verdicts: Record<string, Verdict>;
+  /** 已 confirmed 的批次要再确认一次，必须显式点头（会覆盖 confirmed_at 与放行来源） */
+  allowReconfirm?: boolean;
+}
+
+export interface ReworkRequest {
+  student: string;
+  day: number;
+  /** 哪里不对（空白 CLI 直接拒：「空反馈等于没说，agent 不知道要改什么」） */
+  body: string;
+}
+
+export interface UnreworkRequest {
+  student: string;
+  day: number;
+}
+
+/**
+ * 写回执。
+ *
+ * 🔴 两半都要给，缺一不可：
+ *   ① **CLI 原文**（argv / exitCode / stdout / stderr）—— 圣域说了什么就上墙什么，
+ *      不缩成「成功/失败」。审核库.py 的闸拒绝一律 exit 1 + stderr 人话，那句话
+ *      本身就是操作指引（「要直接确认请先撤回打回：python 审核库.py unrework …」）。
+ *   ② **事后 ro 复核**（after）—— CLI 的成功输出是给人读的 emoji 文本，机读不了，
+ *      所以跑完再用 mode=ro 读一遍库，报**实际**落成什么样。
+ *      （这条缺口已记进「给 027 的 CLI 需求清单」，但在 027 认账之前，绕。）
+ */
+export interface ReviewWriteResponse {
+  ok: boolean;
+  error?: string;
+  argv: string[];
+  cwd: string;
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+  timedOut: boolean;
+  after: ReviewBatchBrief | null;
+  /** 收下了、但有话说（例：临时 JSON 删不掉、after 读不出来） */
+  notes: string[];
+}
 
 // ---------------------------------------------------------------------------
 // 报告架

@@ -13,6 +13,10 @@
  *                        向 _队列.jsonl 追加行；不改旧行、不删任何东西。
  *   订阅特训/学员/     🔒 产线运行态，本产品**只读**（报告架只列文件、只读字节）。
  *   订阅特训/_产线/    🔒 只读（产线配置.json 读档位；审核.db 走 core 的 mode=ro 句柄）。
+ *                     🔴 AI:PRD-009 起多一种用法：**spawn 它自己的 `审核库.py` CLI**
+ *                        （终审确认/打回/撤回）。那仍然不是「我们写圣域」——
+ *                        执行体是圣域自己的代码，我们只递参数、收 stdout/stderr。
+ *                        圣域文件本身一个字节都不改（连 .pyc 都是 python 自己写的）。
  */
 import { join } from "node:path";
 
@@ -72,9 +76,50 @@ export function reportDirOf(code: string): string {
   return `${studentsRoot()}/${code}/报告`;
 }
 
+/** 产线目录：`<ai-bkb>/订阅特训/_产线`（🔒 圣域本体；只读 + spawn 它自己的 CLI） */
+export function productionLineDir(): string {
+  return `${resolveRoot().root}/订阅特训/_产线`;
+}
+
 /** 产线旋钮文件：`订阅特训/_产线/产线配置.json`（🔒 只读，档位正本） */
 export function pipelineConfigFile(): string {
-  return `${resolveRoot().root}/订阅特训/_产线/产线配置.json`;
+  return `${productionLineDir()}/产线配置.json`;
+}
+
+/**
+ * 🔴🔴 终审写的**唯一执行体**：`_产线/审核库.py`（AI:PRD-009 · 设计稿 §一 D-A）。
+ *
+ * 管理台的「确认这批 / 打回 / 撤回打回」全部 spawn 这个脚本的 CLI 原语
+ * （confirm --from / rework / unrework），一行写逻辑都不复制过来：
+ * 审核.db 的单写方在代码层原样保持 = 圣域自己。
+ */
+export function reviewCliFile(): string {
+  return `${productionLineDir()}/审核库.py`;
+}
+
+/**
+ * 错因考点七码词表**正本**：`_产线/err_kp.json`。
+ * 🔴 与审核台同一份（它把 `err_kp.KP_CN` 注进页面占位符 `__KPCN_JSON__`）——
+ *    码→中文的映射前端不许硬写，这里也只读正本，读不到就报出来，不退化成空表
+ *    （err_kp.py 的原话：「读不到 / 格式不对 → 直接抛错退出，绝不静默退化成空词表」）。
+ */
+export function errKpFile(): string {
+  return `${productionLineDir()}/err_kp.json`;
+}
+
+/** 某学员某天的批改拍照目录：`学员/<代号>/批改拍照/第NN天`（🔒 只读） */
+export function photoDirOf(code: string, day: number): string {
+  return `${studentsRoot()}/${code}/批改拍照/第${String(day).padStart(2, "0")}天`;
+}
+
+/**
+ * 某页原卷照片：`…/第NN天/照片-p<页>.jpg`（🔒 只读）。
+ * 🔴 页号**不是扫目录扫出来的**，是 `SELECT DISTINCT items.page` 来的
+ *    （与审核台 `/photo?s=&d=&p=` 同一口径）：库里说有第 3 页，盘上没有，
+ *    那就是「照片缺了」这条事实，页面要说出来，不能靠少列一页把它藏掉。
+ */
+export function photoFileOf(code: string, day: number, page: number): string {
+  return `${photoDirOf(code, day)}/照片-p${page}.jpg`;
 }
 
 // ---------------------------------------------------------------------------
