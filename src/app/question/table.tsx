@@ -11,23 +11,38 @@
  * 🔴 入库是**数据生产类写操作**，页面不做（设计稿 §〇·3）：工具栏只给一句能直接粘的命令。
  * 🔴 界面如实：难度筛选置灰（全库 difficulty 未打档，摆一个永远零命中的筛选比没有更坏）；
  *    降级/落靶/窗口封顶一律上墙（表格上方那条 Alert），一个字不吞。
+ *
+ * ── 2026-08-14 三处补（验收判红）────────────────────────────────────────────
+ *   ① **列头可排序**（改版四原则第 1 条）：排序是 `sorter:true` + 服务端排 ——
+ *      本表是服务端切片的，前端排只会把"当前这一页"排一遍，那是假排序。
+ *   ② **空态给口径文案**（设计稿 §三：「没有数据」≠「没有错误」），不许落 antd 默认。
+ *   ③ **录入批次**这一维补上（设计稿 §二·2 逐项列了它）：core 的 searchParamsSchema
+ *      现在有 ingestBatchIds，是**真硬过滤**，不是窗口内筛。
+ *   ④ 「相似题」改成本页弹层（原来跳 004-C 的 /search，那页已随本次改版下线）。
  */
 import {
   ProTable,
   type ActionType,
   type ProColumns,
 } from "@ant-design/pro-components";
-import { Alert, Select, Space, Tag, Tooltip } from "antd";
+import { Alert, Drawer, Select, Space, Tag, Tooltip } from "antd";
 import Link from "next/link";
 import { useRef, useState } from "react";
 
-import { CopyCmd, IdTail, StatusTag, TimeText } from "~/components/console/ui";
+import {
+  CopyCmd,
+  EmptyHint,
+  IdTail,
+  StatusTag,
+  TimeText,
+} from "~/components/console/ui";
 import type {
   KpOption,
   KpOptionsResponse,
   QuestionListMeta,
   QuestionListResponse,
   QuestionRow,
+  SimilarResponse,
 } from "./shared";
 
 /** 搜索区的表单形状（= ProTable 各列 dataIndex） */
@@ -39,6 +54,7 @@ interface QueryForm {
   solutionGrade?: string[];
   provType?: string[];
   status?: string[];
+  batch?: string;
 }
 
 export interface QuestionTableProps {
@@ -49,6 +65,11 @@ export interface QuestionTableProps {
   provTypes: readonly string[];
   /** 默认看哪些状态（= core 的 DEFAULT_STATUSES） */
   defaultStatuses: readonly string[];
+  /** 从地址栏带进来的初值（/ingest、/model 那些页跳过来时用） */
+  initialBatch?: string;
+  initialKp?: KpOption;
+  /** ?similar=q_… 直接开弹层（旧 /search?similar= 的落点） */
+  initialSimilar?: string;
 }
 
 function toEnum(list: readonly string[]): Record<string, { text: string }> {
@@ -107,6 +128,24 @@ function MetaBar({
       `来源筛选是在已取回的 ${meta.fetched} 条里过滤的（core 硬过滤没有 prov_type 这一维），总数按这个窗口算`,
     );
   }
+  if (meta.batchIds.length > 0) {
+    notes.push(
+      `只看录入批次 ${meta.batchIds.join("、")}（core 的硬过滤，不是窗口内筛 —— 总数是全库口径）`,
+    );
+  }
+  if (meta.sort) {
+    notes.push(
+      `按「${meta.sort.field}」${meta.sort.desc ? "降序" : "升序"}排 —— ` +
+        "🔴 排序是在**取回的窗口内**做的（core 的检索没有 order by 这一维）：" +
+        `本次取回 ${meta.fetched} 条${meta.capped ? "，而且撞到了窗口上限，后面的题没参与排序" : "（已取尽，排序覆盖全部命中）"}。`,
+    );
+  }
+  if (meta.axes.vector.active) {
+    notes.push(
+      `🔴 语意轴在跑：「命中 ${meta.coreTotal}」= 融合名次表的长度（候选里有句向量的题基本都会进榜），` +
+        "它是**查询的属性、与页码无关**，但也别把它读成「有这么多题真的相关」——相关性看排序与分数。",
+    );
+  }
 
   const tone = meta.degraded || meta.capped ? "warning" : "info";
   return (
@@ -137,12 +176,170 @@ function MetaBar({
   );
 }
 
+/** 相似题弹层：拿一道题当查询，找语意近邻（= MCP 的 find_similar 同一个 core 函数） */
+function SimilarDrawer({
+  id,
+  onClose,
+}: {
+  id: string | null;
+  onClose: () => void;
+}) {
+  const [data, setData] = useState<SimilarResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+  const 上次 = useRef<string | null>(null);
+
+  if (id && 上次.current !== id) {
+    上次.current = id;
+    setData(null);
+    setLoading(true);
+    void (async () => {
+      try {
+        const res = await fetch(
+          `/api/questions/similar?id=${encodeURIComponent(id)}`,
+        );
+        setData((await res.json()) as SimilarResponse);
+      } catch (e) {
+        setData({
+          ok: false,
+          error: `请求没发出去（或没回来）：${
+            e instanceof Error ? `${e.name}: ${e.message}` : String(e)
+          }`,
+          questionId: id,
+          stemBrief: "",
+          hits: [],
+          degraded: false,
+          modelVer: null,
+          warnings: [],
+          ms: 0,
+        });
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }
+
+  return (
+    <Drawer
+      title="相似题（句向量近邻）"
+      width={720}
+      open={id !== null}
+      onClose={() => {
+        上次.current = null;
+        onClose();
+      }}
+    >
+      {id === null ? null : (
+        <>
+          <div style={{ fontSize: 12.5, marginBottom: 10 }}>
+            拿这道题当查询：
+            <div
+              style={{
+                fontFamily: "Consolas, Menlo, monospace",
+                background: "#f4f4f5",
+                padding: 8,
+                marginTop: 4,
+              }}
+            >
+              {data?.stemBrief !== undefined && data.stemBrief !== ""
+                ? data.stemBrief
+                : loading
+                  ? "读取中…"
+                  : "（题面没读出来）"}
+            </div>
+            <Link href={`/question/${id}`}>看这道题的正本 →</Link>
+          </div>
+
+          {data && !data.ok ? (
+            <Alert
+              type="error"
+              showIcon
+              style={{ marginBottom: 10 }}
+              message="相似题查不出来（原文照登）"
+              description={
+                <span style={{ fontSize: 12.5 }}>{data.error}</span>
+              }
+            />
+          ) : null}
+          {data?.degraded ? (
+            <Alert
+              type="warning"
+              showIcon
+              style={{ marginBottom: 10 }}
+              message="语意轴降级了 —— 下面的空列表不是「这题没有相似题」"
+              description={
+                <div style={{ fontSize: 12.5, lineHeight: 1.9 }}>
+                  {data.warnings.map((w, i) => (
+                    <div key={i}>⚠ {w}</div>
+                  ))}
+                </div>
+              }
+            />
+          ) : null}
+
+          {data?.ok && data.hits.length === 0 && !data.degraded ? (
+            <EmptyHint>
+              一条近邻都没有 —— 🔴
+              这多半是「这道题没有句向量」（语意轴找不到它），不是「库里没有像它的题」。
+            </EmptyHint>
+          ) : null}
+
+          {(data?.hits ?? []).map((h) => (
+            <div
+              key={h.questionId}
+              style={{
+                borderBottom: "1px solid #ebeef5",
+                padding: "8px 0",
+                fontSize: 12.5,
+              }}
+            >
+              <Space size={6} wrap>
+                <Tag color="blue">{h.score.toFixed(4)}</Tag>
+                <StatusTag value={h.status} />
+                {h.qtype ? <Tag>{h.qtype}</Tag> : null}
+                <StatusTag value={h.solutionGrade} />
+              </Space>
+              <div
+                style={{
+                  fontFamily: "Consolas, Menlo, monospace",
+                  margin: "4px 0",
+                }}
+              >
+                <Link href={`/question/${h.questionId}`}>{h.stemBrief}</Link>
+              </div>
+              <div>
+                {h.kps.map((k) => (
+                  <Tag key={k.kpId} color={k.isPrimary ? "blue" : "default"}>
+                    {k.isPrimary ? "★" : ""}
+                    {k.name}
+                  </Tag>
+                ))}
+              </div>
+            </div>
+          ))}
+
+          {data?.ok ? (
+            <div style={{ marginTop: 10, fontSize: 11.5, color: "#909399" }}>
+              模型 {data.modelVer ?? "—"} · {data.ms}ms · 与 MCP 的 find_similar
+              同一个 core 函数（页面看得见的近邻 = agent 查到的）
+            </div>
+          ) : null}
+        </>
+      )}
+    </Drawer>
+  );
+}
+
 export function QuestionTable(props: QuestionTableProps) {
   const actionRef = useRef<ActionType>(null);
   const [meta, setMeta] = useState<QuestionListMeta | null>(null);
   const [err, setErr] = useState<string | undefined>(undefined);
-  const [kpOptions, setKpOptions] = useState<KpOption[]>([]);
+  const [kpOptions, setKpOptions] = useState<KpOption[]>(
+    props.initialKp ? [props.initialKp] : [],
+  );
   const [kpLow, setKpLow] = useState(false);
+  const [similarId, setSimilarId] = useState<string | null>(
+    props.initialSimilar ?? null,
+  );
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /** 考点框：敲字 → 远程出候选（debounce 250ms，enqueue:false 见 api/kp-options） */
@@ -211,13 +408,22 @@ export function QuestionTable(props: QuestionTableProps) {
       search: { transform: () => ({}) },
     },
     {
+      title: "录入批次",
+      dataIndex: "batch",
+      hideInTable: true,
+      tooltip:
+        "只看某一次投料进来的题（question.ingest_batch_id 硬过滤）。批次 id 从「录入批次」页复制，形如 batch_01J…",
+      fieldProps: { placeholder: "batch_01J…（从录入批次页复制）" },
+    },
+    {
       title: "题面",
       dataIndex: "stemBrief",
       search: false,
       width: 360,
+      sorter: true,
       render: (_, r) => (
         <Tooltip title={r.stemBrief} styles={{ root: { maxWidth: 560 } }}>
-          <Link href={`/q/${r.id}`} style={{ color: "inherit" }}>
+          <Link href={`/question/${r.id}`} style={{ color: "inherit" }}>
             <div
               style={{
                 display: "-webkit-box",
@@ -241,6 +447,7 @@ export function QuestionTable(props: QuestionTableProps) {
       width: 84,
       valueType: "select",
       valueEnum: toEnum(props.qtypes),
+      sorter: true,
       fieldProps: { mode: "multiple", placeholder: "不选=全部" },
       render: (_, r) => (r.qtype ? <Tag>{r.qtype}</Tag> : <Tag>题型未填</Tag>),
     },
@@ -270,6 +477,7 @@ export function QuestionTable(props: QuestionTableProps) {
       dataIndex: "difficulty",
       search: false,
       width: 64,
+      sorter: true,
       render: (_, r) =>
         r.difficulty === null ? (
           <Tooltip title="未打档（question.difficulty IS NULL）">
@@ -285,6 +493,7 @@ export function QuestionTable(props: QuestionTableProps) {
       width: 116,
       valueType: "select",
       valueEnum: toEnum(props.grades),
+      sorter: true,
       fieldProps: { mode: "multiple", placeholder: "默认=实算过+仅解析" },
       render: (_, r) => <StatusTag value={r.solutionGrade} />,
     },
@@ -294,6 +503,7 @@ export function QuestionTable(props: QuestionTableProps) {
       width: 96,
       valueType: "select",
       valueEnum: toEnum(props.provTypes),
+      sorter: true,
       tooltip:
         "prov_type。🔴 core 的硬过滤没有这一维：本筛选是在取回的结果里过滤的，总数口径见表格上方",
       fieldProps: { mode: "multiple", placeholder: "不选=全部" },
@@ -305,6 +515,7 @@ export function QuestionTable(props: QuestionTableProps) {
       width: 100,
       valueType: "select",
       valueEnum: toEnum(props.statuses),
+      sorter: true,
       fieldProps: { mode: "multiple" },
       render: (_, r) => (
         <Space size={2}>
@@ -322,6 +533,7 @@ export function QuestionTable(props: QuestionTableProps) {
       dataIndex: "ingestedAt",
       search: false,
       width: 110,
+      sorter: true,
       tooltip:
         "由题 id 里的 ULID 解出（发号即入库那一刻）——检索契约里没有 created_at 这一列",
       render: (_, r) => <TimeText iso={r.ingestedAt} />,
@@ -331,6 +543,7 @@ export function QuestionTable(props: QuestionTableProps) {
       dataIndex: "id",
       search: false,
       width: 110,
+      sorter: true,
       render: (_, r) => <IdTail id={r.id} />,
     },
     {
@@ -352,12 +565,14 @@ export function QuestionTable(props: QuestionTableProps) {
       width: 120,
       fixed: "right",
       render: (_, r) => [
-        <Link key="view" href={`/q/${r.id}`}>
+        <Link key="view" href={`/question/${r.id}`}>
           查看
         </Link>,
-        <Link key="similar" href={`/search?similar=${r.id}`}>
+        // 🔴 设计稿 §二·2 写的就是「相似题（find_similar 弹层）」——
+        //    以前这里跳 /search，而那页是本次改版要替换掉的旧版式页。
+        <a key="similar" onClick={() => setSimilarId(r.id)}>
           相似题
-        </Link>,
+        </a>,
       ],
     },
   ];
@@ -377,7 +592,13 @@ export function QuestionTable(props: QuestionTableProps) {
           persistenceType: "localStorage",
         }}
         search={{ labelWidth: "auto", defaultCollapsed: false }}
-        form={{ initialValues: { status: [...props.defaultStatuses] } }}
+        form={{
+          initialValues: {
+            status: [...props.defaultStatuses],
+            ...(props.initialBatch ? { batch: props.initialBatch } : {}),
+            ...(props.initialKp ? { kp: [props.initialKp.value] } : {}),
+          },
+        }}
         options={{
           reload: true,
           density: true,
@@ -385,6 +606,21 @@ export function QuestionTable(props: QuestionTableProps) {
           fullScreen: false,
         }}
         headerTitle="题目列表"
+        // 🔴 空态给口径原句（设计稿 §三）：零命中最容易被读成「库里没这种题」，
+        //    而多数时候是条件太窄或轴没落靶 —— 表格上方那条 Alert 里有逐轴的账。
+        locale={{
+          emptyText: (
+            <EmptyHint>
+              这一组条件下零命中。🔴
+              「没有命中」不等于「库里没有这种题」：关键词走的是**字面**（题面里真出现过那几个字才算），
+              语意描述走的是句向量近邻，两条轴都可能落空。
+              <br />
+              先放宽：去掉题型/判档/状态，或把关键词换成题面里真会出现的字；
+              查考点用「考点」那一栏（考点名在题面里通常一个字都不出现）。
+              表格上方那条提示写着每条轴各命中了多少、有没有降级。
+            </EmptyHint>
+          ),
+        }}
         toolBarRender={() => [
           <CopyCmd
             key="submit"
@@ -398,17 +634,24 @@ export function QuestionTable(props: QuestionTableProps) {
           showSizeChanger: true,
           showTotal: (t, range) => `第 ${range[0]}-${range[1]} 条 / 共 ${t} 条`,
         }}
-        request={async (params) => {
+        request={async (params, sort) => {
           const q = new URLSearchParams();
           q.set("page", String(params.current ?? 1));
           q.set("pageSize", String(params.pageSize ?? 20));
           if (params.kw) q.set("kw", params.kw);
           if (params.sem) q.set("sem", params.sem);
+          if (params.batch) q.set("batch", params.batch.trim());
           for (const id of params.kp ?? []) q.append("kp", id);
           for (const t of params.qtype ?? []) q.append("qt", t);
           for (const s of params.status ?? []) q.append("st", s);
           for (const g of params.solutionGrade ?? []) q.append("sg", g);
           for (const p of params.provType ?? []) q.append("pv", p);
+          // 🔴 排序丢给服务端做（本表是服务端切片的，前端排只会排当前这一页）
+          const [field, order] = Object.entries(sort ?? {})[0] ?? [];
+          if (field && order) {
+            q.set("sort", field);
+            q.set("order", order === "ascend" ? "asc" : "desc");
+          }
 
           const res = await fetch(`/api/questions?${q.toString()}`);
           const j = (await res.json()) as QuestionListResponse;
@@ -417,6 +660,7 @@ export function QuestionTable(props: QuestionTableProps) {
           return { data: j.data, total: j.total, success: true };
         }}
       />
+      <SimilarDrawer id={similarId} onClose={() => setSimilarId(null)} />
     </>
   );
 }

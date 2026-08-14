@@ -159,12 +159,10 @@ export const CONSOLE_MENU: ConsoleMenuGroup[] = [
  */
 export const HIDDEN_CRUMBS: { prefix: string; group: string; name: string }[] =
   [
-    { prefix: "/q/", group: "题库管理", name: "题目详情" },
-    {
-      prefix: "/search",
-      group: "题库管理",
-      name: "题库检索（004-C 旧页 · 保留）",
-    },
+    // 🔴 /q/ 与 /search 已下线（2026-08-14，设计稿 §一 的两处路由改造）：
+    //    题目详情迁到 /question/[id]（四 tab），检索并进 /question。
+    //    这里不留它们的面包屑 —— 留着等于告诉人那两个地址还在。
+    { prefix: "/question/", group: "题库管理", name: "题目详情" },
     { prefix: "/kg/kp/", group: "知识图谱", name: "考点详情" },
     { prefix: "/kg/tree/", group: "知识图谱", name: "版本树" },
     { prefix: "/kg/queue", group: "审查队列", name: "处置台（旧地址）" },
@@ -174,10 +172,11 @@ export const HIDDEN_CRUMBS: { prefix: string; group: string; name: string }[] =
     { prefix: "/sku/", group: "生产管理", name: "SKU 详情" },
     { prefix: "/model/", group: "生产管理", name: "模型族谱" },
     // 学情中心（详情 / 确认页）
-    // 🔴 /cause/map、/cause/remap 必须排在这里、且排在任何 `/cause` 泛前缀之前，
+    // 🔴 /cause/map 必须排在这里、且排在任何 `/cause` 泛前缀之前，
     //    否则确认页会被认成错因管理列表页。
+    // 🔴 /cause/remap 已下线（2026-08-14：删映射行超出写操作白名单五类），
+    //    这里也不留它的面包屑 —— 留着等于告诉人那儿还有一页。
     { prefix: "/cause/map", group: "学情中心", name: "补错因映射" },
-    { prefix: "/cause/remap", group: "学情中心", name: "改指 / 摘除映射" },
     { prefix: "/student/", group: "学情中心", name: "学员学情" },
   ];
 
@@ -210,13 +209,11 @@ export function crumbsFor(pathname: string): Crumbs | null {
 
 /**
  * 当前路径在菜单里应该高亮哪一项（详情页高亮它所属的列表页）。
- * 例：/q/xxx → /question；/kg/kp/xxx → /kg；/queue/xxx/reject → /queue。
+ * 例：/question/xxx → /question；/kg/kp/xxx → /kg；/queue/xxx/reject → /queue。
  */
 export function selectedPathFor(pathname: string): string {
   if (pathname === "/") return "/";
-  if (pathname.startsWith("/q/") || pathname.startsWith("/question")) {
-    return "/question";
-  }
+  if (pathname.startsWith("/question")) return "/question";
   if (pathname.startsWith("/queue") || pathname.startsWith("/kg/queue")) {
     return "/queue";
   }

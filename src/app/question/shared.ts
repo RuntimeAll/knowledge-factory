@@ -48,6 +48,10 @@ export interface QuestionListMeta {
   provFilter: boolean;
   /** true = 来源筛选只在窗口内做，总数是窗口口径 */
   provWindow: boolean;
+  /** 当前按哪一列排（null = 没排，用 core 给的相关性/稳定序） */
+  sort: { field: string; desc: boolean } | null;
+  /** 录入批次硬过滤（core 的 ingestBatchIds，真过滤不是窗口内筛） */
+  batchIds: string[];
   degraded: boolean;
   warnings: string[];
   ms: number;
@@ -73,6 +77,35 @@ export interface QuestionListResponse {
   page: number;
   pageSize: number;
   meta: QuestionListMeta | null;
+}
+
+// ---------------------------------------------------------------------------
+// 相似题弹层（/api/questions/similar）
+// ---------------------------------------------------------------------------
+
+export interface SimilarHitRow {
+  questionId: string;
+  stemBrief: string;
+  /** 余弦相似度（库内向量已归一 ⇒ 就是点积） */
+  score: number;
+  qtype: string | null;
+  status: string;
+  solutionGrade: string;
+  kps: QuestionKp[];
+}
+
+export interface SimilarResponse {
+  ok: boolean;
+  error?: string;
+  questionId: string;
+  /** 拿来当查询的那道题（题面摘要） */
+  stemBrief: string;
+  hits: SimilarHitRow[];
+  /** 🔴 true = 语意轴降级（模型没装/向量版本混杂）：hits 恒空，不是「没有相似题」 */
+  degraded: boolean;
+  modelVer: string | null;
+  warnings: string[];
+  ms: number;
 }
 
 /** 考点下拉的一条候选（/api/kp-options） */

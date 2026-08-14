@@ -21,6 +21,17 @@
  *   → 彻底解法是给 core 的 searchParamsSchema 加一个 offset（连带改 MCP 漂移闸断言），
  *     那是一次显式的契约变更，不在本卡「地基」范围内（见交接说明的遗留问题）。
  *
+ *   🔴🔴 相关性检索时 limit **恒取 CAP**，不跟页号走（2026-08-14 修 · 验收判红）：
+ *     以前是 `limit = min(CAP, page*pageSize)`，而 core 的 `total` 是融合名次表的长度，
+ *     曾经跟着 limit 变大 ⇒ 同一条查询翻到第 5 页，页脚从「共 100 条」变成「共 500 条」。
+ *     core 那一半已经修好（向量轴深度不再绑 limit，见 retrieval.ts 的 VECTOR_AXIS_DEPTH），
+ *     这里也一并钉死：**取多少条与在第几页无关**，页只是对同一个窗口切片。
+ *
+ * ── 排序（列头点击）───────────────────────────────────────────────────────
+ *   core 没有 order by 这一维（检索的序是相关性/稳定序）。所以排序在本路由**对取回的
+ *   窗口**做，并且一旦要排序就**先把窗口取尽**（否则"第 5 页"会是"前 100 条排完的第 5 页"，
+ *   那是错的）。取不尽（撞上 MAX_ROUNDS×CAP 或相关性 CAP）时 `capped:true` 照旧上墙。
+ *
  * ── 来源（prov_type）筛选为什么是「窗口内过滤」────────────────────────────────
  *   core 的硬过滤没有 prov_type 这一维（考点/难度/题型/判档/版本/状态/排除名单）。
  *   本路由在取回的结果上过滤，并把 `provWindow` 标出来：纯条件浏览时会先把全量取尽
@@ -29,6 +40,7 @@
 import { NextResponse } from "next/server";
 import { decodeTime } from "ulid";
 
+import { parseSort, sortWindow } from "~/lib/sort-window";
 import {
   PROV_TYPES,
   QTYPES,
@@ -91,6 +103,30 @@ function badges(h: SearchHit): string[] {
   return out;
 }
 
+/** 可排序的列（白名单；口径与两条排序纪律见 ~/lib/sort-window） */
+const SORT_FIELDS = [
+  "stemBrief",
+  "qtype",
+  "difficulty",
+  "solutionGrade",
+  "provType",
+  "status",
+  "ingestedAt",
+  "id",
+] as const;
+type SortField = (typeof SORT_FIELDS)[number];
+
+const SORT_OF: Record<SortField, (r: QuestionRow) => string | number | null> = {
+  stemBrief: (r) => r.stemBrief,
+  qtype: (r) => r.qtype,
+  difficulty: (r) => r.difficulty,
+  solutionGrade: (r) => r.solutionGrade,
+  provType: (r) => r.provType,
+  status: (r) => r.status,
+  ingestedAt: (r) => r.ingestedAt,
+  id: (r) => r.id,
+};
+
 function toRow(h: SearchHit): QuestionRow {
   return {
     id: h.questionId,
@@ -125,6 +161,12 @@ export async function GET(req: Request): Promise<NextResponse> {
   const statuses = pick(sp, "st", QUESTION_STATUSES);
   const grades = pick(sp, "sg", SOLUTION_GRADES);
   const provs = pick(sp, "pv", PROV_TYPES);
+  // 🆕 录入批次：core 现在有这一维硬过滤（question.ingest_batch_id），不再是窗口内筛
+  const batchIds = [...new Set(sp.getAll("batch").map((s) => s.trim()))].filter(
+    Boolean,
+  );
+
+  const sort = parseSort<SortField>(sp, SORT_FIELDS);
 
   const base: SearchParams = {
     ...(kpIds.length > 0 ? { kpIds } : {}),
@@ -137,6 +179,7 @@ export async function GET(req: Request): Promise<NextResponse> {
     ...(grades.length > 0
       ? { solutionGrade: grades as SearchParams["solutionGrade"] }
       : {}),
+    ...(batchIds.length > 0 ? { ingestBatchIds: batchIds } : {}),
   };
 
   /** 关键词/语意任一在 = 相关性序（见文件头 §分页） */
@@ -144,8 +187,18 @@ export async function GET(req: Request): Promise<NextResponse> {
   /** 来源筛选是本路由做的窗口内过滤（core 硬过滤没有这一维） */
   const provFilter = provs.length > 0 && provs.length < PROV_TYPES.length;
   const need = page * pageSize;
-  /** 来源筛选时要把全量取尽，总数才准 */
-  const target = provFilter ? MAX_ROUNDS * CAP : need;
+  /**
+   * 要取多少条：
+   *   · 来源筛选 / 排序 ⇒ 必须取尽（否则总数或名次都是"前 N 条里的"，那是错的）
+   *   · 相关性检索 ⇒ 恒取 CAP（🔴 不跟页号走，见文件头：total 不许随页号膨胀）
+   *   · 其余 ⇒ 按需取
+   */
+  const target =
+    provFilter || sort !== null
+      ? MAX_ROUNDS * CAP
+      : axisActive
+        ? CAP
+        : need;
 
   try {
     const first = await searchQuestions(
@@ -180,6 +233,11 @@ export async function GET(req: Request): Promise<NextResponse> {
       hits.push(...r.hits);
     }
 
+    // 🔴 相关性序只给前 CAP 条（不跨窗拼接，见文件头）：命中比窗口多就**如实标 capped**。
+    //    以前这一条是靠 while 循环里那个 break 顺带设上的；现在 limit 恒取 CAP、
+    //    循环压根不进，忘了这一句的话第 11 页会静默变成空表（总数还写着 642）。
+    if (axisActive && coreTotal > hits.length) capped = true;
+
     const filtered = provFilter
       ? hits.filter((h) => provs.includes(h.provType))
       : hits;
@@ -190,10 +248,14 @@ export async function GET(req: Request): Promise<NextResponse> {
         ? Math.min(coreTotal, hits.length)
         : coreTotal;
 
+    const rows = filtered.map(toRow);
+    // 🔴 排序在切页**之前**（且上面已把窗口取尽），不然翻页翻的是"排完前 N 条"
+    if (sort) sortWindow(rows, SORT_OF[sort.field], sort.desc);
+
     const start = (page - 1) * pageSize;
     const body: QuestionListResponse = {
       ok: true,
-      data: filtered.slice(start, start + pageSize).map(toRow),
+      data: rows.slice(start, start + pageSize),
       total,
       page,
       pageSize,
@@ -206,6 +268,8 @@ export async function GET(req: Request): Promise<NextResponse> {
         cap: CAP,
         provFilter,
         provWindow: provFilter && !exhausted,
+        sort,
+        batchIds,
         degraded: first.degraded,
         warnings: first.warnings,
         ms: first.ms,

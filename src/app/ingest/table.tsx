@@ -11,9 +11,9 @@
  * 🔴 本组件零业务逻辑：条件拼成 query 丢给 `/api/ingest`，那头调 core 的
  *    listIngestBatches；闸报告点开才去 `/api/ingest/<id>` 取全账（单批 gate_report
  *    能到 76KB，列表页不驮它）。
- * 🔴 「看本批题目」不是跳 `/question` 带筛选 —— core 的检索层**没有 ingest_batch
- *    这一维**（硬过滤只有考点/题型/难度/判档/版本/状态）。与其造一个筛不出东西的
- *    链接，不如直接把本批落库的题 id 列出来，每个都点得进详情。这条口径写在抽屉里。
+ * 🔴 「看本批题目」两条路都给：core 的检索层 2026-08-14 起有了录入批次这一维
+ *    （searchParams.ingestBatchIds，真硬过滤），所以跳 `/question?batch=<id>` 是准的；
+ *    抽屉里同时把本批落库的题 id 逐个列出来（点一个进一个的正本）。
  * 🔴 全页只读：录题是数据生产类写操作，页面一个字都不改库（设计稿 §〇·3）。
  */
 import {
@@ -138,7 +138,7 @@ function itemColumns(): ColumnsType<IngestItemView> {
       width: 130,
       render: (_, it) =>
         it.questionId ? (
-          <Link href={`/q/${it.questionId}`}>
+          <Link href={`/question/${it.questionId}`}>
             <IdTail id={it.questionId} />
           </Link>
         ) : (
@@ -336,7 +336,7 @@ export function IngestTable() {
       title: "操作",
       valueType: "option",
       key: "option",
-      width: 130,
+      width: 190,
       render: (_, r) => [
         r.hasGateReport ? (
           <a key="gate" onClick={() => 打开(r.id, "gate")}>
@@ -350,6 +350,10 @@ export function IngestTable() {
         <a key="q" onClick={() => 打开(r.id, "questions")}>
           本批题目
         </a>,
+        // 设计稿 §二·4「看本批题目（跳题目列表带筛选）」—— 现在筛得出来了
+        <Link key="jump" href={`/question?batch=${encodeURIComponent(r.id)}`}>
+          去题目管理筛
+        </Link>,
       ],
     },
   ];
@@ -575,14 +579,17 @@ export function IngestTable() {
                             marginBottom: 8,
                           }}
                         >
-                          🔴 这里直接列 id 而不是跳「题目管理」带筛选：core
-                          的检索层没有 ingest_batch
-                          这一维（硬过滤只有考点/题型/难度/判档/版本/状态），
-                          造一个筛不出东西的链接不如把题摆出来。
+                          🔴 2026-08-14 起 core 的检索层**有**录入批次这一维了
+                          （searchParams.ingestBatchIds，硬过滤）：
+                          <Link href={`/question?batch=${encodeURIComponent(d.id)}`}>
+                            在题目管理里看这一批 →
+                          </Link>
+                          。下面仍然把 id 逐个摆出来（点一个进一个的正本），
+                          两条路都通。
                         </div>
                         <Space size={[6, 6]} wrap>
                           {d.questionIds.map((qid) => (
-                            <Link key={qid} href={`/q/${qid}`}>
+                            <Link key={qid} href={`/question/${qid}`}>
                               <Tag color="blue">…{qid.slice(-6)}</Tag>
                             </Link>
                           ))}
