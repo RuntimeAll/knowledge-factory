@@ -231,7 +231,7 @@ const handler = createMcpHandler(
         description:
           "🔴 **出题 / 组卷 / 排重之前先查库**——先检索后动手，别凭印象编题，也别翻文件夹。" +
           "三条轴可任意组合：" +
-          "①标签硬过滤（kpIds/difficulty/qtype/solutionGrade/editionScope/statuses/excludeQuestionIds），" +
+          "①标签硬过滤（kpIds/difficulty/qtype/solutionGrade/editionScope/statuses/excludeQuestionIds/ingestBatchIds），" +
           "②keywords 走**字面**（jieba 分词后逐词 AND；全词一条都不中会自动退成 OR 再查一次，结果标 degraded），" +
           "③semanticQuery 走**语意**（句向量近邻，能吃「含字母的绝对值怎么讨论」这种说不出关键词的问法）。" +
           "②③ 都给时按 RRF(k=60) 融合，且**只在①的候选集内**排名。" +

@@ -3,6 +3,7 @@
  *
  * 页面壳要的三样东西里，health() 已经有了，这里补两个**只读**帮手：
  *   - getLatestIntegritySummary()  最近一次对账的摘要（读 metric_event，不重跑对账）
+ *   - getLatestRegressionSummary() 最近一跑回归 11 关的战报（同上，只读一行）
  *   - redFlagView()                摘要 → 全局红旗条的显示态（纯函数，可单测）
  *
  * 🔴 为什么红旗条读摘要而不是现跑 integrityCheck()：
@@ -120,6 +121,133 @@ export async function getLatestIntegritySummary(
   const row = rows[0];
   if (!row) return null;
   return parseIntegritySummary(row.id, row.ts, row.valueJson);
+}
+
+// ---------------------------------------------------------------------------
+// 回归战报（AI:PRD-008 验收缺陷 · /health「回归 11 关最近一跑」）
+// ---------------------------------------------------------------------------
+
+/**
+ * regression.ps1 收尾打点用的 kind。
+ * 🔴 写侧是 `scripts/regression-report.ts`（regression.ps1 在汇总之后调它），
+ *    两处必须一致。改这个串等于让页面再也读不到历史战报。
+ */
+export const REGRESSION_METRIC_KIND = "regression";
+
+/** 一关的结果（照 regression.ps1 汇总表那一行） */
+export interface RegressionGateResult {
+  id: string;
+  name: string;
+  ok: boolean;
+  /** 这一关跑了多少秒 */
+  secs: number;
+  /** FAIL 时那句人话原因（PASS 恒为 null） */
+  reason: string | null;
+}
+
+/** 最近一跑回归（metric_event 里的一行，解析后） */
+export interface RegressionSummary {
+  metricId: number;
+  /** metric_event.ts = 战报写进库的时刻（≈ 跑完那一刻） */
+  ts: string | null;
+  ok: boolean;
+  total: number;
+  passed: number;
+  failed: number;
+  /** 整轮秒数 */
+  secs: number;
+  /** 这一跑是不是 `-Only X` 的单关跑（那不是"11 关全绿"） */
+  only: string | null;
+  gates: RegressionGateResult[];
+}
+
+function asGates(v: unknown): RegressionGateResult[] {
+  if (!Array.isArray(v)) return [];
+  const out: RegressionGateResult[] = [];
+  for (const raw of v) {
+    if (typeof raw !== "object" || raw === null) continue;
+    const o = raw as Json;
+    if (typeof o.id !== "string") continue;
+    out.push({
+      id: o.id,
+      name: typeof o.name === "string" ? o.name : o.id,
+      ok: o.ok === true,
+      secs: typeof o.secs === "number" ? o.secs : 0,
+      reason: typeof o.reason === "string" && o.reason !== "" ? o.reason : null,
+    });
+  }
+  return out;
+}
+
+/**
+ * value_json → 战报；解析不动返回 null（脏行当作「这条没有」，与对账摘要同口径）。
+ *
+ * 🔴🔴 **逐关明细优先于顶层三个数**：`gates[]` 是账，`total/passed/failed` 只是它的摘要。
+ *    自相矛盾时一律往「更吵」的方向倒（取两者的最大值）—— 顶层写着 `failed:0`、
+ *    明细里却躺着一关红，只可能是写账的人错了，而 /health 上一个**假绿**
+ *    比那儿空着更坏（人会照它下"可以升档/可以上线"的结论）。
+ * 🔴 `ok` 还要求**至少有一关**：`{ok:true, gates:[]}` 是个空战报，
+ *    不能渲染成「全绿 · 0/0 关」。
+ */
+export function parseRegressionSummary(
+  metricId: number,
+  ts: string | null,
+  valueJson: string | null,
+): RegressionSummary | null {
+  if (!valueJson) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(valueJson);
+  } catch {
+    return null;
+  }
+  // 🔴 数组也是 typeof 'object'：`[]` 不是战报，是脏行
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return null;
+  }
+  const o = parsed as Json;
+  const gates = asGates(o.gates);
+  const 红关 = gates.filter((g) => !g.ok).length;
+  const 声称失败 = typeof o.failed === "number" ? o.failed : 0;
+  const 声称总数 = typeof o.total === "number" ? o.total : 0;
+  // 🔴 取大的那个：明细少记了一关（脚本半路崩）与顶层少记了一关，两种都要吵
+  const failed = Math.max(红关, 声称失败);
+  const total = Math.max(gates.length, 声称总数);
+  return {
+    metricId,
+    ts,
+    ok: o.ok === true && failed === 0 && gates.length > 0,
+    total,
+    passed: Math.max(0, total - failed),
+    failed,
+    secs: typeof o.secs === "number" ? o.secs : 0,
+    only: typeof o.only === "string" && o.only !== "" ? o.only : null,
+    gates,
+  };
+}
+
+/**
+ * 最近一跑回归；一次也没跑过（或跑过但那时脚本还不写战报）= null。
+ * 🔴 与对账摘要同样按 id 倒序，不按 ts（秒精度字符串同秒不可分）。
+ */
+export async function getLatestRegressionSummary(
+  handle?: CoreDbHandle,
+): Promise<RegressionSummary | null> {
+  const h = handle ?? (await getCoreDb());
+  const rows = await h.db
+    .select({
+      id: metricEvent.id,
+      ts: metricEvent.ts,
+      valueJson: metricEvent.valueJson,
+    })
+    .from(metricEvent)
+    .where(eq(metricEvent.kind, REGRESSION_METRIC_KIND))
+    .orderBy(desc(metricEvent.id))
+    .limit(1);
+
+  const row = rows[0];
+  if (!row) return null;
+  return parseRegressionSummary(row.id, row.ts, row.valueJson);
 }
 
 // ---------------------------------------------------------------------------

@@ -190,6 +190,9 @@ describe("MCP 壳 · 注册表", () => {
       "kpAutoResolve",
       "semanticQuery",
       "excludeQuestionIds",
+      // 🆕 AI:PRD-008（2026-08-14）：录入批次硬过滤 —— 设计稿 §二·2 的搜索区
+      //    逐项列了它，core 侧补进 searchParamsSchema，工具面自动跟着长出来。
+      "ingestBatchIds",
       "statuses",
       "limit",
     ]);

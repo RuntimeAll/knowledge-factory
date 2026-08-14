@@ -7,6 +7,11 @@
   按序跑完所有关卡，逐关打 [PASS]/[FAIL]，**任一关红了也继续跑完**（一次跑完
   看到全部问题，比撞第一个就停手省一整轮），最后打汇总表，退出码 = 失败关数。
 
+  🔴 跑完还会把**战报落库**（metric_event kind=regression，经
+     scripts/regression-report.ts）——/health 的「回归最近一跑」读的就是它。
+     那是一次库写（连带审计行），所以固定在全部关卡之后跑；写失败只警告，
+     不改本轮结论（退出码仍 = 失败关数）。
+
   跑法：
     powershell -File scripts\regression.ps1              # 全量（收卡自证就跑它）
     powershell -File scripts\regression.ps1 -Only A3b    # 只跑一关（调试用，前缀 REG- 可省）
@@ -351,10 +356,11 @@ try {
   }
 
   $bar = '=' * 78
+  $startedAt = Get-Date -Format 'yyyy-MM-ddTHH:mm:ss'
   Write-Host $bar
   Write-Host "全量回归 · AI:PRD-001 + AI:PRD-002 + AI:PRD-003 + AI:PRD-004 + AI:PRD-005 + AI:PRD-006（A/B/C/D/E/F 六组）"
   Write-Host "  仓根  ：$root"
-  Write-Host "  开始  ：$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+  Write-Host "  开始  ：$startedAt"
   Write-Host "  关卡  ：$($selected.Count) 关（$(($selected | ForEach-Object { $_.Id }) -join '、')）"
   Write-Host $bar
 
@@ -421,6 +427,59 @@ try {
   else {
     Write-Host "结论：🔴 $($failed.Count) 关红（$(($failed | ForEach-Object { $_.Id }) -join '、')），$($results.Count - $failed.Count) 关绿"
   }
+  # -------------------------------------------------------------------------
+  # 战报落库（AI:PRD-008 验收缺陷修复）
+  #
+  # 🔴 为什么非写不可：不写，/health 的「回归 11 关最近一跑」就永远没有数据 ——
+  #    人只能凭记忆说"上次好像是绿的"。战报落 metric_event（kind=regression），
+  #    页面照它显示时间与逐关红绿。
+  # 🔴 位置固定在**所有关卡跑完之后**：这是一次库写（连带一条审计行），
+  #    跑在中途会被 REG-A2（审计链校验）撞见自己刚造出来的行。
+  # 🔴 写失败**不改本轮结论**：退出码仍然 = 失败关数（战报是账，不是判据）。
+  # -------------------------------------------------------------------------
+  $report = [pscustomobject]@{
+    ok         = ($failed.Count -eq 0)
+    total      = $results.Count
+    passed     = ($results.Count - $failed.Count)
+    failed     = $failed.Count
+    secs       = [math]::Round($allSw.Elapsed.TotalSeconds, 1)
+    only       = $(if ($Only) { $Only.Trim() } else { '' })
+    startedAt  = $startedAt
+    finishedAt = (Get-Date -Format 'yyyy-MM-ddTHH:mm:ss')
+    gates      = @($results | ForEach-Object {
+        [pscustomobject]@{
+          id     = $_.Id
+          name   = $_.Name
+          ok     = $_.Ok
+          secs   = $_.Secs
+          reason = $_.Reason
+        }
+      })
+  }
+  $reportFile = Join-Path ([IO.Path]::GetTempPath()) "kf-regression-$([Guid]::NewGuid().ToString('N').Substring(0,8)).json"
+  try {
+    # 🔴 无 BOM 的 UTF-8：Out-File 会写 BOM，Node 的 JSON.parse 撞上它就抛
+    [IO.File]::WriteAllText(
+      $reportFile,
+      ($report | ConvertTo-Json -Depth 5),
+      (New-Object System.Text.UTF8Encoding($false))
+    )
+    Write-Host ''
+    Write-Host '  -> 战报落库（metric_event kind=regression）'
+    & pnpm exec tsx --env-file=.env scripts/regression-report.ts $reportFile | Write-Host
+    if ($LASTEXITCODE -ne 0) {
+      Write-Warning "战报没落库（退出码 $LASTEXITCODE）——本轮结论不受影响，但 /health 的「最近一跑」还是旧的"
+    }
+  }
+  catch {
+    Write-Warning "战报没落库：$($_.Exception.Message)（本轮结论不受影响）"
+  }
+  finally {
+    if (Test-Path -LiteralPath $reportFile) {
+      Remove-Item -LiteralPath $reportFile -Force -ErrorAction SilentlyContinue
+    }
+  }
+
   Write-Host ''
   Write-Host "NOTE 每月一次的【真库全恢复演练】不在本脚本里（它会真删库文件，必须人守着跑）："
   Write-Host "     pnpm exec tsx --env-file=.env scripts/restore-drill.ts --yes"

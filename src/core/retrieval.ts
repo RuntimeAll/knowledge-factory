@@ -7,7 +7,7 @@
  * 两套实现意味着两套口径，而"页面上看得见的题，agent 查不到"是最难查的一类故障。
  *
  * ── 三条轴与它们的分工 ──────────────────────────────────────────────────────
- *   ① SQL 轴（硬过滤）：考点 / 难度 / 题型 / 判档 / 版本 / 状态 / 排除名单。
+ *   ① SQL 轴（硬过滤）：考点 / 难度 / 题型 / 判档 / 版本 / 状态 / 排除名单 / 录入批次。
  *      **它先跑，产出候选 id 集**——这是"能不能要"的问题，答案非黑即白。
  *   ② FTS 轴（关键词）：`question_fts` MATCH，jieba 分词后逐 token 显式 AND。
  *   ③ 向量轴（语意）：`question_vec` 余弦近邻。
@@ -129,9 +129,25 @@ export const STEM_BRIEF_CHARS = 140;
  */
 export const FTS_SCAN_CAP = 5000;
 
-/** 向量轴在候选集内取多深（RRF 要的是"够深的名次表"，不是最终 top-N） */
-function 向量深度(limit: number, candidateCount: number): number {
-  return Math.min(candidateCount, Math.max(limit * 5, 100));
+/**
+ * 向量轴在候选集内取多深（RRF 要的是"够深的名次表"，不是最终 top-N）。
+ *
+ * 🔴🔴 **深度不许跟 limit 走**（2026-08-14 修 · AI:PRD-008 验收缺陷）：
+ *    旧实现是 `max(limit*5, 100)`，而 {@link SearchResult.total} = 融合表长度 ⇒
+ *    同一条查询把 limit 从 20 调到 100，`total` 就从 100 变成 500 ——
+ *    页面为了翻页把 limit 越调越大，于是"命中数"变成了**页码的函数**
+ *    （实测 /api/questions?sem=绝对值 翻到第 5 页，页脚从"共 100 条"长到"共 500 条"）。
+ *    「一次查询命中多少条」必须是查询的属性，翻页不许改它。
+ *
+ * 🔴 改成"候选集内全量"（上限 {@link VECTOR_AXIS_DEPTH}），与 FTS 轴同口径 ——
+ *    FTS 轴本来就是把候选集内的全部命中排进名次表，语意轴没有理由只排前 100。
+ *    代价近乎为零：{@link cosineTopK} 在白名单模式下**本来就要对每个候选点积一次**，
+ *    深度只影响最后那一刀 slice。
+ */
+export const VECTOR_AXIS_DEPTH = 5000;
+
+function 向量深度(candidateCount: number): number {
+  return Math.min(candidateCount, VECTOR_AXIS_DEPTH);
 }
 
 /** IN(...) 一次塞多少个参数（hydrate 时分批，别撞变量数上限） */
@@ -241,6 +257,16 @@ export const searchParamsSchema = z.object({
     .array(z.string().trim().min(1))
     .optional()
     .describe("排除这些题（组卷排重场景）"),
+  /**
+   * 🆕 2026-08-14（AI:PRD-008 验收缺陷 · 设计稿 §二·2 逐项列了「录入批次」这一维）：
+   * 硬过滤到某一次投料。它是**真过滤**（question.ingest_batch_id），不是窗口内筛。
+   */
+  ingestBatchIds: z
+    .array(z.string().trim().min(1))
+    .optional()
+    .describe(
+      "录入批次（any-of，id 形如 batch_01J…，来自 kb_ingest 返回 / get_ingest_batch）：只看这几次投料进来的题",
+    ),
   statuses: z
     .array(z.enum(QUESTION_STATUSES))
     .optional()
@@ -365,11 +391,17 @@ export interface SearchResult {
     keywords: string | null;
     semanticQuery: string | null;
     excludeCount: number;
+    /** 硬过滤到哪几次投料（空 = 不限批次） */
+    ingestBatchIds: string[];
     statuses: string[];
     limit: number;
   };
   hits: SearchHit[];
-  /** 融合后命中总数（**截断前**；hits 只有 limit 条） */
+  /**
+   * 融合后命中总数（**截断前**；hits 只有 limit 条）。
+   * 🔴 它是**查询的属性**，与 limit 无关 —— 同一条查询换个 limit，total 必须一样
+   *    （历史上不是：向量轴深度曾绑在 limit 上，见 {@link VECTOR_AXIS_DEPTH}）。
+   */
   total: number;
   /** SQL 硬过滤留下的候选数 */
   candidateCount: number;
@@ -599,6 +631,12 @@ async function 硬过滤(
     args.push(...excl);
   }
 
+  const batches = p.ingestBatchIds ?? [];
+  if (batches.length > 0) {
+    where.push(`q.ingest_batch_id IN (${占位(batches.length)})`);
+    args.push(...batches);
+  }
+
   const rows = await q<候选行>(
     h,
     `SELECT q.id AS id
@@ -768,7 +806,6 @@ async function 向量轴(
   h: CoreDbHandle,
   semanticQuery: string,
   候选: readonly string[],
-  limit: number,
 ): Promise<向量结果> {
   const st = await vecAxisStatus(h);
   if (!st.ok) {
@@ -785,9 +822,10 @@ async function 向量轴(
 
   try {
     const [qv] = await embedTexts([semanticQuery]);
+    const 深 = 向量深度(候选.length);
     const top = await cosineTopK(qv!, {
       ids: 候选,
-      limit: 向量深度(limit, 候选.length),
+      limit: 深,
       handle: h,
     });
     return {
@@ -798,7 +836,14 @@ async function 向量轴(
       })),
       modelVer: st.modelVer,
       degraded: false,
-      warnings: [],
+      // 🔴 截断了就说：名次表没铺满候选集，末尾那批题这次没进语意轴（不是"它们不像"）
+      warnings:
+        候选.length > 深
+          ? [
+              `语意轴名次表截到 ${深} 条（候选 ${候选.length} 条）——` +
+                "排在后面的候选这次没进语意轴，收窄条件即可让它们进来。",
+            ]
+          : [],
     };
   } catch (e) {
     // 🔴 兜底：前置闸过了但推理/索引仍炸（并发回填、模型文件被换…）。
@@ -1028,7 +1073,7 @@ export async function searchQuestions(
   warnings.push(...fts.warnings);
 
   const vec = vecOn
-    ? await 向量轴(h, p.semanticQuery!, 候选, limit)
+    ? await 向量轴(h, p.semanticQuery!, 候选)
     : { hits: [], modelVer: null, degraded: false, warnings: [] as string[] };
   warnings.push(...vec.warnings);
 
@@ -1095,6 +1140,7 @@ export async function searchQuestions(
       keywords: p.keywords ?? null,
       semanticQuery: p.semanticQuery ?? null,
       excludeCount: (p.excludeQuestionIds ?? []).length,
+      ingestBatchIds: p.ingestBatchIds ?? [],
       statuses: p.statuses ?? [...DEFAULT_STATUSES],
       limit,
     },

@@ -150,13 +150,18 @@ export {
 
 export {
   INTEGRITY_METRIC_KIND,
+  REGRESSION_METRIC_KIND,
   getLatestIntegritySummary,
+  getLatestRegressionSummary,
   parseIntegritySummary,
+  parseRegressionSummary,
   redFlagView,
   type IntegrityCheckItem,
   type IntegritySummary,
   type RedFlagState,
   type RedFlagView,
+  type RegressionGateResult,
+  type RegressionSummary,
 } from "./status";
 
 // ── AI:PRD-008 · P3 系统监控三页的只读列侧（🔴 全程零写，不产生审计行） ────────
@@ -563,6 +568,7 @@ export {
   getSku,
   linkGradingBatch,
   listSkus,
+  listSkusOfQuestion,
   mapGradingTask,
   registerSku,
   registerSkuOutput,
@@ -571,6 +577,7 @@ export {
   type LinkGradingBatchResult,
   type ListSkusOptions,
   type MapGradingTaskResult,
+  type QuestionSkuPlacement,
   type RegisterSkuInput,
   type RegisterSkuOutputInput,
   type RegisterSkuOutputResult,

@@ -1137,6 +1137,64 @@ export async function listSkus(
 }
 
 // ---------------------------------------------------------------------------
+// 反查：一道题进过哪些册子（AI:PRD-008 · 题目详情「归属」tab）
+// ---------------------------------------------------------------------------
+
+/** 一道题在某本册子里的落位 */
+export interface QuestionSkuPlacement {
+  skuId: string;
+  name: string;
+  type: string | null;
+  status: string | null;
+  /** 🔴 sku_item.ord = 卷面题号（学情回流按它对位），不是排序字段 */
+  ord: number;
+  /** 那本册子挂没挂到圣域打卡任务上（null = 没挂桥） */
+  taskId: number | null;
+  createdAt: string | null;
+}
+
+/**
+ * 这道题进过哪些册子、各是第几题。只读。
+ *
+ * 🔴 空数组 = 「它还没被任何一本册子用过」，**不是**「查不到」——
+ *    库存题本来就可以一本册子都没进过（dedup.ts 的 DupHit 也是这个口径）。
+ */
+export async function listSkusOfQuestion(
+  questionId: string,
+  opts: { handle?: CoreDbHandle } = {},
+): Promise<QuestionSkuPlacement[]> {
+  const qid = (questionId ?? "").trim();
+  if (!qid) return [];
+  const h = opts.handle ?? (await getCoreDb());
+
+  const rows = await h.db
+    .select({
+      skuId: sku.id,
+      name: sku.name,
+      type: sku.type,
+      status: sku.status,
+      ord: skuItem.ord,
+      createdAt: sku.createdAt,
+      taskId: gradingTaskMapTable.taskId,
+    })
+    .from(skuItem)
+    .innerJoin(sku, eq(sku.id, skuItem.skuId))
+    .leftJoin(gradingTaskMapTable, eq(gradingTaskMapTable.skuId, sku.id))
+    .where(eq(skuItem.questionId, qid))
+    .orderBy(asc(sku.createdAt), asc(skuItem.ord));
+
+  return rows.map((r) => ({
+    skuId: r.skuId,
+    name: r.name,
+    type: r.type,
+    status: r.status,
+    ord: Number(r.ord),
+    taskId: r.taskId === null || r.taskId === undefined ? null : Number(r.taskId),
+    createdAt: r.createdAt,
+  }));
+}
+
+// ---------------------------------------------------------------------------
 // 私器
 // ---------------------------------------------------------------------------
 
