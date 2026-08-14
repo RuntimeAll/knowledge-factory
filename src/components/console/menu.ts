@@ -49,7 +49,6 @@ export const CONSOLE_MENU: ConsoleMenuGroup[] = [
       {
         path: "/ingest",
         name: "录入批次",
-        todo: true,
         hint: "每次投料的台账 + 闸报告",
       },
     ],
@@ -73,19 +72,16 @@ export const CONSOLE_MENU: ConsoleMenuGroup[] = [
       {
         path: "/sku",
         name: "SKU 台账",
-        todo: true,
         hint: "卖的/备着卖的册子总账",
       },
       {
         path: "/model",
         name: "考察模型",
-        todo: true,
         hint: "exam_model 台账 + 族谱",
       },
       {
         path: "/output",
         name: "产物仓",
-        todo: true,
         hint: "内容寻址仓里的实物件",
       },
     ],
@@ -97,13 +93,11 @@ export const CONSOLE_MENU: ConsoleMenuGroup[] = [
       {
         path: "/student",
         name: "学员名册",
-        todo: true,
         hint: "代号名册（无真名字段）",
       },
       {
         path: "/cause",
         name: "错因管理",
-        todo: true,
         hint: "错因实体 + 映射 + unmapped 红旗",
       },
     ],
@@ -122,25 +116,21 @@ export const CONSOLE_MENU: ConsoleMenuGroup[] = [
       {
         path: "/grading/intake",
         name: "收卷录入",
-        todo: true,
         hint: "选学员 → 传图 → 提交即入队",
       },
       {
         path: "/grading/board",
         name: "批改看板",
-        todo: true,
         hint: "审核.db（mode=ro）+ 编排台账",
       },
       {
         path: "/grading/gate",
         name: "升档判据",
-        todo: true,
         hint: "翻案率/存疑率/风险台账",
       },
       {
         path: "/grading/reports",
         name: "报告架",
-        todo: true,
         hint: "已出件报告取件台",
       },
     ],
@@ -152,13 +142,11 @@ export const CONSOLE_MENU: ConsoleMenuGroup[] = [
       {
         path: "/audit",
         name: "审计日志",
-        todo: true,
         hint: "谁在什么时候动了库",
       },
       {
         path: "/health",
         name: "备份与对账",
-        todo: true,
         hint: "快照 + 对账六项 + 回归",
       },
     ],
@@ -182,6 +170,15 @@ export const HIDDEN_CRUMBS: { prefix: string; group: string; name: string }[] =
     { prefix: "/kg/queue", group: "审查队列", name: "处置台（旧地址）" },
     { prefix: "/queue/quarantine/", group: "审查队列", name: "隔离行处置" },
     { prefix: "/queue/", group: "审查队列", name: "工单处置" },
+    // 生产管理（详情 / 确认页）
+    { prefix: "/sku/", group: "生产管理", name: "SKU 详情" },
+    { prefix: "/model/", group: "生产管理", name: "模型族谱" },
+    // 学情中心（详情 / 确认页）
+    // 🔴 /cause/map、/cause/remap 必须排在这里、且排在任何 `/cause` 泛前缀之前，
+    //    否则确认页会被认成错因管理列表页。
+    { prefix: "/cause/map", group: "学情中心", name: "补错因映射" },
+    { prefix: "/cause/remap", group: "学情中心", name: "改指 / 摘除映射" },
+    { prefix: "/student/", group: "学情中心", name: "学员学情" },
   ];
 
 export interface Crumbs {

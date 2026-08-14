@@ -28,10 +28,14 @@ data/
 db.sqlite
 
 # 本地 ONNX 句向量模型（AI:PRD-004 · 004-A）
-# 🔴 95MB 二进制，绝不进 git。换机/新 clone 跑一次重建：
+# 🔴 91MB 二进制，绝不进 git。换机/新 clone 跑一次重建：
 #    powershell -File scripts/fetch-embed-model.ps1
+# 🔴🔴 只留带锚点的 `/models/`（= 仓根那一个目录）。
+#    曾经这里还有一行**没有锚点**的 `models/`，它会吞掉**任意层级**的同名目录 ——
+#    2026-08-14 集成时实录：新建的 `src/app/api/models/` 在 `git status` 里根本不出现，
+#    提交即静默丢文件（当时改名 `/api/exam-models` 绕开，见 src/app/api/exam-models/route.ts 文件头）。
+#    往下加忽略规则时同理：目录名前面**必须**带 `/`，否则就是给未来埋同一颗雷。
 /models/
-models/
 
 # next.js
 /.next/

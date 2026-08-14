@@ -145,14 +145,14 @@ export default async function WorkbenchPage() {
             label="SKU 册/卷"
             value={typeof skus === "string" ? "读不出" : skuList.length}
             sub={`draft ${draftSku.length}`}
-            todo
+            href="/sku"
           />
         </Col>
         <Col xs={12} sm={8} lg={4}>
           <StatCard
             label="考察模型"
             value={typeof models === "string" ? "读不出" : models.length}
-            todo
+            href="/model"
           />
         </Col>
         <Col xs={12} sm={8} lg={4}>
@@ -160,14 +160,14 @@ export default async function WorkbenchPage() {
             label="学员"
             value={typeof roster === "string" ? "读不出" : roster.length}
             sub="全代号"
-            todo
+            href="/student"
           />
         </Col>
         <Col xs={12} sm={8} lg={4}>
           <StatCard
             label="审计链 seq"
             value={体检?.auditHeadSeq ?? "空链"}
-            todo
+            href="/audit"
           />
         </Col>
       </Row>
@@ -240,21 +240,24 @@ export default async function WorkbenchPage() {
                 </Tag>
               </td>
               <td style={TD}>
-                <span style={{ color: "#909399" }}>SKU 台账待开发</span>
+                {/* 🔴 不带 ?status=draft：/sku 的筛选在 ProTable 里、不读 URL 参数，
+                    给一个不生效的参数等于骗人。到了那页手选一下状态即可。 */}
+                <Link href="/sku">去 SKU 台账 →</Link>
               </td>
             </tr>
           </tbody>
         </table>
       </Card>
 
-      {/* ── 系统底座（明细页 /health 未建之前，这几项留在工作台上）─────────── */}
+      {/* ── 系统底座（一眼摘要；明细全在 /health）───────────────────────── */}
       <Card
         size="small"
         title="系统底座"
         style={{ marginTop: 14 }}
         extra={
           <span style={{ fontSize: 11.5, color: "#909399" }}>
-            备份与对账明细页（/health）待开发，先在这儿摆着——地基不该看不见
+            这里只是摘要 · 快照列表 / 对账六项明细 / 现跑一次对账都在{" "}
+            <Link href="/health">备份与对账 →</Link>
           </span>
         }
       >
