@@ -39,6 +39,11 @@ db.sqlite
 
 # next.js
 /.next/
+# 🔴 生产构建产物（AI:PRD-009 验收修复）：与 dev 的 .next 分家。
+#    共用一个目录时，跑着的 `next dev --turbo` 会覆盖 routes-manifest.json，
+#    `next start` 当场 `TypeError: routesManifest.dataRoutes is not iterable`。
+#    目录名同时写在 next.config.js（distDir）与 scripts/next-prod.mjs（DIST）里。
+/.next-prod/
 /out/
 next-env.d.ts
 

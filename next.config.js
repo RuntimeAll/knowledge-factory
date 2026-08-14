@@ -7,6 +7,25 @@ import "./src/env.js";
 /** @type {import("next").NextConfig} */
 const config = {
   /**
+   * 🔴🔴 生产构建与 dev 各用各的产物目录（AI:PRD-009 验收修复 · 「next start 起不来」）
+   *
+   * 事故形态：`next dev --turbo` 与 `next build` **共用 `.next/`**。dev 在跑的时候
+   * （或跑过之后）做一次生产构建，turbopack dev 会把 `.next/routes-manifest.json`
+   * 改写成它自己那份**精简版**（只有 basePath/headers/redirects/rewrites/version/
+   * caseSensitive 六个键）。而 `next start` 侧对 `routesManifest.dataRoutes` 做 for-of
+   * —— 键压根不存在，当场
+   *     `[TypeError: routesManifest.dataRoutes is not iterable]`，
+   * 探活 curl 返 000。**症状看着像构建产物坏了，其实是两个进程抢同一个目录。**
+   * 🔴 最坑的是 `next build` 自己退出码 0：「build 绿」证明不了「产物起得来」。
+   *
+   * 解法：生产侧（build / start / preview / verify:serve）由 `scripts/next-prod.mjs`
+   * 统一注入 `KF_DIST_DIR=.next-prod`，dev 继续独占 `.next` —— 两边再也不打架，
+   * dev 开着也能构建、也能起生产服务。
+   * 🔴 不设这个环境变量时行为与从前**完全一致**（`.next`），部署链读的还是老路径。
+   */
+  distDir: process.env.KF_DIST_DIR?.trim() ?? ".next",
+
+  /**
    * 🔴 两个**原生模块**（.node 二进制）必须留在 node_modules 里由 require 直接加载，
    *    不能让 Next 的打包器去"分析并内联"它们（AI:PRD-004 · 004-A）：
    *      @node-rs/jieba   分词（napi 绑定 + 5MB 词典）

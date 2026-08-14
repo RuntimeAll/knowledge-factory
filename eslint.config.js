@@ -11,7 +11,9 @@ export default tseslint.config(
   {
     // next-env.d.ts 是 Next 生成的，里面的 triple-slash 引用改不得；
     // data/ 是本地 SQLite 库，drizzle/ 是生成的迁移 SQL。
-    ignores: [".next", "next-env.d.ts", "data", "drizzle"],
+    // 🔴 `.next-prod` = 生产构建产物目录（AI:PRD-009 验收修复：与 dev 的 .next 分家，
+    //    见 next.config.js 的 distDir）。**漏掉它 = lint 去扫生成的 .js，两千多条报错**。
+    ignores: [".next", ".next-prod", "next-env.d.ts", "data", "drizzle"],
   },
   ...compat.extends("next/core-web-vitals"),
   {
