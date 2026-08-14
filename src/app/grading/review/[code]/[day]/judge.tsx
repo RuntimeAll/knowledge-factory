@@ -48,7 +48,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { EmptyHint, STATUS_COLOR, TimeText } from "~/components/console/ui";
+import {
+  EmphasisText,
+  EmptyHint,
+  STATUS_COLOR,
+  TimeText,
+} from "~/components/console/ui";
 import {
   REVIEW_STATUS_LABEL,
   REVIEW_STATUSES,
@@ -359,6 +364,11 @@ export function JudgeBoard({ code, day }: { code: string; day: number }) {
               打回中<b>不能直接确认</b>（审核库.py 的闸：不许绕过重批出件）。 等
               agent 重批完（重批会重新 ingest，轮次 +1），或者你改主意了 →
               点下面的「撤回打回」。
+              <br />
+              🔴 想起来还有别的地方不对？下面那个红按钮现在是
+              <b>「再补一条打回理由…」</b>：在<b>同一轮</b>里再插一条 feedback（
+              审核库.py 的 rework 只拦已确认的批次，这条路本来就通）， agent
+              重批时会看到这一轮下的全部反馈。
             </span>
           }
         />
@@ -453,12 +463,17 @@ export function JudgeBoard({ code, day }: { code: string; day: number }) {
           >
             {只读 ? "改判后再确认一次…" : "确认这批…"}
           </Button>
+          {/* 🔴 2026-08-15 验收修复：这个按钮原来 `打回中` 也置灰 —— 把圣域本来
+              通的一条路堵死了（审核库.py::rework 只拦 confirmed；:7801 对
+              pending/rework 一律给按钮）。打回之后想补一句「第 12 题也不对」，
+              在这儿点不动，就只能回 :7801 或敲命令行。现在放开：已打回时
+              按钮改口为「再补一条打回理由…」，弹层里说清是**同一轮追加**。 */}
           <Button
             danger
-            disabled={busy || 只读 || 打回中}
+            disabled={busy || 只读}
             onClick={() => setModal("rework")}
           >
-            打回重批…
+            {打回中 ? "再补一条打回理由…" : "打回重批…"}
           </Button>
           {打回中 ? (
             <Button disabled={busy} onClick={() => setModal("unrework")}>
@@ -1037,11 +1052,18 @@ function ActionModal(props: {
 
   if (mode === "rework") {
     const 空 = fb.trim() === "";
+    // 🔴 已打回的批次再打一次 = **同一轮追加一条 feedback**（不是新起一轮，
+    //    也不改 status）。两种情形的影响面不一样，弹层必须分开说（检查单 §三·7）。
+    const 补打回 = detail.status === "rework";
     return (
       <Modal
         open
-        title="打回这一批，让 agent 重批？"
-        okText="打回"
+        title={
+          补打回
+            ? `再补一条打回理由（这一批已经是「已打回 · 待重批」）？`
+            : "打回这一批，让 agent 重批？"
+        }
+        okText={补打回 ? "追加这条理由" : "打回"}
         cancelText="再看看"
         okButtonProps={{ danger: true, disabled: 空 }}
         confirmLoading={busy}
@@ -1078,9 +1100,22 @@ function ActionModal(props: {
             </>
           )}
           <p style={{ marginBottom: 6 }}>
-            <b>会发生什么</b>：<code>feedback</code> 插一行（round=
-            {detail.round}）、
-            <code>batches.status</code> → rework。
+            <b>会发生什么</b>：<code>feedback</code>{" "}
+            {补打回 ? "再插一行" : "插一行"}（round={detail.round}）、
+            <code>batches.status</code>{" "}
+            {补打回 ? "仍是 rework（本来就是，不变）" : "→ rework"}。
+            {补打回 ? (
+              <>
+                <br />
+                🔴 这是<b>
+                  同一轮里的追加
+                </b>，不是新起一轮：这一批打回前已有 {detail.openFeedbackCount}{" "}
+                条反馈没被 agent 处理， 加上这条一共{" "}
+                {detail.openFeedbackCount + 1} 条，
+                <b>agent 重批时会一起看到</b>。 （feedback 只有 INSERT
+                没有编辑：要更正上一条的说法，就在这条里把话说全。）
+              </>
+            ) : null}
             <br />
             🔴 <b>轮次现在不变</b>：round 要等 agent 重批（ingest / 直批
             看到上一状态是 rework）时才 +1。
@@ -1156,8 +1191,12 @@ function Receipt({ r }: { r: ReviewWriteResponse }) {
           style={{ marginBottom: 8 }}
           message="失败原因（原文照登）"
           description={
+            // 🔴 三条写路由拒绝时给的人话里带 Markdown 的 `**加粗**` ——
+            //    过 EmphasisText 渲成 <b>，不然星号原样印在拒绝提示里
+            //    （检查单 §三·9）。🔴 CLI 的 stdout/stderr 一律不过它：
+            //    那是圣域的原文，一个字符都不许被渲染层改写。
             <span style={{ fontSize: 12.5, whiteSpace: "pre-wrap" }}>
-              {r.error}
+              <EmphasisText text={r.error} />
             </span>
           }
         />
@@ -1208,7 +1247,7 @@ function Receipt({ r }: { r: ReviewWriteResponse }) {
         <div style={{ fontSize: 12, marginTop: 6, color: "#606266" }}>
           {r.notes.map((n, i) => (
             <div key={i} style={{ wordBreak: "break-all" }}>
-              · {n}
+              · <EmphasisText text={n} />
             </div>
           ))}
         </div>

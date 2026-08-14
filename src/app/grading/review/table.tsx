@@ -259,7 +259,17 @@ export function ReviewQueueTable() {
         }
         pagination={false}
         locale={{
-          emptyText: (
+          // 🔴🔴 取数失败时**绝不许**再出那句绿色的「没有待审核的批次 ✅」——
+          //    读失败与「今天没活儿」在屏幕上必须长得不一样（检查单 §三·2/§三·6）。
+          emptyText: err ? (
+            <EmptyHint>
+              这张表是<b>空的，因为没读出来</b>，不是「没有待审核的批次」——
+              上面那条红色错误里是原文。
+              <br />
+              修好之前<b>别当成今天没活儿</b>：待审批次可能正躺在 审核.db
+              里等人看。
+            </EmptyHint>
+          ) : (
             <EmptyHint>
               没有待审核的批次 ✅ —— 「没有待审」不是「没有批改」：L1/L2
               静默放行的批次直接落 confirmed，
@@ -271,13 +281,43 @@ export function ReviewQueueTable() {
           ),
         }}
         request={async () => {
-          const res = await fetch("/api/grading/review");
-          const j = (await res.json()) as ReviewListResponse;
-          setErr(j.ok ? undefined : j.error);
-          setWarnings(j.warnings);
-          setDbPath(j.gradingDbPath);
-          setConfirmed(j.confirmed);
-          return { data: j.data, total: j.total, success: true };
+          // 🔴🔴 取数的三种失败都要上墙（检查单 §三·2），一种都不许吞：
+          //    ① 路由自己报 ok:false；② HTTP 非 2xx（dev 下路由模块编译失败会返
+          //    500 的 **HTML**，直接 json() 抛的是看不懂的 SyntaxError）；
+          //    ③ fetch 本身抛（服务没起 / 网断）。
+          //    **②③ 不 catch 的话 ProTable 会把它们吞成一张空表** —— 而这张表的
+          //    空态写的是绿色 ✅「没有待审核的批次」：一次读失败在屏幕上长得跟
+          //    「今天没活儿」一模一样，卷子就这么被静默漏审了。
+          //    （components/console/ui.tsx `Unreadable` 那段注释里点名的
+          //      「监督面能犯的最坏的错」，就是这一条。）
+          try {
+            const res = await fetch("/api/grading/review");
+            if (!res.ok) {
+              throw new Error(
+                `GET /api/grading/review 返回 HTTP ${res.status} ${res.statusText}`,
+              );
+            }
+            const j = (await res.json()) as ReviewListResponse;
+            setErr(
+              j.ok ? undefined : (j.error ?? "接口返回 ok=false，但没给原因"),
+            );
+            setWarnings(j.warnings);
+            setDbPath(j.gradingDbPath);
+            setConfirmed(j.confirmed);
+            return { data: j.data, total: j.total, success: true };
+          } catch (e) {
+            // 🔴 清掉上一轮的成功态：不清的话，页尾「近期已确认」会留着旧数据，
+            //    看起来像「队列空了但确认过的还在」，比空表更误导。
+            setWarnings([]);
+            setDbPath(null);
+            setConfirmed([]);
+            setErr(
+              `待审队列没取回来（不是「没有待审」）：${
+                e instanceof Error ? `${e.name}: ${e.message}` : String(e)
+              }`,
+            );
+            return { data: [], total: 0, success: true };
+          }
         }}
       />
 
@@ -285,10 +325,24 @@ export function ReviewQueueTable() {
 
       <div style={{ marginTop: 12, fontSize: 11.5, color: "#909399" }}>
         {/* 🔴 AI:PRD-009 打磨（检查单 §三·9 文案）：这里原来写的是 Markdown 的
-            `**可退役的旧 UI**` —— JSX 不认 Markdown，星号是原样印在页面上的。 */}
-        旧审核台（{REVIEW_CONSOLE_URL}，PRD-027 自己的进程）从本卡起是
-        <b>可退役的旧 UI</b> —— 终审全流程已在本页闭环，写仍由圣域的 审核库.py
-        落库，它开不开都不影响。
+            `**可退役的旧 UI**` —— JSX 不认 Markdown，星号是原样印在页面上的。
+            🔴🔴 验收修复（2026-08-15）：原文还写着「它开不开都不影响」——**说过头了**。
+            退役的只是**终审这一段 UI**；:7801 那个进程（审核台.py）同时还挂着
+            /board + /api/board（每日打卡运营看板）、/paper（卷子·题单预览）、
+            /api/enroll + /api/slot（学员占位与占位流转）五个端点，那几件事 009
+            **没有内化**（是划界，不是遗漏，逐条见 prd/PRD-009/给027的CLI需求清单.md §二）。
+            照「都不影响」去关掉它，会连带打掉打卡看板与占位流转。 */}
+        旧审核台（{REVIEW_CONSOLE_URL}，PRD-027 自己的进程）里的
+        <b>终审那一段</b>从本卡起可以不用了 ——
+        终审全流程已在本页闭环，写仍由圣域的 审核库.py 落库。
+        <br />
+        🔴 但<b>别把那个进程关掉</b>：同一个 审核台.py 还提供{" "}
+        <b>每日打卡运营看板</b>（/board）、<b>卷子/题单预览</b>（/paper）、
+        <b>学员占位与状态流转</b>（/api/enroll、/api/slot）—— 这几件 009{" "}
+        <b>没有内化</b>（划界，见 给027的CLI需求清单.md §二）。 本站的{" "}
+        <Link href="/grading/board">批改看板</Link> 读的是 审核.db 的{" "}
+        <code>batches</code> + 收件箱队列，与那边看板的 <code>tasks</code>/
+        <code>slots</code> 是<b>同库两本账</b>，不构成替代。
       </div>
     </>
   );

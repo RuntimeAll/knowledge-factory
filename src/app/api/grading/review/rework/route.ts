@@ -78,19 +78,32 @@ export async function POST(req: Request): Promise<NextResponse> {
         "那条原语**不在管理台的白名单里**：它要跑锚定闸、读转录 JSON、整批 DELETE+INSERT 覆盖 items，是产线执行权。",
     );
   }
-  if (d.status === "rework") {
-    // CLI 允许对 rework 的批次再打回一次（会再插一条 feedback）。不拦，但要说清楚。
-    return 拒(
-      `「${student} 第${day}天」已经是**已打回 · 待重批**（第 ${d.round} 轮，` +
-        `${d.openFeedbackCount} 条反馈还没被 agent 处理）。再打一次只会在同一轮里多插一条反馈 ——` +
-        "要补充说明，建议直接改在原来那条里说不清的地方（或等重批完再看）。",
-    );
-  }
+  // 🔴🔴 已 rework 的批次**照样放行**（2026-08-15 验收修复）。
+  //
+  //   原实现在这儿 `return 拒(...)`，注释写的却是「CLI 允许…不拦，但要说清楚」——
+  //   注释与代码相反，等于把圣域本来通的一条路在管理台这边堵死了：
+  //     · 圣域 审核库.py::rework 只 assert `status != 'confirmed'`（第 319-320 行），
+  //       rework 状态可以再插一条 feedback；
+  //     · :7801 审核台.py 的「打回重批」按钮对 pending/rework 两种批次一律渲染，
+  //       那条路在旧 UI 上是通的。
+  //   而给出的替代指引（「建议直接改在原来那条里」）在**任何 UI 里都做不到** ——
+  //   feedback 只有 INSERT，管理台没有编辑入口。结果是：打回后想补一句
+  //   「第 12 题也不对」，只能回 :7801 或敲命令行 —— 正撞设计稿 §五·2
+  //   「:7801 不再需要打开」这条判据。
+  //   🔴 所以这里不拦，只把「会多插一条、轮次不动」写进回执 notes。
+  const 补打回 = d.status === "rework";
 
   const run = await runReviewCli("rework", [student, String(day), body文]);
   const { after, note } = await 复核(student, day);
   const notes: string[] = [];
   if (note) notes.push(note);
+  if (补打回) {
+    notes.push(
+      `这一批本来就是**已打回 · 待重批**（第 ${d.round} 轮，打回前有 ${d.openFeedbackCount} 条反馈还没被 agent 处理）——` +
+        "本次是在**同一轮里追加一条** feedback，不是新起一轮；status 仍是 rework。" +
+        "agent 重批时会看到这一轮下的**全部**反馈。",
+    );
+  }
   notes.push(
     "🔴 打回**不动轮次**：round 要等 agent 重批（ingest/直批 看到上一状态是 rework）时才 +1。",
   );
