@@ -8,6 +8,27 @@
  *    挂桥靠代号字符串对上（core/cause.ts upsertRoster 的口径），写成真名桥当场断。
  */
 
+/**
+ * 「最近一次」= **批次号最大的那条**（圣域 batches.id 自增，序 = 时序）。
+ *
+ * 🔴 2026-08-14 修（验收判红）：原实现在 `/api/student` 里按 `exported_at` 排、
+ *    时间相等才退批次号 —— 而 `exported_at` 可空（批改完还没出件的批次就是 NULL）。
+ *    `null → ""` 排在最前 = 被当成**最早**，于是「刚批完还没出件」的那一批取不到，
+ *    名册页的「最近打卡 / 最近得分」两列会静默显示上一次的旧卷与旧分数
+ *    （看的人完全无从察觉，这是最难发现的一类错）。
+ * 🔴 顺带把尺子统一：`/student/[code]` 的批次表就是 `batchId` 倒序排的。
+ *    两页的「最近」指向不同批次，比两页都错还难查。
+ *    出件时间只作**展示**（lastAt 可能是 null，那就如实显示「还没出件」）。
+ * 🔴 放在 shared.ts 而不是 route 里，只为一件事：**它测得到**
+ *    （route 内部的非导出函数没法单测，而这正是它当初错了没人发现的原因）。
+ */
+export function pickLatestBatch<T extends { batchId: number }>(
+  rows: readonly T[],
+): T | null {
+  if (rows.length === 0) return null;
+  return [...rows].sort((a, b) => b.batchId - a.batchId)[0]!;
+}
+
 /** 一次打卡的判定计数（🔴 题数口径：total = 判定行数 − skip，16/19 而不是 16/20） */
 export interface StudentScore {
   ok: number;

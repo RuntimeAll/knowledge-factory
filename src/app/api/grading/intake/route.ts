@@ -30,7 +30,7 @@ import {
 
 import { NextResponse } from "next/server";
 
-import { listRoster, nowLocalISO } from "~/core";
+import { bridgeBatches, listRoster, nowLocalISO } from "~/core";
 import {
   MAX_PHOTOS,
   MAX_PHOTO_BYTES,
@@ -182,6 +182,15 @@ export async function POST(req: Request): Promise<NextResponse> {
       `代号 ${JSON.stringify(codeRaw)} 不能当目录名（含路径分隔符 / 上跳 / 控制字符，或太长）。`,
     );
   }
+  // ── 代号必须**认得出来**：名册 ∪ 圣域里出现过的代号 ────────────────────────
+  //
+  // 🔴🔴 2026-08-14 修（验收判红）：原来只认 roster（4 人），而批改线现役是 6 人 ——
+  //    「困呆眠」「小宇川奈子」当天刚出批次和报告，却在本页选不到、提交也被硬拒。
+  //    这页是设计稿定义的「你唯一的动作」，对 1/3 现役学员不可用是硬伤。
+  //    ⇒ 认「圣域 batches.student 里出现过」的代号：他们本来就是真学员（交过卷），
+  //      而这道闸真正要防的是**手打错字建出一个幽灵目录**，不是防没登记名册的人。
+  //    ⇒ 但要**说一声**（notes）：没登记名册 = 选题台/交付指向拿不到年级与版本语境。
+  const 注记: string[] = [];
   let 名册: { code: string }[];
   try {
     名册 = await listRoster();
@@ -189,9 +198,32 @@ export async function POST(req: Request): Promise<NextResponse> {
     return 拒(`读 roster 失败（代号得先对得上名册才敢建目录）：${原文(e)}`);
   }
   if (!名册.some((r) => r.code === code)) {
-    return 拒(
-      `roster 里没有代号「${code}」—— 收件箱按代号分目录，先把人登记进名册（upsertRoster，🔴 只落代号不落真名）再收卷。` +
-        `现有代号：${名册.map((r) => r.code).join("、") || "（一个都没有）"}`,
+    let 圣域代号: string[] = [];
+    let 圣域错: string | null = null;
+    try {
+      const b = await bridgeBatches();
+      圣域代号 = [
+        ...new Set(
+          b.batches
+            .map((x) => x.student)
+            .filter((s): s is string => !!s && s.trim() !== ""),
+        ),
+      ];
+    } catch (e) {
+      圣域错 = 原文(e);
+    }
+    if (!圣域代号.includes(code)) {
+      return 拒(
+        `认不出代号「${code}」—— 名册里没有，圣域（审核.db）也没有他的批次。` +
+          "收件箱按代号分目录，认不出的代号多半是打错字（建出来就是个没人管的幽灵目录）。\n" +
+          `名册代号：${名册.map((r) => r.code).join("、") || "（一个都没有）"}\n` +
+          `圣域出现过的代号：${圣域代号.join("、") || (圣域错 ? `（读不出来：${圣域错}）` : "（一个都没有）")}\n` +
+          "真是新学员：先 upsertRoster 登记（🔴 只落代号不落真名）再收卷。",
+      );
+    }
+    注记.push(
+      `代号「${code}」只在圣域出现过，roster 里没登记 —— 收件照收（学情事实全在圣域），` +
+        "但选题台/交付指向拿不到他的年级与版本语境。补登记走 upsertRoster（agent/MCP），页面上不做。",
     );
   }
 
@@ -311,6 +343,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     saved,
     line: lineText,
     queuePath,
+    ...(注记.length > 0 ? { notes: 注记 } : {}),
   };
   return NextResponse.json(body);
 }

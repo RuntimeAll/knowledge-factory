@@ -18,10 +18,12 @@
  * 🔴 「快照的验证结果」如实空着：listBackups 只 stat 文件，没打开过它们。
  *    在这一栏编一个「有效」是这页最不该干的事 —— 验证是 backup-verify.ts 的活
  *    （它会出一份新快照再用另一段代码独立打开数一遍），命令就在卡片里。
- * 🔴 「回归 11 关最近一跑」拿不到：regression.ps1 只打控制台 + 退出码，
- *    战报不落库也不落文件。所以这块**只给跑法**，不假装有个最近结果。
+ * 🔴 「回归 11 关最近一跑」**现在有数据了**（2026-08-14 修）：regression.ps1 跑完
+ *    会把汇总表写成 metric_event(kind=regression)，本页读最近一行 ——
+ *    照旧不在页面上触发回归（那是十几分钟的事，且它自己会写库）。
+ *    没跑过就如实说「没跑过」，绝不画一个看起来像真的假结果。
  */
-import { Alert, Card, Col, Row, Tag } from "antd";
+import { Alert, Card, Col, Row, Tag, Tooltip } from "antd";
 
 import {
   CopyCmd,
@@ -29,7 +31,12 @@ import {
   EmptyHint,
   TimeText,
 } from "~/components/console/ui";
-import { getLatestIntegritySummary, health, listBackups } from "~/core";
+import {
+  getLatestIntegritySummary,
+  getLatestRegressionSummary,
+  health,
+  listBackups,
+} from "~/core";
 import { IntegrityRecheck } from "./recheck";
 import { CHECK_IDS, CHECK_TITLE } from "./shared";
 
@@ -67,15 +74,17 @@ const TD: React.CSSProperties = {
 };
 
 export default async function HealthPage() {
-  const [h, integ, snaps] = await Promise.all([
+  const [h, integ, snaps, reg] = await Promise.all([
     safe(() => health()),
     safe(() => getLatestIntegritySummary()),
     safe(() => listBackups({ limit: 20 })),
+    safe(() => getLatestRegressionSummary()),
   ]);
 
   const 体检 = typeof h === "string" ? null : h;
   const 对账 = typeof integ === "string" ? null : integ;
   const 快照 = typeof snaps === "string" ? [] : snaps;
+  const 回归 = typeof reg === "string" ? null : reg;
 
   return (
     <>
@@ -106,7 +115,8 @@ export default async function HealthPage() {
         <span style={{ marginLeft: "auto", textAlign: "right" }}>
           <DataSourceNote>
             core.health / core.getLatestIntegritySummary（metric_event 的
-            integrity_check 最近一行）/ core.listBackups（data/backup/）
+            integrity_check 最近一行）/ core.listBackups（data/backup/）/
+            core.getLatestRegressionSummary（metric_event 的 regression 最近一行）
           </DataSourceNote>
         </span>
       </div>
@@ -309,14 +319,98 @@ export default async function HealthPage() {
         size="small"
         title="回归 11 关（最近一跑）"
         style={{ marginBottom: 14 }}
+        extra={
+          <span style={{ fontSize: 11.5, color: "#909399" }}>
+            读 metric_event(kind=regression) 最近一行 —— 本页**不跑**回归（十几分钟
+            + 它自己会写库），只显示上一跑留下的账
+          </span>
+        }
       >
-        <EmptyHint>
-          🔴 拿不到：regression.ps1 只往控制台打逐关 [PASS]/[FAIL]，退出码 =
-          失败关数 —— 战报既不落库也不落文件，所以本页没有可显示的「最近一跑」。
-          <br />
-          与其画一个看起来像真的假结果，不如把跑法摆在这儿。要让这块长出真数据，
-          得先让 regression.ps1 把汇总写进 metric_event（那是另一张卡的事）。
-        </EmptyHint>
+        {typeof reg === "string" ? (
+          <Alert
+            type="error"
+            showIcon
+            style={{ marginBottom: 10 }}
+            message={`回归战报读不出来：${reg}`}
+          />
+        ) : null}
+
+        {回归 ? (
+          <>
+            <div style={{ marginBottom: 8, fontSize: 12.5 }}>
+              <Tag color={回归.ok ? "green" : "red"}>
+                {回归.ok
+                  ? `全绿 · ${回归.passed}/${回归.total} 关`
+                  : `🔴 ${回归.failed} 关红 · ${回归.passed}/${回归.total} 关绿`}
+              </Tag>
+              {回归.only ? (
+                <Tooltip title="这一跑是 -Only 单关跑，不能当成「全量回归通过」">
+                  <Tag color="orange">-Only {回归.only}（不是全量）</Tag>
+                </Tooltip>
+              ) : null}
+              <span style={{ color: "#909399" }}>
+                最近一跑：
+                <TimeText iso={回归.ts} />
+                （{回归.secs}s · metric_event #{回归.metricId}）
+              </span>
+            </div>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr>
+                  <th style={{ ...TH, width: 92 }}>关</th>
+                  <th style={TH}>名称</th>
+                  <th style={{ ...TH, width: 72 }}>耗时</th>
+                  <th style={{ ...TH, width: 90 }}>结果</th>
+                </tr>
+              </thead>
+              <tbody>
+                {回归.gates.map((g) => (
+                  <tr key={g.id}>
+                    <td style={TD}>
+                      <b>{g.id}</b>
+                    </td>
+                    <td style={TD}>
+                      {g.name}
+                      {g.reason ? (
+                        <div
+                          style={{
+                            color: "#c45656",
+                            whiteSpace: "pre-wrap",
+                            marginTop: 2,
+                          }}
+                        >
+                          原因：{g.reason}
+                        </div>
+                      ) : null}
+                    </td>
+                    <td style={{ ...TD, fontVariantNumeric: "tabular-nums" }}>
+                      {g.secs}s
+                    </td>
+                    <td style={TD}>
+                      {g.ok ? (
+                        <Tag color="green">PASS</Tag>
+                      ) : (
+                        <Tag color="red">FAIL</Tag>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div style={{ marginTop: 8, fontSize: 11.5, color: "#909399" }}>
+              🔴 这是**上一跑**的账，不是此刻的结论：库/代码在这之后改过的话，
+              它只说明「那时候是这样」。要现在的结论就照下面第③条命令再跑一轮。
+            </div>
+          </>
+        ) : typeof reg === "string" ? null : (
+          <EmptyHint>
+            还没有战报（metric_event 里没有 kind=regression 的行）。
+            <br />
+            🔴 「没有战报」不等于「回归没过」—— 它只说明这库还没跑过一轮带落账的回归
+            （2026-08-14 之前的跑法不写账）。照下面第③条命令跑一轮就有了。
+          </EmptyHint>
+        )}
+
         <div style={{ marginTop: 10, fontSize: 12, color: "#606266" }}>
           十一关 = A3a 静态 · A3b 依赖探针 · A1 对账 · A2 审计链 · TEST 单测全量
           · B KG 金标 · C 录题+产线 · D 检索 · E 产线流程与族谱 · F 学情读侧 ·
@@ -336,7 +430,7 @@ export default async function HealthPage() {
             cmd="pnpm exec tsx --env-file=.env scripts/integrity-check.ts"
           />
           <CopyCmd
-            label="③ 回归（十一关全量，任一关红了也跑完）"
+            label="③ 回归（十一关全量，任一关红了也跑完；跑完战报落库，上面那块就更新）"
             cmd="powershell -File scripts/regression.ps1"
           />
         </div>

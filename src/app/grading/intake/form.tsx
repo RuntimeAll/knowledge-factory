@@ -52,6 +52,8 @@ export interface IntakeFormProps {
     editionCtx: string | null;
     status: string | null;
   }[];
+  /** 🔴 圣域里交过卷、但名册没登记的代号（他们照样能收卷，见 page.tsx 文件头） */
+  strays: string[];
   rosterError?: string;
   inboxDir: string;
   queuePath: string;
@@ -64,6 +66,7 @@ export function IntakeForm(props: IntakeFormProps) {
   const [files, setFiles] = useState<UploadFile[]>([]);
   const [busy, setBusy] = useState(false);
   const [res, setRes] = useState<IntakeSubmitResponse | null>(null);
+  const [recentErr, setRecentErr] = useState<string | undefined>(undefined);
   const actionRef = useRef<ActionType>(null);
 
   const 超量 = files.length > MAX_PHOTOS;
@@ -255,6 +258,11 @@ export function IntakeForm(props: IntakeFormProps) {
                   <code style={{ fontSize: 11.5 }}>{res.line}</code>
                 </div>
               ) : null}
+              {(res.notes ?? []).map((n, i) => (
+                <div key={i} style={{ color: "#e6a23c" }}>
+                  ⚠ {n}
+                </div>
+              ))}
               {res.ok ? (
                 <div>
                   下一步不用你管：watcher 判稳后自动认卷开批，存疑才推送你。
@@ -279,19 +287,39 @@ export function IntakeForm(props: IntakeFormProps) {
           <span style={{ fontSize: 13 }}>
             学员{" "}
             <Select
-              style={{ minWidth: 200 }}
-              placeholder="选代号（roster 名册）"
+              style={{ minWidth: 240 }}
+              placeholder="选代号（名册 ∪ 圣域交过卷的）"
               value={code}
               onChange={setCode}
               showSearch
               optionFilterProp="label"
-              options={props.roster.map((r) => ({
-                value: r.code,
-                label: `${r.code}${r.grade ? ` · ${r.grade}` : ""}${
-                  r.editionCtx ? ` · ${r.editionCtx}` : ""
-                }${r.status && r.status !== "active" ? ` · ${r.status}` : ""}`,
-              }))}
-              notFoundContent="roster 里没有人 —— 先登记名册（upsertRoster，只落代号）"
+              // 🔴 两组分开摆：没登记名册的人照样能收卷（学情事实全在圣域），
+              //    但得让人看见"这个人名册里没有"，而不是静默混在一起。
+              options={[
+                {
+                  label: "名册（roster）",
+                  options: props.roster.map((r) => ({
+                    value: r.code,
+                    label: `${r.code}${r.grade ? ` · ${r.grade}` : ""}${
+                      r.editionCtx ? ` · ${r.editionCtx}` : ""
+                    }${
+                      r.status && r.status !== "active" ? ` · ${r.status}` : ""
+                    }`,
+                  })),
+                },
+                ...(props.strays.length > 0
+                  ? [
+                      {
+                        label: "圣域交过卷 · 名册没登记",
+                        options: props.strays.map((c) => ({
+                          value: c,
+                          label: `${c} · 未登记名册`,
+                        })),
+                      },
+                    ]
+                  : []),
+              ]}
+              notFoundContent="名册与圣域都没有这个代号 —— 真是新学员就先 upsertRoster 登记（只落代号）"
             />
           </span>
           <span style={{ fontSize: 13 }}>
@@ -390,6 +418,22 @@ export function IntakeForm(props: IntakeFormProps) {
       </Card>
 
       <div style={{ marginTop: 14 }}>
+        {/* 🔴 2026-08-14 修：GET 的 ok=false 以前被整段吞掉，页面照样渲染空态
+            「还没有收件记录……这不是故障」——读不出来被谎报成没数据。
+            与 /grading/board、/grading/reports 两页同一个做法：错误上墙、原文照登。 */}
+        {recentErr ? (
+          <Alert
+            type="error"
+            showIcon
+            style={{ marginBottom: 10 }}
+            message="最近录入读不出来（原文照登）——下面那张表是空的，不代表没收过件"
+            description={
+              <span style={{ fontSize: 12.5, whiteSpace: "pre-wrap" }}>
+                {recentErr}
+              </span>
+            }
+          />
+        ) : null}
         <ProTable<IntakeRecentRow>
           actionRef={actionRef}
           rowKey="lineNo"
@@ -419,7 +463,12 @@ export function IntakeForm(props: IntakeFormProps) {
             <DataSourceNote key="src">{props.queuePath}</DataSourceNote>,
           ]}
           locale={{
-            emptyText: (
+            emptyText: recentErr ? (
+              <EmptyHint>
+                🔴 这张表空着是因为**读不出来**（原文见上面那条红条），
+                不是「还没有收件记录」。
+              </EmptyHint>
+            ) : (
               <EmptyHint>
                 还没有收件记录 ——
                 收件箱队列文件不存在或还没有行。第一次提交时自动建，这不是故障。
@@ -427,9 +476,20 @@ export function IntakeForm(props: IntakeFormProps) {
             ),
           }}
           request={async () => {
-            const r = await fetch("/api/grading/intake");
-            const j = (await r.json()) as IntakeRecentResponse;
-            return { data: j.data, total: j.total, success: true };
+            try {
+              const r = await fetch("/api/grading/intake");
+              const j = (await r.json()) as IntakeRecentResponse;
+              setRecentErr(j.ok ? undefined : j.error);
+              return { data: j.data, total: j.total, success: true };
+            } catch (e) {
+              // 请求本身没发出去/没回来：同样上墙，不静默变空表
+              setRecentErr(
+                `请求没发出去（或没回来）：${
+                  e instanceof Error ? `${e.name}: ${e.message}` : String(e)
+                }`,
+              );
+              return { data: [], total: 0, success: true };
+            }
           }}
         />
       </div>

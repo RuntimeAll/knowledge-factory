@@ -5,9 +5,13 @@
  *
  * 上 = error_cause 实体表 ｜ 中 = err_code_map 复合键映射表 ｜ 下 = unmapped 红旗队列。
  *
- * 🔴 写操作只有一类（白名单五类之一「补错因映射」），而且**全部走确认页**：
- *    列表上的按钮只是链接，真正的写在 `/cause/map`（补映射）与 `/cause/remap`
- *    （改指 / 摘除）上按第二次才发生。错因实体的建/退役页面不做（agent/MCP 的活）。
+ * 🔴 写操作只有一类（白名单五类之一「补错因映射」），而且**走确认页**：
+ *    红旗那一列的按钮只是链接，真正的写在 `/cause/map`（补映射）上按第二次才发生。
+ * 🔴🔴 **改指 / 摘除已下线**（2026-08-14，验收判红）：设计稿 §二·13 的操作列只点名
+ *    「补映射（表单调 mapErrCode）」，§六 D2 的写操作白名单五类里也只有「补错因映射」——
+ *    删 err_code_map 行是白名单之外的破坏性写入口，做法再周全（二次确认、审计全有）
+ *    也超出了本页的职责范围。要改一条映射：走 agent/MCP（core 的 unmapErrCode + mapErrCode），
+ *    页面不给这个口子。错因实体的建/退役同理，页面不做。
  * 🔴 unmapped = 0 时给绿横幅，但**必须同时印覆盖口径**：0 条红旗只覆盖挂上桥的
  *    批次，不等于「所有错都有归因」。「没有数据」不是「没有错误」。
  * 🔴 err_code_map 表里没有「据」这一列 —— 本页那一栏摆的是能指得回去的东西：
@@ -130,6 +134,7 @@ export function CausePanels(props: CausePanelsProps) {
       title: "据（谁定的 · 来源正本）",
       dataIndex: "mappedBy",
       width: 250,
+      sorter: (a, b) => (a.mappedAt ?? "").localeCompare(b.mappedAt ?? ""),
       render: (_, r) => (
         <div style={{ fontSize: 12 }}>
           <span>{r.mappedBy ?? "没记谁定的"}</span> ·{" "}
@@ -140,21 +145,8 @@ export function CausePanels(props: CausePanelsProps) {
         </div>
       ),
     },
-    {
-      title: "操作",
-      valueType: "option",
-      key: "option",
-      width: 120,
-      fixed: "right",
-      render: (_, r) => [
-        <Link
-          key="remap"
-          href={`/cause/remap?kp=${encodeURIComponent(r.kpId)}&code=${encodeURIComponent(r.errCode)}`}
-        >
-          改指 / 摘除…
-        </Link>,
-      ],
-    },
+    // 🔴 这张表**没有操作列**：改指/摘除是白名单之外的破坏性写（见文件头），
+    //    页面只读。别再往这儿加按钮了。
   ];
 
   const 红旗列: ProColumns<UnmappedRow>[] = [

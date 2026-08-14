@@ -22,6 +22,7 @@ import {
   health,
   kgOverview,
   listBackups,
+  listIngestBatches,
   listModels,
   listQuarantine,
   listRoster,
@@ -63,7 +64,7 @@ const TD: React.CSSProperties = {
 };
 
 export default async function WorkbenchPage() {
-  const [q, kg, skus, models, roster, h, byKind, qr, integ, backups] =
+  const [q, kg, skus, models, roster, h, byKind, qr, integ, backups, batches] =
     await Promise.all([
       // 🔴 题目总数走检索层的候选计数（core 没有单独的 count 口子，而检索是唯一入口）：
       //    状态/判档都放全，拿到的就是全库题数；metric:false = 这一下不落打点。
@@ -86,6 +87,8 @@ export default async function WorkbenchPage() {
       safe(() => listQuarantine({ state: "open", limit: 500 })),
       safe(() => getLatestIntegritySummary()),
       safe(() => listBackups({ limit: 3 })),
+      // 设计稿 §二·1 的快捷入口第三件：最近 5 个录入批次（core 早就有这个只读函数）
+      safe(() => listIngestBatches({ limit: 5 })),
     ]);
 
   const 题数 = typeof q === "string" ? "读不出" : q.candidateCount;
@@ -99,6 +102,7 @@ export default async function WorkbenchPage() {
   const 体检 = typeof h === "string" ? null : h;
   const 对账 = typeof integ === "string" ? null : integ;
   const 快照 = typeof backups === "string" ? [] : backups;
+  const 最近批次 = typeof batches === "string" ? [] : batches;
 
   return (
     <>
@@ -247,6 +251,101 @@ export default async function WorkbenchPage() {
             </tr>
           </tbody>
         </table>
+      </Card>
+
+      {/* ── 最近 5 个录入批次（设计稿 §二·1 快捷入口第三件）──────────────── */}
+      <Card
+        size="small"
+        title="最近 5 个录入批次"
+        style={{ marginTop: 14 }}
+        extra={
+          <span style={{ fontSize: 11.5, color: "#909399" }}>
+            投料的台账 —— 明细/闸报告在{" "}
+            <Link href="/ingest">录入批次 →</Link>
+          </span>
+        }
+      >
+        {typeof batches === "string" ? (
+          <Alert
+            type="error"
+            showIcon
+            message={`录入批次读不出来：${batches}`}
+          />
+        ) : 最近批次.length === 0 ? (
+          <div style={{ fontSize: 12.5, color: "#606266" }}>
+            一次投料都没有（ingest_batch 空表）。🔴
+            「没有批次」不等于「库里没题」—— 手工/脚本直写进来的题不留批次账；
+            走 <code>pnpm kb:submit</code> 的每一次投料才在这张表上。
+          </div>
+        ) : (
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                <th style={TH}>批次 / 来源</th>
+                <th style={{ ...TH, width: 210 }}>进多少 / 拒多少</th>
+                <th style={{ ...TH, width: 96 }}>状态</th>
+                <th style={{ ...TH, width: 120 }}>时间</th>
+                <th style={{ ...TH, width: 110 }}>入口</th>
+              </tr>
+            </thead>
+            <tbody>
+              {最近批次.map((b) => (
+                <tr key={b.id}>
+                  <td style={TD}>
+                    <span style={{ fontSize: 12.5 }}>{b.source}</span>
+                    <div
+                      style={{
+                        color: "#909399",
+                        fontFamily: "Consolas, Menlo, monospace",
+                        fontSize: 11.5,
+                      }}
+                    >
+                      {b.id}
+                    </div>
+                  </td>
+                  <td style={{ ...TD, fontSize: 12.5 }}>
+                    <Tag color="green">进 {b.counts.accepted}</Tag>
+                    {b.counts.queued > 0 ? (
+                      <Tag color="orange">待审 {b.counts.queued}</Tag>
+                    ) : null}
+                    {b.counts.rejected > 0 ? (
+                      <Tag color="red">拒 {b.counts.rejected}</Tag>
+                    ) : null}
+                    <span style={{ color: "#909399" }}>
+                      / 共 {b.counts.total}
+                    </span>
+                    {b.quarantineOpen > 0 ? (
+                      <div style={{ color: "#c45656" }}>
+                        隔离区还有 {b.quarantineOpen} 条没结
+                      </div>
+                    ) : null}
+                  </td>
+                  <td style={TD}>
+                    <Tag
+                      color={
+                        b.status === "committed"
+                          ? "green"
+                          : b.status === "failed"
+                            ? "red"
+                            : "orange"
+                      }
+                    >
+                      {b.status ?? "状态未记"}
+                    </Tag>
+                  </td>
+                  <td style={{ ...TD, fontSize: 12.5 }}>
+                    <TimeText iso={b.committedAt ?? b.createdAt} />
+                  </td>
+                  <td style={TD}>
+                    <Link href={`/ingest?batch=${encodeURIComponent(b.id)}`}>
+                      看这一批 →
+                    </Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </Card>
 
       {/* ── 系统底座（一眼摘要；明细全在 /health）───────────────────────── */}

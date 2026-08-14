@@ -6,7 +6,9 @@
  *
  * ════════════════════════════════════════════════════════════════════════════
  * 🔴🔴 三个率**全部现算**（审核.db mode=ro 逐行读、JS 里算），一个都不许硬编码：
- *      翻案率   = 用户终审 ≠ agent 预判 的题次 / agent 非存疑且已终审 的题次
+ *      翻案率   = 用户终审 ≠ agent 预判 的题次 / **人工**终审且非存疑 的题次
+ *                🔴 分母摘掉 L1静默批次（batches.auto 非空）：那些的终审值是机器
+ *                   自己抄的预判，final ≡ pre 是结构决定的（2026-08-14 验收判红修）
  *      存疑率   = agent 标存疑（?/doubt/missing）的题次 / 全部判定行
  *      静默放行 = batches.auto 非空 的批次 / 已 confirmed 的批次
  *   分母为 0 一律显示「数据不足」，绝不显示 0% 或 100%（1 例算成 100% 是最常见的骗术）。
@@ -36,9 +38,20 @@ const L1_WINDOW_DAYS = 14;
 const WEEK_DAYS = 7;
 
 interface Rates {
-  /** 翻案：非存疑且已终审的题次里，终审与预判不一致的 */
+  /** 翻案：非存疑且已终审的题次里，终审与预判不一致的（含静默批次，见下） */
   flips: number;
   judged: number;
+  /**
+   * 🔴🔴 **人工终审**口径（2026-08-14 修 · 验收判红）：把 `batches.auto` 非空的批次
+   *    （L1静默放行）从分母里摘出去 —— 那些批次的 verdict_final 是产线**照抄机器预判**
+   *    写进去的（直批.py:363 `DB.confirm(..., {qno: verdict}, auto='L1静默')`），
+   *    final ≡ pre 是结构决定的，人从来没看过。把它们算进「零翻案」等于拿机器
+   *    自己给自己打的分去支撑升 L2。判据①只认这一对数。
+   */
+  flipsHuman: number;
+  judgedHuman: number;
+  /** 被摘出去的那部分（静默批次里已终审的非存疑题次）——如实摆出来，不闷声扣掉 */
+  judgedAuto: number;
   doubt: number;
   items: number;
   autoBatches: number;
@@ -52,6 +65,9 @@ interface Rates {
 const 空率: Rates = {
   flips: 0,
   judged: 0,
+  flipsHuman: 0,
+  judgedHuman: 0,
+  judgedAuto: 0,
   doubt: 0,
   items: 0,
   autoBatches: 0,
@@ -125,6 +141,10 @@ export default async function GradingGatePage() {
     const 建于 = new Map(
       batches.map((b) => [Number(b.id), b.created_at ?? null] as const),
     );
+    // 🔴 静默放行的批次（batches.auto 非空）：它们的终审值没有人看过
+    const 静默批次 = new Set(
+      batches.filter((b) => !!b.auto).map((b) => Number(b.id)),
+    );
 
     function 算(窗: (createdAt: string | null) => boolean): Rates {
       const r: Rates = { ...空率 };
@@ -152,8 +172,16 @@ export default async function GradingGatePage() {
         }
         if (it.verdict_pre === null || it.verdict_final === null) continue;
         r.judged += 1;
+        const 静默 = 静默批次.has(Number(it.batch_id));
+        if (静默) {
+          // 🔴 机器自己写的终审值：结构上不可能翻案，不进判据①的分母
+          r.judgedAuto += 1;
+        } else {
+          r.judgedHuman += 1;
+        }
         if (it.verdict_final !== it.verdict_pre) {
           r.flips += 1;
+          if (!静默) r.flipsHuman += 1;
           const at = 建于.get(Number(it.batch_id)) ?? null;
           if (at && (r.lastFlipAt === null || at > r.lastFlipAt)) {
             r.lastFlipAt = at;
@@ -192,7 +220,8 @@ export default async function GradingGatePage() {
 
   const L1天数 =
     全量.firstAutoAt === null ? null : daysBetween(全量.firstAutoAt, now);
-  const 零翻案 = 全量.judged > 0 && 全量.flips === 0;
+  // 🔴 判据①只认**人工终审**那一半（静默批次的 final ≡ pre，见 Rates.judgedHuman）
+  const 零翻案 = 全量.judgedHuman > 0 && 全量.flipsHuman === 0;
 
   return (
     <>
@@ -230,9 +259,13 @@ export default async function GradingGatePage() {
       <Row gutter={[12, 12]}>
         <Col xs={12} lg={6}>
           <StatCard
-            label="翻案率（全量）"
-            value={pct(全量.flips, 全量.judged)}
-            sub={`${全量.flips}/${全量.judged} 非存疑判定 · 近 ${WEEK_DAYS} 天 ${pct(近周.flips, 近周.judged)}（${近周.flips}/${近周.judged}）`}
+            label="翻案率（人工终审）"
+            value={pct(全量.flipsHuman, 全量.judgedHuman)}
+            sub={
+              `${全量.flipsHuman}/${全量.judgedHuman} 人工终审的非存疑判定 · ` +
+              `近 ${WEEK_DAYS} 天 ${pct(近周.flipsHuman, 近周.judgedHuman)}（${近周.flipsHuman}/${近周.judgedHuman}）· ` +
+              `🔴 另有 ${全量.judgedAuto} 题次来自静默批次（机器自判，不入分母）`
+            }
           />
         </Col>
         <Col xs={12} lg={6}>
@@ -286,18 +319,31 @@ export default async function GradingGatePage() {
         <div style={{ fontSize: 12.5, lineHeight: 2 }}>
           <div>
             <b>零翻案</b>：
-            {全量.judged === 0 ? (
-              <Tag>数据不足（还没有非存疑且已终审的题次）</Tag>
+            {全量.judgedHuman === 0 ? (
+              <Tag>
+                数据不足（还没有<b>人工终审</b>过的非存疑题次
+                {全量.judgedAuto > 0
+                  ? ` —— 库里那 ${全量.judgedAuto} 题次全在静默批次里，人从没看过`
+                  : ""}
+                ）
+              </Tag>
             ) : 零翻案 ? (
-              <Tag color="green">是 · {全量.judged} 题次 0 翻案</Tag>
+              <Tag color="green">是 · {全量.judgedHuman} 题次 0 翻案</Tag>
             ) : (
               <Tag color="red">
-                否 · {全量.flips}/{全量.judged} 被翻
+                否 · {全量.flipsHuman}/{全量.judgedHuman} 被翻
                 {全量.lastFlipAt
                   ? `（最近一次在 ${全量.lastFlipAt} 建的批次）`
                   : ""}
               </Tag>
             )}
+            {全量.judgedAuto > 0 ? (
+              <Tooltip title="静默批次的 verdict_final 是产线照抄机器预判写进去的（直批.py 的 DB.confirm(..., auto='L1静默')），final ≡ pre 是结构决定的 —— 拿它们凑「零翻案」等于自证">
+                <span style={{ color: "#e6a23c", marginInlineStart: 8 }}>
+                  （另有 {全量.judgedAuto} 题次来自 L1静默批次，未计入 —— 人从未终审）
+                </span>
+              </Tooltip>
+            ) : null}
           </div>
           <div>
             <b>L1 已跑</b>：
@@ -315,10 +361,13 @@ export default async function GradingGatePage() {
             )}
           </div>
           <div style={{ color: "#909399" }}>
-            🔴 口径：翻案 = 用户终审值与 agent 预判值不一致；agent
-            自标存疑（?/doubt/missing）
-            的题次**不进分母**——那些本来就是交给人的，人改了不算翻案。 这与正本
-            §四 的回放口径一致（08-13：122 题非存疑判定，用户翻案 0）。
+            🔴 口径：翻案 = 用户终审值与 agent 预判值不一致。两类题次
+            <b>不进分母</b>：① agent 自标存疑（?/doubt/missing）—— 那些本来就是交给人的，
+            人改了不算翻案；② <b>L1静默批次</b>（batches.auto 非空）—— 那些批次的终审值
+            是产线照抄机器预判写的，人从未看过，结构上不可能出现翻案，
+            算进来就是拿自证的数字支撑升档。
+            <br />
+            这与正本 §四 的回放口径一致（08-13：122 题<b>人工</b>非存疑判定，用户翻案 0）。
           </div>
         </div>
       </Card>

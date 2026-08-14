@@ -16,6 +16,7 @@
 import { NextResponse } from "next/server";
 
 import { bridgeBatches, getStudentView, listRoster } from "~/core";
+import { pickLatestBatch } from "~/app/student/shared";
 import type {
   StudentListResponse,
   StudentRosterRow,
@@ -25,17 +26,11 @@ export const dynamic = "force-dynamic";
 
 const ROSTER_STATUS = ["active", "paused", "closed"];
 
-/** 最近一次 = 出件时间最大的那条；时间缺失就退到批次号（圣域自增，序等价） */
-function 取最近<T extends { exportedAt: string | null; batchId: number }>(
-  rows: T[],
-): T | null {
-  if (rows.length === 0) return null;
-  return [...rows].sort(
-    (a, b) =>
-      (a.exportedAt ?? "").localeCompare(b.exportedAt ?? "") ||
-      a.batchId - b.batchId,
-  )[rows.length - 1]!;
-}
+/**
+ * 最近一次 = **批次号最大的那条**（正本口径与它当初错在哪，见 student/shared.ts
+ * 的 {@link pickLatestBatch} —— 那儿测得到，这儿只是用）。
+ */
+const 取最近 = pickLatestBatch;
 
 export async function GET(req: Request): Promise<NextResponse> {
   const t0 = Date.now();

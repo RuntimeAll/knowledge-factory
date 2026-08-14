@@ -118,13 +118,25 @@ export function StudentTable() {
       title: "最近打卡",
       dataIndex: "lastAt",
       search: false,
-      width: 190,
+      width: 210,
+      // 🔴 「最近」= 批次号最大的那一批（圣域自增，序等价），与详情页那张批次表同一把尺子。
+      //    不按 exported_at 挑：批完还没出件的批次 exported_at 是空的，
+      //    按时间挑会把它当成最早、悄悄显示上一次的旧卷（见 /api/student 的 取最近）。
+      tooltip:
+        "最近 = 批次号最大的那一批（与详情页批次表同序）。出件时间只是展示：为空就是「批完还没出件」，不拿旧批次顶上",
       render: (_, r) =>
-        r.lastAt === null && r.lastDay === null ? (
+        r.lastBatchId === null ? (
           <span style={{ color: "#909399" }}>还没交过卷</span>
         ) : (
           <span style={{ fontSize: 12.5 }}>
-            <TimeText iso={r.lastAt} />
+            {r.lastAt === null ? (
+              <Tooltip title="这一批的 exported_at 是空的 = 批完了还没出件。它仍是最新的一批，所以这里不显示上一批的时间">
+                <span style={{ color: "#e6a23c" }}>还没出件</span>
+              </Tooltip>
+            ) : (
+              <TimeText iso={r.lastAt} />
+            )}
+            <span style={{ color: "#909399" }}> · b{r.lastBatchId}</span>
             {r.lastDay === null ? "" : ` · 第 ${r.lastDay} 次`}
             <div style={{ color: "#909399" }}>
               {r.lastLine ?? "线名未知（这批没挂上桥）"}

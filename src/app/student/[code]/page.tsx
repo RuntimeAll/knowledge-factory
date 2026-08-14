@@ -242,7 +242,10 @@ function KpMastery({ view }: { view: StudentViewResult }) {
                     <span style={灰}>0</span>
                   ) : (
                     <span
-                      title="这些题的 error_kp 是 NULL（没给归因）→ 兜底档：该题所挂考点全扣。数摆在这儿，别当成「这个考点真的错了这么多」"
+                      title={
+                        "这些题的 error_kp 是 NULL（没给归因）→ 兜底档：该题所挂考点全扣。数摆在这儿，别当成「这个考点真的错了这么多」。\n" +
+                        "🔴 单位是题次（一题挂 N 个考点记 N 次），与③「NULL 未记录 · X 题」的题数口径不同，两个数本来就对不上。"
+                      }
                       style={{ color: "#e6a23c" }}
                     >
                       {k.fallbackAll} 题次（error_kp IS NULL）
@@ -387,8 +390,16 @@ function CauseTriState({ view }: { view: StudentViewResult }) {
               </div>
             ) : (
               <div style={{ fontSize: 12.5, lineHeight: 1.9 }}>
-                老批次 / 没走归因链：<b>兜底档，该题所挂考点全扣</b>
-                （②的进度条里那一列 fallbackAll 就是它）。
+                老批次 / 没走归因链：<b>兜底档，该题所挂考点全扣</b>。
+                <div style={{ marginTop: 4, color: "#e6a23c" }}>
+                  🔴 它与②那一列 fallbackAll <b>不是同一个数</b>，对不上不是库坏了：
+                  <br />· 这里是<b>题数</b>（一题算一次），fallbackAll 是
+                  <b>题次</b>（一题挂 N 个考点就记 N 次）；
+                  <br />· 这里只数<b>判 ×</b> 的题，fallbackAll 数的是
+                  <b>「没判对」</b>的行（既非 √ 也非 × 的脏行也进它、不进这里）；
+                  <br />· 对位不到题 / 题没挂考点的那些进这里，但落不到任何考点上，
+                  所以在 fallbackAll 里一次都不出现。
+                </div>
                 <div style={{ marginTop: 6, ...灰 }}>
                   样本：
                   {c.unrecorded.sample

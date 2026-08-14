@@ -103,6 +103,11 @@ export interface IntakeSubmitResponse {
   /** 追加进 _队列.jsonl 的那一行原文（没追加就没有这一项） */
   line?: string;
   queuePath?: string;
+  /**
+   * 收下了、但有话说（例：这个代号只在圣域出现过，roster 里没登记）。
+   * 🔴 与 error 分开：它不是失败，但也不能不说。
+   */
+  notes?: string[];
 }
 
 // ---------------------------------------------------------------------------
