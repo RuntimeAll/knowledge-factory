@@ -15,13 +15,14 @@
  *   图审这条链把「看这道题」的链接补上（检查单 4 看到即可达）；
  *   配图给 max-width:100% —— 手机上不再横向撑破（检查单 5）。
  */
-import { Alert, Card, Input, Tag } from "antd";
+import { Alert, Card, Tag } from "antd";
 import Link from "next/link";
 
 import {
   DataSourceNote,
   IdTail,
   StatusTag,
+  TextArea,
   TimeText,
 } from "~/components/console/ui";
 import { getFigureReviewCard, getQueueItem, type FigureView } from "~/core";
@@ -209,7 +210,7 @@ export default async function RejectPage({
             >
               驳回理由（落 verdict_note，别人日后看得见 · 必填）
             </label>
-            <Input.TextArea
+            <TextArea
               id="note"
               name="note"
               rows={3}

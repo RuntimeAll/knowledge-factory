@@ -23,6 +23,7 @@ import {
   DataSourceNote,
   IdTail,
   StatusTag,
+  TextArea,
   TimeText,
 } from "~/components/console/ui";
 import { getQuarantineRow } from "~/core";
@@ -203,7 +204,7 @@ export default async function QuarantinePage({
               >
                 单题 payload（原样 JSON；不动它 = 拿原样重投）
               </label>
-              <Input.TextArea
+              <TextArea
                 id="payload"
                 name="payload"
                 rows={16}
@@ -283,7 +284,7 @@ export default async function QuarantinePage({
                 废弃理由（必填 ——
                 日后翻账时，「为什么不要它」比「不要它」有用得多）
               </label>
-              <Input.TextArea
+              <TextArea
                 id="dnote"
                 name="note"
                 rows={2}

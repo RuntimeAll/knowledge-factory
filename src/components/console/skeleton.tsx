@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * 页面加载骨架（AI:PRD-009 · 打磨检查单 §三·1「绝无白屏闪现」）—— 全站唯一一份
  *
@@ -18,8 +20,20 @@
  *    空态 ≠ 读不出 ≠ 还没读完，三件事三种画法）。
  * 🔴 `note` 请写**这页在读什么、为什么慢**（读哪个库 / 调哪个 core 函数），
  *    不写进度百分比 —— 这里没有真实进度可报，编一个假的比不报更坏。
- * 🔴 本文件没有 "use client"：antd 的 Skeleton/Card 自己带 client 边界，
- *    这层壳不需要 hook，留在 server 侧更省一次序列化。
+ * 🔴🔴 **必须是 "use client"** —— 这不是风格问题，是**不加就 500** ：
+ *    本件用到 `Skeleton.Input`（复合组件的**子属性**）。antd v5 的模块自带
+ *    "use client"，所以在 server component 里 `import { Skeleton }` 拿到的是
+ *    **client reference 代理**，代理上没有 `.Input` 这个属性 —— 取出来是
+ *    `undefined`，渲染时报 "Element type is invalid … but got: undefined"，
+ *    而且**整棵树都挂**（root loading.tsx 一挂 = 全站每一页 500）。
+ *    与 `console/table.tsx` 文件头那条约束是同一枚硬币的两面：
+ *    那边是「常量必须住在 server 也能 import 的普通模块」，
+ *    这边是「碰复合组件子属性的必须住在 client 模块」。
+ *    🔴 集成收口②实测：四组各自写的 7 份 loading.tsx 正是漏了这一条
+ *      （`Skeleton.Input` + 无 "use client"），dev 一起就是满屏 500；
+ *      四组都只跑了 build/tsc —— **build 不渲染 dynamic 路由，抓不到它**。
+ * 🔴 client 组件不等于要取数：本件不取数、无 hook、无事件，
+ *    所有文案由调用方（server 的 loading.tsx）当 props 传进来。
  */
 import { Card, Skeleton } from "antd";
 import type { ReactNode } from "react";

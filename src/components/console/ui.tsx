@@ -15,7 +15,7 @@
  *    不 new Date()：服务端与浏览器时区/本地化不同会造成 hydration 不一致，
  *    而库里存的本来就是**本地** ISO（core/time.ts 口径），切出来就是对的。
  */
-import { Card, Empty, Statistic, Tag, Tooltip, Typography } from "antd";
+import { Card, Empty, Input, Statistic, Tag, Tooltip, Typography } from "antd";
 import Link from "next/link";
 
 // ---------------------------------------------------------------------------
@@ -68,6 +68,23 @@ export function StatusTag({
   const tag = <Tag color={STATUS_COLOR[value] ?? "default"}>{value}</Tag>;
   return title ? <Tooltip title={title}>{tag}</Tooltip> : tag;
 }
+
+// ---------------------------------------------------------------------------
+// 表单件
+// ---------------------------------------------------------------------------
+
+/**
+ * 多行输入。🔴🔴 **server component 里一律从这儿拿，别写 `Input.TextArea`**。
+ *
+ * antd v5 的模块自带 "use client"，所以在 server component 里
+ * `import { Input } from "antd"` 拿到的是 **client reference 代理**，
+ * 代理上没有 `.TextArea` 这个属性 —— 取出来是 `undefined`，
+ * 渲染当场报 "Element type is invalid … but got: undefined"，**整页 500**。
+ * 🔴 tsc 与 `next build` 都抓不到它（类型是对的；build 不渲染 dynamic 路由），
+ *    只有真起 dev / 真访问那一页才现形 —— 集成收口②就是这么抓出两处的。
+ * 本文件是 "use client"，属性在这儿取，导出的是一个正经 client 组件。
+ */
+export const TextArea = Input.TextArea;
 
 // ---------------------------------------------------------------------------
 // 时间 / ID
