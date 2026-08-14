@@ -28,8 +28,10 @@
                              + 产线转换器 + SKU/模型链（C5~C6，AI:PRD-005）
     REG-D    检索            评测集不低于基线 + 命中来源标注 + FTS 注入安全（D1~D3）
     REG-E    产线流程与族谱  出册干跑全链 + 已售题拦截归因 + 变式族谱完整（E1~E3）
-    REG-F    学情读侧        挂桥对数快照 + 错因三形态 + 圣域 schema hash + 只读物理验证（F1~F4）
+    REG-F    学情读侧+只读红线 挂桥快照 + 错因三形态 + 圣域 schema hash + 圣域只读物理验证（F1~F4）
+                             🆕 + punch 库只读三道锁/放行闸/题目读侧（F5）+ 终审 CLI 白名单（F6）
     REG-A4   备份快照有效    backup-verify.ts 出新快照 + 独立只读复算
+    REG-A5   产物可服务      🆕 next build 之后**真起一次** next start 并探活（build 绿 ≠ 起得来）
 
   🔴 REG-B / REG-C / REG-D 单独成关而不是「TEST 里已经跑过了」：触发矩阵里
      它们各自有一条 ——
@@ -300,7 +302,7 @@ $gates = @(
 
   [pscustomobject]@{
     Id     = 'REG-F'
-    Name   = '学情读侧（F1 挂桥对数快照 / F2 错因三形态 / F3 圣域 schema hash / F4 只读物理验证）'
+    Name   = '学情读侧与两库只读红线（F1 挂桥快照 / F2 错因三形态 / F3 圣域 schema hash / F4 圣域只读物理验证 / 🆕F5 punch 只读三道锁+放行闸+题目读侧 / 🆕F6 终审 CLI 白名单）'
     Action = {
       # 🔴 四关一个文件（tests/gradebridge.test.ts），触发面 = 触发矩阵那条
       #    「学情读侧 / 挂桥 → F 全」，外加 schema/migration 那条也带 F3。
@@ -314,9 +316,43 @@ $gates = @(
       #    需求卡/回归清单里写的「小崽子×2/鼻涕虫×1」是立卡当天的旧数，已被实况取代
       #    （实为 batch 10/13/14），基准文件里记着这件事。新批次只增不改旧：
       #    batch 总数涨了不判红，旧的那三条挂桥结果变了才判红。
-      & pnpm exec vitest run tests/gradebridge.test.ts | Write-Host
+      # 🆕 F5/F6（AI:PRD-009 验收修复 2026-08-15，tests/punch-guard.test.ts）：
+      #    原来这一关**只跑圣域那一侧** —— 009 新增的 punch 库只读挂载与终审 spawn
+      #    写路径**一条闸都没有**，红线只靠人工审读背书。现在补齐同一套三重背书：
+      #      F5 punch 三道锁（声明 / 语句 / 🔴物理：ro 句柄真发 UPDATE 必失败）
+      #         + 文件 sha256 跑前跑后逐位相同 + 放行闸四道 + 题目读侧真数据
+      #      F6 终审 CLI 白名单（confirm/rework/unrework 之外的子命令**根本不发给 python**
+      #         —— 审核库.py 对未知子命令会静默打印全表并 exit 0，看起来像成功了）
+      #    🔴 F6 **不真跑**任何会写库的原语：跑一条就动圣域的账。
+      $bad = @()
+      foreach ($f in 'tests/gradebridge.test.ts', 'tests/punch-guard.test.ts') {
+        Write-Host "  -> vitest $f"
+        & pnpm exec vitest run $f | Write-Host
+        if ($LASTEXITCODE -ne 0) { $bad += $f }
+      }
+      if ($bad.Count -gt 0) {
+        return "学情读侧/只读红线回归红了（$($bad -join '、')；哪条见上面输出）——F1 红先看是不是补录了桥（那就改基准并说明）；F3 红走人工重新快照评估；🔴 F4/F5 红 = 圣域或 punch 库的只读防线破了，立刻停手查是谁写的；🔴 F6 红 = 终审 CLI 白名单被改坏，白名单外的子命令可能被发给 审核库.py"
+      }
+      return $null
+    }
+  },
+
+  [pscustomobject]@{
+    Id     = 'REG-A5'
+    Name   = '产物可服务（next build 之后**真起一次** next start 并探活）'
+    Action = {
+      # 🔴🔴 AI:PRD-009 验收修复：原来「pnpm build 退出码 0」被当成产物合格的判据，
+      #    而实测 build 绿、`next start` 当场抛
+      #    `TypeError: routesManifest.dataRoutes is not iterable`、端口根本不开 ——
+      #    根因是 `next dev --turbo` 与 `next build` **共用 .next/**，dev 会把
+      #    routes-manifest.json 覆盖成它自己那份精简版。
+      #    修法两条：生产侧改用独立产物目录 .next-prod（next.config.js 的 distDir
+      #    读 KF_DIST_DIR），以及**本关** —— 把「产物可服务」变成机器判据：
+      #    build → 产物体检 → 真起 next start → 探活 2xx/3xx → 杀掉。
+      # 🔴 本关会跑一次完整生产构建（分钟级），放在最后。
+      & pnpm verify:serve | Write-Host
       if ($LASTEXITCODE -ne 0) {
-        return "学情读侧回归红了（哪条见上面输出）——F1 红先看是不是补录了桥（那就改基准并说明）；F3 红走人工重新快照评估；🔴 F4 红 = 圣域只读防线破了，立刻停手查是谁写的"
+        return '生产产物起不来（哪一步见上面输出）—— build 绿不等于产物可服务，这一关就是为它加的'
       }
       return $null
     }
@@ -430,7 +466,7 @@ try {
   # -------------------------------------------------------------------------
   # 战报落库（AI:PRD-008 验收缺陷修复）
   #
-  # 🔴 为什么非写不可：不写，/health 的「回归 11 关最近一跑」就永远没有数据 ——
+  # 🔴 为什么非写不可：不写，/health 的「回归最近一跑」就永远没有数据 ——
   #    人只能凭记忆说"上次好像是绿的"。战报落 metric_event（kind=regression），
   #    页面照它显示时间与逐关红绿。
   # 🔴 位置固定在**所有关卡跑完之后**：这是一次库写（连带一条审计行），

@@ -3,7 +3,7 @@
  *
  * 页面壳要的三样东西里，health() 已经有了，这里补两个**只读**帮手：
  *   - getLatestIntegritySummary()  最近一次对账的摘要（读 metric_event，不重跑对账）
- *   - getLatestRegressionSummary() 最近一跑回归 11 关的战报（同上，只读一行）
+ *   - getLatestRegressionSummary() 最近一跑回归全量关卡的战报（同上，只读一行）
  *   - redFlagView()                摘要 → 全局红旗条的显示态（纯函数，可单测）
  *
  * 🔴 为什么红旗条读摘要而不是现跑 integrityCheck()：
@@ -124,7 +124,7 @@ export async function getLatestIntegritySummary(
 }
 
 // ---------------------------------------------------------------------------
-// 回归战报（AI:PRD-008 验收缺陷 · /health「回归 11 关最近一跑」）
+// 回归战报（AI:PRD-008 验收缺陷 · /health「回归最近一跑」）
 // ---------------------------------------------------------------------------
 
 /**
@@ -156,7 +156,7 @@ export interface RegressionSummary {
   failed: number;
   /** 整轮秒数 */
   secs: number;
-  /** 这一跑是不是 `-Only X` 的单关跑（那不是"11 关全绿"） */
+  /** 这一跑是不是 `-Only X` 的单关跑（那不是"全量全绿"） */
   only: string | null;
   gates: RegressionGateResult[];
 }

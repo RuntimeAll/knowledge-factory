@@ -1,5 +1,5 @@
 /**
- * 回归战报落库（AI:PRD-008 验收缺陷 · /health「回归 11 关最近一跑」的写侧）
+ * 回归战报落库（AI:PRD-008 验收缺陷 · /health「回归最近一跑」的写侧）
  *
  * 用法：  pnpm exec tsx --env-file=.env scripts/regression-report.ts <战报.json>
  * 退出码：0=写进去了；1=写不进去（原因打在 stderr）。
@@ -100,7 +100,7 @@ async function main(): Promise<void> {
     passed: gates.length - failed,
     failed,
     secs: typeof o.secs === "number" ? o.secs : 0,
-    // 🔴 -Only 单关跑照样落账，但标出来 —— 「1/1 关绿」不是「11 关全绿」
+    // 🔴 -Only 单关跑照样落账，但标出来 —— 「1/1 关绿」不是「全量全绿」
     only: typeof o.only === "string" && o.only.trim() !== "" ? o.only : null,
     startedAt: typeof o.startedAt === "string" ? o.startedAt : null,
     finishedAt: typeof o.finishedAt === "string" ? o.finishedAt : null,
