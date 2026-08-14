@@ -26,6 +26,7 @@ import {
   LANE_HINT,
   type ShelfDocDetailView,
 } from "../../shared";
+import { NetdiskCopy } from "./netdisk";
 import { DocPanels } from "./panels";
 
 export const dynamic = "force-dynamic";
@@ -273,17 +274,17 @@ export default async function ShelfDocPage({
             {
               key: "netdisk",
               label: "网盘",
-              children: d.netdiskLink ? (
-                <span>
-                  <Tag color="green">{d.netdiskCode ?? "有链接"}</Tag>
-                  <a href={d.netdiskLink} target="_blank" rel="noreferrer">
-                    打开
-                  </a>
-                </span>
-              ) : (
-                <Tooltip title="doc.网盘链接 是空的 —— 账上没记网盘（不代表一定没传过；唯一指引在 网盘分发记录/分享链接总表.md）">
-                  <span style={{ color: "#909399" }}>没记</span>
-                </Tooltip>
+              // 🔴 2026-08-15 验收修复：这一格原来只有 `<Tag>提取码</Tag>` + 「打开」，
+              //    链接与提取码**都只能手选文本**（手机上几乎对不准）—— v1/v2 两代
+              //    都有复制按钮，属「/shelf 对照 punch-console 零缺项」的实打实缺项。
+              //    收到 NetdiskCopy 里：复制链接 / 复制提取码 / 复制三行分享语，
+              //    分享语现拼（不依赖 material，那 4 本没分享语的册子也有得复制）。
+              children: (
+                <NetdiskCopy
+                  name={d.name}
+                  link={d.netdiskLink}
+                  code={d.netdiskCode}
+                />
               ),
             },
             {

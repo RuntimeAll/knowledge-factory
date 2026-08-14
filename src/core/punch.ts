@@ -934,6 +934,378 @@ export async function getShelfDoc(
 }
 
 // ---------------------------------------------------------------------------
+// 货架题目浏览（AI:PRD-009 验收修复 · 2026-08-15）
+//
+// 🔴🔴 为什么补这一段：punch 库的 3230 道题（分布在 15 本册子里）在货架上**一道都
+//      看不到** —— 本模块原来对 question 表只有 COUNT/GROUP BY，从没 select 过 stem。
+//      而 punch-console v2 有整张 `/questions` 页（关键词 + 考点 + 题型/册筛选、
+//      考点覆盖条、逐题题面/实算/第几天·section·seq），册详情页还有一条
+//      「到题目库看这册的题 →」。设计稿 §五·3 的判据是「/shelf 与 punch-console
+//      功能对照**零缺项**（浏览面）」，少一整张页显然不是零缺项。
+//      「两库题零交集、不该跳本库 /question」只解释了**不能跳哪儿**，
+//      没有替代「在货架里能看这册的题」。
+//
+// 🔴 仍然是 mode=ro 的 SELECT，一个字都不写。
+// ---------------------------------------------------------------------------
+
+const CJK_RE = /[㐀-䶿一-鿿぀-ヿ豈-﫿]/;
+const ALNUM_RE = /[0-9A-Za-z]/;
+
+/**
+ * 🔴 punch 侧 FTS 的**分词口径**（逐字照搬 punch-console v2 `src/db/fts.ts`）。
+ *
+ *   `question_fts` 建的是 `fts5(stem, tokenize='unicode61')`，而 unicode61 把
+ *   一整串汉字当成**一个 token**（「三位数乘两位数」只索引成一个词，搜「乘法」
+ *   永远命中不了）。所以 v2 在**入库前**就把中文切成 bigram（相邻两字）、
+ *   英数原样保留，空格拼接后才塞进 FTS —— 实测索引里存的是 `6 2` 这种。
+ *   ⇒ 查询端必须用**同一把切法**，口径才对得上；这里不是重新发明，是照抄。
+ *
+ * 🔴 这是纯函数、可单测（tests/punch-guard.test.ts 钉着它与 v2 同口径）。
+ */
+export function punchFtsTokenize(text: string): string[] {
+  const out: string[] = [];
+  const s = (text || "").normalize("NFKC");
+  let buf = "";
+  const cjkRun: string[] = [];
+  const flushAlnum = (): void => {
+    if (buf) {
+      out.push(buf.toLowerCase());
+      buf = "";
+    }
+  };
+  const flushCjk = (): void => {
+    if (cjkRun.length === 0) return;
+    if (cjkRun.length === 1) out.push(cjkRun[0]!);
+    else {
+      for (let i = 0; i + 1 < cjkRun.length; i++) {
+        out.push(cjkRun[i]! + cjkRun[i + 1]!);
+      }
+    }
+    cjkRun.length = 0;
+  };
+  for (const ch of s) {
+    if (CJK_RE.test(ch)) {
+      flushAlnum();
+      cjkRun.push(ch);
+    } else if (ALNUM_RE.test(ch)) {
+      flushCjk();
+      buf += ch;
+    } else {
+      flushAlnum();
+      flushCjk();
+    }
+  }
+  flushAlnum();
+  flushCjk();
+  return out;
+}
+
+/**
+ * 关键词 → FTS5 MATCH 表达式（逐词 AND，每个词加引号防注入/防语法字符）。
+ * 🔴 用户敲的 `"`、`*`、`NEAR` 这些在 FTS5 里都是语法 —— 一律当字面词处理。
+ */
+export function toPunchMatchExpr(kw: string): string {
+  const toks = punchFtsTokenize(kw).filter((t) => t.trim() !== "");
+  if (toks.length === 0) return "";
+  return toks.map((t) => `"${t.replace(/"/g, '""')}"`).join(" AND ");
+}
+
+/** 一道货架题（punch `question` + 它所属册的名字）。🔴 键名转 ASCII，当线上契约走 */
+export interface PunchQuestionRow {
+  id: number;
+  docId: number | null;
+  docName: string | null;
+  docVersion: string | null;
+  day: number | null;
+  section: string | null;
+  seq: number | null;
+  stem: string;
+  answer: string | null;
+  qtype: string | null;
+  /** 考点：JSON 数组原串解析出来的数组（坏串原样当一个词，不吞） */
+  kps: string[];
+  /** 实算三态：绿 / 红 / 未算 */
+  calc: string | null;
+  source: string | null;
+}
+
+export interface PunchQuestionOptions {
+  keyword?: string;
+  docId?: number;
+  qtype?: string;
+  kp?: string;
+  /** 一次最多取多少（默认 60，上限 500）——货架是浏览面，不做深翻页 */
+  limit?: number;
+  url?: string;
+}
+
+export interface PunchQuestionResult {
+  rows: PunchQuestionRow[];
+  /** 满足过滤条件的总数（关键词轴命中数在 hitCount） */
+  filteredTotal: number;
+  /** 关键词轴命中数；没给关键词时 = filteredTotal */
+  hitCount: number;
+  /** 题型 facet（全库口径，不随筛选变 —— 变了看起来像库里突然没有了） */
+  qtypes: ShelfFacet[];
+  /** 有题的册（值是 doc.id 的字符串） */
+  docs: (ShelfFacet & { name: string; version: string | null })[];
+  /** 考点覆盖：已标 / 未标 / 逐考点计数（在**当前过滤集**上算，考点维除外） */
+  coverage: { tagged: number; untagged: number; items: ShelfFacet[] };
+  dbPath: string;
+  ms: number;
+  /** 🔴 降级/口径提醒，一条不吞 */
+  warnings: string[];
+}
+
+function parseKps(raw: string | null): string[] {
+  if (!raw || raw.trim() === "") return [];
+  try {
+    const o: unknown = JSON.parse(raw);
+    return Array.isArray(o) ? o.map((x) => String(x)) : [String(o)];
+  } catch {
+    return [raw];
+  }
+}
+
+const Q_SELECT = `
+  q.id, q.doc_id, d.名称 AS 册名, d.版本名, q.day, q.section, q.seq,
+  q.stem, q.answer, q.题型, q.考点, q.实算, q.来源`;
+
+interface RawQuestionRow {
+  id: number;
+  doc_id: number | null;
+  册名: string | null;
+  版本名: string | null;
+  day: number | null;
+  section: string | null;
+  seq: number | null;
+  stem: string;
+  answer: string | null;
+  题型: string | null;
+  考点: string | null;
+  实算: string | null;
+  来源: string | null;
+}
+
+function toQuestionRow(r: RawQuestionRow): PunchQuestionRow {
+  return {
+    id: Number(r.id),
+    docId: r.doc_id === null ? null : Number(r.doc_id),
+    docName: r.册名,
+    docVersion: r.版本名,
+    day: r.day === null ? null : Number(r.day),
+    section: r.section,
+    seq: r.seq === null ? null : Number(r.seq),
+    stem: r.stem,
+    answer: r.answer,
+    qtype: r.题型,
+    kps: parseKps(r.考点),
+    calc: r.实算,
+    source: r.来源,
+  };
+}
+
+/**
+ * 列货架的题（**只读**）。
+ *
+ * 检索面（对照 v2 那张 /questions）：
+ *   · 关键词 → FTS5（同一把 bigram 切法）；MATCH 炸了或零命中就退成 `LIKE`，
+ *     并在 warnings 里**如实说降级了**（不假装是「库里没有」）；
+ *   · 册 / 题型 / 考点 → SQL 硬过滤（考点是 JSON 数组文本，按 `%"考点名"%` 匹配，
+ *     带引号才不会让「乘法」把「乘法分配律」也捞进来——v2 的口径）；
+ *   · 🔴 **语意轴没有搬过来**：punch 的 `向量` 是 v2 自己那套 sidecar 模型算的，
+ *     本产品用另一套 ONNX 句向量，两边不同源，拿本库的模型去查它的向量是错的。
+ *     所以这里只有两路，页面上照实写着（绝不假装三路）。
+ */
+export async function listPunchQuestions(
+  opts: PunchQuestionOptions = {},
+): Promise<PunchQuestionResult> {
+  const t0 = Date.now();
+  const h = await getPunchDb(opts.url);
+  const warnings: string[] = [];
+  const limit = Math.min(Math.max(opts.limit ?? 60, 1), 500);
+
+  const clauses: string[] = [];
+  const args: unknown[] = [];
+  if (opts.docId !== undefined && Number.isFinite(opts.docId)) {
+    clauses.push("q.doc_id = ?");
+    args.push(opts.docId);
+  }
+  if (opts.qtype) {
+    clauses.push("q.题型 = ?");
+    args.push(opts.qtype);
+  }
+  if (opts.kp) {
+    // 🔴 带引号匹配（v2 口径）：不带的话「乘法」会把「乘法分配律」也捞进来
+    clauses.push("q.考点 LIKE ?");
+    args.push(`%"${opts.kp}"%`);
+  }
+  const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+
+  const filteredTotal = Number(
+    h.query<{ c: number }>(
+      `SELECT COUNT(*) AS c FROM question q ${where}`,
+      args,
+    )[0]?.c ?? 0,
+  );
+
+  const kw = (opts.keyword ?? "").trim();
+  let rows: PunchQuestionRow[] = [];
+  let hitCount = filteredTotal;
+
+  if (!kw) {
+    rows = h
+      .query<RawQuestionRow>(
+        `SELECT ${Q_SELECT} FROM question q LEFT JOIN doc d ON d.id = q.doc_id
+         ${where} ORDER BY q.doc_id, q.day, q.section, q.seq LIMIT ?`,
+        [...args, limit],
+      )
+      .map(toQuestionRow);
+  } else {
+    const match = toPunchMatchExpr(kw);
+    let ftsRows: RawQuestionRow[] = [];
+    let ftsCount = 0;
+    if (match) {
+      try {
+        const w2 = ["question_fts MATCH ?", ...clauses];
+        ftsCount = Number(
+          h.query<{ c: number }>(
+            `SELECT COUNT(*) AS c FROM question_fts f JOIN question q ON q.id = f.rowid
+             WHERE ${w2.join(" AND ")}`,
+            [match, ...args],
+          )[0]?.c ?? 0,
+        );
+        ftsRows = h.query<RawQuestionRow>(
+          `SELECT ${Q_SELECT} FROM question_fts f
+             JOIN question q ON q.id = f.rowid
+             LEFT JOIN doc d ON d.id = q.doc_id
+           WHERE ${w2.join(" AND ")}
+           ORDER BY bm25(question_fts) LIMIT ?`,
+          [match, ...args, limit],
+        );
+      } catch (e) {
+        warnings.push(
+          `关键词轴（FTS5）没跑成，已退成 LIKE 逐字包含：${
+            e instanceof Error ? `${e.name}: ${e.message}` : String(e)
+          }`,
+        );
+        ftsRows = [];
+      }
+    } else {
+      warnings.push(
+        `「${kw}」切不出任何可检索的词（标点/空白），关键词轴退成 LIKE 逐字包含。`,
+      );
+    }
+
+    if (ftsRows.length > 0) {
+      rows = ftsRows.map(toQuestionRow);
+      hitCount = ftsCount;
+    } else {
+      // 🔴 退成 LIKE：FTS 索引可能落后于 question 表（产线那边是手工同步、0 触发器），
+      //    这时候「FTS 零命中」不代表「库里没有这句话」——退一步再查一次，并说清楚。
+      const w3 = [...clauses, "q.stem LIKE ?"];
+      const likeArgs = [...args, `%${kw}%`];
+      hitCount = Number(
+        h.query<{ c: number }>(
+          `SELECT COUNT(*) AS c FROM question q WHERE ${w3.join(" AND ")}`,
+          likeArgs,
+        )[0]?.c ?? 0,
+      );
+      rows = h
+        .query<RawQuestionRow>(
+          `SELECT ${Q_SELECT} FROM question q LEFT JOIN doc d ON d.id = q.doc_id
+           WHERE ${w3.join(" AND ")}
+           ORDER BY q.doc_id, q.day, q.section, q.seq LIMIT ?`,
+          [...likeArgs, limit],
+        )
+        .map(toQuestionRow);
+      if (match && warnings.length === 0) {
+        warnings.push(
+          `关键词「${kw}」在 FTS 索引里零命中，已退成 LIKE 逐字包含（命中 ${hitCount} 条）——` +
+            "punch 的 FTS 是产线手工同步的（0 触发器），索引可能落后于 question 表。",
+        );
+      }
+    }
+  }
+
+  // ── facets：题型与册按**全库**数（筛完再数会让其它选项看起来消失了）
+  const qtypes = h
+    .query<{ v: string | null; c: number }>(
+      `SELECT 题型 AS v, COUNT(*) AS c FROM question WHERE 题型 IS NOT NULL
+        GROUP BY 题型 ORDER BY c DESC, v`,
+    )
+    .filter((r) => r.v !== null)
+    .map((r) => ({ value: r.v!, count: Number(r.c) }));
+  const docs = h
+    .query<{ id: number; name: string; version: string | null; c: number }>(
+      `SELECT d.id AS id, d.名称 AS name, d.版本名 AS version, COUNT(q.id) AS c
+         FROM doc d JOIN question q ON q.doc_id = d.id
+        GROUP BY d.id ORDER BY c DESC, d.名称`,
+    )
+    .map((r) => ({
+      value: String(r.id),
+      count: Number(r.c),
+      name: r.name,
+      version: r.version,
+    }));
+
+  // ── 考点覆盖：在当前过滤集上算（考点这一维本身除外，否则永远是 100%）
+  const covClauses = clauses.filter((c) => !c.startsWith("q.考点"));
+  const covArgs: unknown[] = [];
+  {
+    // 重新按 covClauses 的顺序取参数（clauses 与 args 是同序 push 的）
+    let i = 0;
+    for (const c of clauses) {
+      if (!c.startsWith("q.考点")) covArgs.push(args[i]);
+      i++;
+    }
+  }
+  const covWhere = (extra: string[]): string => {
+    const all = [...covClauses, ...extra];
+    return all.length ? `WHERE ${all.join(" AND ")}` : "";
+  };
+  const tagged = Number(
+    h.query<{ c: number }>(
+      `SELECT COUNT(*) AS c FROM question q ${covWhere(["q.考点 IS NOT NULL", "q.考点 <> ''", "q.考点 <> '[]'"])}`,
+      covArgs,
+    )[0]?.c ?? 0,
+  );
+  const untagged = Number(
+    h.query<{ c: number }>(
+      `SELECT COUNT(*) AS c FROM question q ${covWhere(["(q.考点 IS NULL OR q.考点 = '' OR q.考点 = '[]')"])}`,
+      covArgs,
+    )[0]?.c ?? 0,
+  );
+  const items = h
+    .query<{ kp: string; c: number }>(
+      `SELECT je.value AS kp, COUNT(*) AS c
+         FROM question q, json_each(q.考点) je
+        ${covWhere(["q.考点 IS NOT NULL", "json_valid(q.考点)"])}
+        GROUP BY je.value ORDER BY c DESC, kp`,
+      covArgs,
+    )
+    .map((r) => ({ value: String(r.kp), count: Number(r.c) }));
+
+  if (rows.length >= limit && hitCount > rows.length) {
+    warnings.push(
+      `命中 ${hitCount} 条，本页只取回前 ${limit} 条（货架是浏览面，不做深翻页）——收窄条件即可看到后面的题。`,
+    );
+  }
+
+  return {
+    rows,
+    filteredTotal,
+    hitCount,
+    qtypes,
+    docs,
+    coverage: { tagged, untagged, items },
+    dbPath: describeDbPath(h.path),
+    ms: Date.now() - t0,
+    warnings,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // 🔴 资产文件放行闸（图片/PDF 预览的唯一通路）
 // ---------------------------------------------------------------------------
 

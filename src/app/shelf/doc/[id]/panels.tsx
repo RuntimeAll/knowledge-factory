@@ -26,6 +26,7 @@ import {
   Typography,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
+import Link from "next/link";
 import { useState } from "react";
 
 import { EmptyHint, TimeText } from "~/components/console/ui";
@@ -295,9 +296,11 @@ function Gallery({
 // ---------------------------------------------------------------------------
 
 function QuestionGroups({
+  docId,
   groups,
   total,
 }: {
+  docId: number;
   groups: { section: string | null; qtype: string | null; n: number }[];
   total: number;
 }) {
@@ -348,6 +351,15 @@ function QuestionGroups({
             🔴 这里的题是 <b>punch 库的题</b>，与本库题库（/question）
             <b>零交集</b>：实测两边按同一口径算 hash，3230 题 × 642 题 交集为
             0。所以这一栏<b>不给跳本库题详情的链接</b> —— 那会指到另一本账上去。
+            {/* 🔴 2026-08-15 验收修复：「不能跳本库」只解释了不能跳哪儿，
+                不能替代「在货架里看得到这册的题」。货架自己的题目页补上了。 */}
+            <br />
+            <Link href={`/shelf/questions?doc=${docId}`}>
+              到货架题目里看这册的 {total} 道题 →
+            </Link>
+            <span style={{ color: "#909399" }}>
+              （还在 punch 库里，只是能逐题看题面/考点/实算了）
+            </span>
           </span>
         }
         description={
@@ -560,6 +572,7 @@ export function DocPanels({ detail }: { detail: ShelfDocDetailView }) {
             label: `题目（${detail.doc.counts.questions}）`,
             children: (
               <QuestionGroups
+                docId={detail.doc.id}
                 groups={detail.questionGroups}
                 total={detail.doc.counts.questions}
               />

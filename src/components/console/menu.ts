@@ -100,6 +100,14 @@ export const CONSOLE_MENU: ConsoleMenuGroup[] = [
         hint: "打卡/专项/试卷/讲义/练习册/课本 的总账（只读挂载 punch 库）",
       },
       {
+        // 🔴 与「题库管理 / 题目列表」是**两本账**：那边是本库的题（642），
+        //    这边是 punch 库的题（3230），两边零交集。名字上就要分得开，
+        //    所以叫「货架题目」而不是「题目」。
+        path: "/shelf/questions",
+        name: "货架题目",
+        hint: "punch 库那 3230 道题（关键词 + 考点/题型/册 筛选）—— 与本库题库零交集",
+      },
+      {
         path: "/shelf/reconcile",
         name: "资料对账",
         hint: "货架成品 ↔ 本库 SKU / 网盘指针，差异只报不改",
