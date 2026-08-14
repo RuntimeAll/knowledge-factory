@@ -425,10 +425,17 @@ export function ShelfTable({
         locale={{
           emptyText: (
             <EmptyHint>
+              {/* 🔴 JSX 不认 Markdown：这条原来是模板串 `**一本都没有**`，
+                  星号原样印在页面上（curl :3210/shelf 实测抓得到）。 */}
               {tab !== "全部" &&
-              (facets.types.find((f) => f.value === tab)?.count ?? 0) === 0
-                ? `「${tab}」这一类现在**一本都没有**（不是筛错了）：punch 侧 doc.类型 声明六类，实际入库的只有 打卡 / 专项 两类。`
-                : "没有符合条件的资料。🔴 「货架上没有」不等于「没做过」——货架只列 punch 库 doc 表登记过的册子，新册子要先跑产线的 import 才会出现在这里。"}
+              (facets.types.find((f) => f.value === tab)?.count ?? 0) === 0 ? (
+                <>
+                  「{tab}」这一类现在<b>一本都没有</b>（不是筛错了）：punch 侧
+                  doc.类型 声明六类，实际入库的只有 打卡 / 专项 两类。
+                </>
+              ) : (
+                "没有符合条件的资料。🔴 「货架上没有」不等于「没做过」——货架只列 punch 库 doc 表登记过的册子，新册子要先跑产线的 import 才会出现在这里。"
+              )}
             </EmptyHint>
           ),
         }}

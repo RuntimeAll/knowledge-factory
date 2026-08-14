@@ -21,7 +21,7 @@ import { Alert, Card } from "antd";
 import Link from "next/link";
 
 import { PageHead } from "~/components/console/page-head";
-import { EmptyHint } from "~/components/console/ui";
+import { EmphasisText, EmptyHint } from "~/components/console/ui";
 import { listShelfDocs } from "~/core";
 import { ShelfTable } from "./table";
 import { SHELF_TYPE_ORDER, type ShelfFacetsView } from "./shared";
@@ -116,13 +116,20 @@ export default async function ShelfPage({
         }
       />
 
+      {/* 🔴 warnings 是 core/punch.ts 生成的串，里头带 Markdown 的 `**加粗**`
+          （「六类资料里 XX 现在**一本都没有**」那条）—— 过一道 EmphasisText
+          渲成 <b>，不然星号原样印在页面上（检查单 §三·9）。 */}
       {warnings.map((w, i) => (
         <Alert
           key={i}
           type="warning"
           showIcon
           style={{ marginBottom: 8 }}
-          message={<span style={{ fontSize: 12.5 }}>{w}</span>}
+          message={
+            <span style={{ fontSize: 12.5 }}>
+              <EmphasisText text={w} />
+            </span>
+          }
         />
       ))}
 

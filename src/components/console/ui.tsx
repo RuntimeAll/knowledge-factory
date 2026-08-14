@@ -191,6 +191,39 @@ export function EmptyHint({ children }: { children: React.ReactNode }) {
   );
 }
 
+/**
+ * 机器生成的说明文字（warnings / notes / 闸报告 / 报错原文）的**唯一渲染口**
+ * （AI:PRD-009 验收修复 · 检查单 §三·9 文案）
+ *
+ * ── 它修的是什么 ────────────────────────────────────────────────────────────
+ *   core 与 route 里那些说明串大量用 Markdown 的 `**加粗**` 做强调。
+ *   这些串有**两个消费方**：
+ *     · MCP 客户端（agent）—— 那头是渲染 Markdown 的，`**` 是对的；
+ *     · 本管理台 —— JSX 不认 Markdown，星号**原样印在页面上**（实测 /health、
+ *       /question、/shelf 上都能 curl 到 `**不跑**`、`**字面**`、`**一本都没有**`）。
+ *   所以正确的修法**不是**回 core 里把星号删掉（那会削掉 agent 侧的语义、还要
+ *   跟着改一批测试断言），而是**在渲染这一层认它**：本组件把 `**x**` 渲成
+ *   `<b>x</b>`，其余字符一律字面照登（不做任何别的 Markdown）。
+ *
+ * 🔴 只吃 `**…**` 一种记号：不支持 `*斜体*`/链接/列表。多认一种记号，就多一种
+ *    「库里的原文被渲染层悄悄改写」的风险 —— 报错原文必须逐字可信。
+ * 🔴 未闭合的 `**` 原样保留（`a**b` 印出来就是 `a**b`），不猜人家想加粗什么。
+ * 🔴 页面上**手写**的文案不要用它：手写的直接写 `<b>` 就好（本组件是给
+ *    「字符串是从别处来的」那些地方用的）。
+ */
+export function EmphasisText({ text }: { text: string | null | undefined }) {
+  if (!text) return null;
+  // 捕获组保证 split 结果里 **段** 与普通段交替出现；奇数下标即为加粗段。
+  const parts = text.split(/\*\*([^*]+)\*\*/g);
+  return (
+    <>
+      {parts.map((p, i) =>
+        i % 2 === 1 ? <b key={i}>{p}</b> : <span key={i}>{p}</span>,
+      )}
+    </>
+  );
+}
+
 /** 每页右上角固定：本页的数是从哪儿来的（表名 / core 函数） */
 export function DataSourceNote({ children }: { children: React.ReactNode }) {
   return (

@@ -164,7 +164,8 @@ export default async function KgHomePage({
       {trees.length === 0 ? (
         <Card size="small">
           <EmptyHint>
-            一棵版本树都没有。🔴 这不是「教材没铺完」，是**连树都还没建** ——
+            {/* 🔴 JSX 不认 Markdown：原来写 `**连树都还没建**`，星号印在页面上 */}
+            一棵版本树都没有。🔴 这不是「教材没铺完」，是<b>连树都还没建</b> ——
             没有树，考点就挂不上章节，出题时按章节召回永远是空的。 建树走 core
             的 upsertEditionTree（脚本口）。
           </EmptyHint>

@@ -52,8 +52,10 @@ export const LANE_COLOR: Record<ShelfLaneView, string> = {
 /** 泳道 → 一句话（悬停给出来，免得「可发布」被当成「已发布」） */
 export const LANE_HINT: Record<ShelfLaneView, string> = {
   在售: "人工态标了「在售」——是人拍的板，不是算出来的",
+  // 🔴 这句原来写的是 Markdown 的 `**不等于已发**` —— 它是 Tooltip 的纯文本标题，
+  //    星号原样印在悬停气泡里（检查单 §三·9）。纯文本里不用 Markdown 记号。
   可发布:
-    "🔴 灯全绿 = 能发，**不等于已发**：中间隔着一次人工动作（人工态只有人能点）",
+    "🔴 灯全绿 = 能发，不等于「已发」：中间隔着一次人工动作（人工态只有人能点）",
   在产: "还差东西：看体检里哪一盏没绿",
   待整理: "东西齐了但没归拢过（老批次的物料/网盘/命名口径各批各样）",
   停售: "人工态标了「停售」",
@@ -235,6 +237,84 @@ export function seqOfName(name: string): number | null {
   const m = /^(\d+)\.(\d+)\s/.exec(name);
   return m ? Number(m[1]) * 100 + Number(m[2]) : null;
 }
+
+/** 册名去掉管线序号前缀（`2.10 乘除混合运算` → `乘除混合运算`）——对外发的名字不带内部序号 */
+export function bookTitleOf(name: string): string {
+  return name.replace(/^\d+\.\d+\s+/, "");
+}
+
+/**
+ * 网盘三行分享语（AI:PRD-009 验收修复 · 2026-08-15）
+ *
+ * 🔴 为什么要**现拼**而不是只读 `material.网盘分享语`：
+ *    实测 punch 库 28 本挂了网盘链接的册子里，有 4 本（doc 1 / 97 / 98 / 99）
+ *    压根没有在用物料的分享语 —— 只认 material 的话，这 4 本的详情页上
+ *    **一个复制入口都没有**，手机上要手选一串长 URL，基本对不准。
+ *    v1（app.py:299-306）与 v2（book/[id]/page.tsx:151-163）都是这么现拼的，
+ *    这里照抄它们的三行格式，不新造口径。
+ * 🔴 没有链接就返回 null（没链接的分享语没有意义），调用侧据此不渲染按钮。
+ */
+export function netdiskShareText(
+  name: string,
+  link: string | null,
+  code: string | null,
+): string | null {
+  if (!link) return null;
+  return (
+    `通过百度网盘分享的文件：${bookTitleOf(name)}\n` +
+    `链接：${link}\n` +
+    `提取码：${code ?? ""}`
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 货架题目（/shelf/questions · AI:PRD-009 验收修复 2026-08-15）
+//
+// 🔴🔴 这里的题是 **punch 库的题**，与本库题库（/question）**零交集**
+//      （实测两边按同一口径算 hash：3230 题 × 642 题，交集为 0）。
+//      所以货架的题**不给跳本库题详情**的链接 —— 那会指到另一本账上去。
+// ---------------------------------------------------------------------------
+
+export interface PunchQuestionView {
+  id: number;
+  docId: number | null;
+  docName: string | null;
+  docVersion: string | null;
+  day: number | null;
+  section: string | null;
+  seq: number | null;
+  stem: string;
+  answer: string | null;
+  qtype: string | null;
+  kps: string[];
+  calc: string | null;
+  source: string | null;
+}
+
+export interface PunchQuestionsResponse {
+  ok: boolean;
+  /** ok=false 时的原文报错（🔴 原文照登，不吞） */
+  error?: string;
+  data: PunchQuestionView[];
+  /** 关键词轴命中数（没给关键词时 = filteredTotal） */
+  total: number;
+  meta: {
+    filteredTotal: number;
+    qtypes: ShelfFacetView[];
+    docs: (ShelfFacetView & { name: string; version: string | null })[];
+    coverage: { tagged: number; untagged: number; items: ShelfFacetView[] };
+    dbPath: string;
+    ms: number;
+    warnings: string[];
+  } | null;
+}
+
+/** 实算三态 → tag 色（🔴 「未算」不是坏，别给红） */
+export const CALC_COLOR: Record<string, string> = {
+  绿: "green",
+  红: "red",
+  未算: "default",
+};
 
 // ---------------------------------------------------------------------------
 // 对账（/shelf/reconcile）

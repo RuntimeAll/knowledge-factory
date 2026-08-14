@@ -18,7 +18,7 @@
  * 🔴 「快照的验证结果」如实空着：listBackups 只 stat 文件，没打开过它们。
  *    在这一栏编一个「有效」是这页最不该干的事 —— 验证是 backup-verify.ts 的活
  *    （它会出一份新快照再用另一段代码独立打开数一遍），命令就在卡片里。
- * 🔴 「回归 11 关最近一跑」**现在有数据了**（2026-08-14 修）：regression.ps1 跑完
+ * 🔴 「回归 12 关最近一跑」**现在有数据了**（2026-08-14 修）：regression.ps1 跑完
  *    会把汇总表写成 metric_event(kind=regression)，本页读最近一行 ——
  *    照旧不在页面上触发回归（那是十几分钟的事，且它自己会写库）。
  *    没跑过就如实说「没跑过」，绝不画一个看起来像真的假结果。
@@ -285,15 +285,17 @@ export default async function HealthPage() {
         </div>
       </Card>
 
-      {/* ── 回归 11 关 ─────────────────────────────────────────────────── */}
+      {/* ── 回归 12 关 ─────────────────────────────────────────────────── */}
       <Card
         size="small"
-        title="回归 11 关（最近一跑）"
+        title="回归 12 关（最近一跑）"
         style={{ marginBottom: 14 }}
         extra={
           <span style={{ fontSize: 11.5, color: "#909399" }}>
-            读 metric_event(kind=regression) 最近一行 ——
-            本页**不跑**回归（十几分钟 + 它自己会写库），只显示上一跑留下的账
+            {/* 🔴 JSX 不认 Markdown：这里原来写的是 `**不跑**`，星号是原样印在
+                页面上的（curl :3210/health 实测能抓到）。手写文案一律用 <b>。 */}
+            读 metric_event(kind=regression) 最近一行 —— 本页<b>不跑</b>
+            回归（十几分钟 + 它自己会写库），只显示上一跑留下的账
           </span>
         }
       >
@@ -369,7 +371,9 @@ export default async function HealthPage() {
               </table>
             </ScrollX>
             <div style={{ marginTop: 8, fontSize: 11.5, color: "#909399" }}>
-              🔴 这是**上一跑**的账，不是此刻的结论：库/代码在这之后改过的话，
+              {/* 🔴 同上：`**上一跑**` 的星号原来是印在页面上的 */}
+              🔴 这是<b>上一跑</b>
+              的账，不是此刻的结论：库/代码在这之后改过的话，
               它只说明「那时候是这样」。要现在的结论就照下面第③条命令再跑一轮。
             </div>
           </>
@@ -384,9 +388,13 @@ export default async function HealthPage() {
         )}
 
         <div style={{ marginTop: 10, fontSize: 12, color: "#606266" }}>
-          十一关 = A3a 静态 · A3b 依赖探针 · A1 对账 · A2 审计链 · TEST 单测全量
-          · B KG 金标 · C 录题+产线 · D 检索 · E 产线流程与族谱 · F 学情读侧 ·
-          A4 备份快照
+          {/* 🔴 AI:PRD-009 验收修复（2026-08-15）：加了 A5「产物可服务」，
+              十一关 → 十二关。名字这一串是**人读镜像**，正本是
+              scripts/regression.ps1 的 $gates —— 那边加关这里要跟着改。 */}
+          十二关 = A3a 静态 · A3b 依赖探针 · A1 对账 · A2 审计链 · TEST 单测全量
+          · B KG 金标 · C 录题+产线 · D 检索 · E 产线流程与族谱 · F
+          学情读侧+两库只读红线 · A4 备份快照 · A5 产物可服务（build 绿 ≠
+          起得来）
         </div>
       </Card>
 
@@ -402,7 +410,7 @@ export default async function HealthPage() {
             cmd="pnpm exec tsx --env-file=.env scripts/integrity-check.ts"
           />
           <CopyCmd
-            label="③ 回归（十一关全量，任一关红了也跑完；跑完战报落库，上面那块就更新）"
+            label="③ 回归（十二关全量，任一关红了也跑完；跑完战报落库，上面那块就更新）"
             cmd="powershell -File scripts/regression.ps1"
           />
         </div>
