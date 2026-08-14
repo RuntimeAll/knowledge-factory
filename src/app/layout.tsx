@@ -1,11 +1,15 @@
 /**
- * 全站壳（AI:PRD-001 · WP6）
+ * 全站壳（AI:PRD-008 · 地基改版；原件 AI:PRD-001 · WP6）
  *
- * 版式正本 = prd/PRD-026/前端设计稿.html v2「学术风·精准简约」：
- * 纸感底色 + 浅色侧栏（🔴 禁深色侧栏）+ 宋体系标题 + 学术绿 + 2~3px 圆角 + 发丝线。
+ * 版式正本换人了：prd/PRD-008/设计稿-管理台改版.md ——
+ * 「结构全面若依化 + 视觉弃学术纸感、改朴素后台」（D1 拍板，antd 默认主题即基调）。
+ * 侧栏菜单树 / 面包屑 / 顶栏都在 `~/components/console/shell`，菜单正本在 `console/menu.ts`。
  *
- * 🔴 导航项跟着卡一张张点亮，没开工的一律占位（disabled）——
- *    提前搭半成品页比没有页更贵。001 点亮「首页」，002-D 点亮「知识图谱」。
+ * 🔴 本文件只做三件事：挂 antd 的 SSR 样式注册器、把红旗条（server component）
+ *    交给壳、把 children 塞进内容区。**导航一条都不在这儿写**。
+ *
+ * 🔴 AntdRegistry 不可省：不挂它，antd 的 css-in-js 样式只在浏览器里生成，
+ *    首屏会闪一下无样式的裸 HTML（App Router 下这是 antd 的官方接法）。
  *
  * 🔴 force-dynamic：本壳每次渲染都读真库（红旗条）。不标的话 Next 会在 build 期
  *    预渲染 / 与 /_not-found，那时库未必在位，构建会因为「读不到库」失败 ——
@@ -13,35 +17,19 @@
  */
 import "~/styles/globals.css";
 
+import { AntdRegistry } from "@ant-design/nextjs-registry";
 import { type Metadata } from "next";
 
-import { NavLink } from "~/components/nav-link";
+import { ConsoleShell } from "~/components/console/shell";
 import { RedFlagBar } from "~/components/red-flag-bar";
 
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "知识工厂 · 资料库",
+  title: "知识工厂 · 管理台",
   description: "个人知识库 · agent 外挂（本地库监督面）",
   icons: [{ rel: "icon", url: "/favicon.ico" }],
 };
-
-/** 🔴 没开工的卡一律占位：卡没开工，页就别装作有 */
-const NAV: ReadonlyArray<{
-  label: string;
-  href?: string;
-  /** 归属卡（占位项显示为「待 AI:PRD-00N」） */
-  card: string;
-}> = [
-  { label: "首页", href: "/", card: "001" },
-  { label: "知识图谱", href: "/kg", card: "002" },
-  // 003-D 点亮：全域处置台（kp低置信 / 图片 / 新题草稿 / 隔离区 四类）
-  { label: "审查队列", href: "/queue", card: "003" },
-  // 004-C 点亮：三路检索页（条件面板 + 来源徽章）+ /q/[id] 题目正本
-  { label: "题库检索", href: "/search", card: "004" },
-  { label: "生产登记", card: "005" },
-  { label: "学情", card: "006" },
-];
 
 export default function RootLayout({
   children,
@@ -49,65 +37,9 @@ export default function RootLayout({
   return (
     <html lang="zh-CN">
       <body>
-        <div className="flex min-h-screen">
-          {/* ── 侧栏：纸上目录（与正文同为纸色，不是深色导航） ── */}
-          <aside className="border-hair bg-paper w-[198px] shrink-0 border-r pt-[22px] pb-8">
-            <div className="px-[22px]">
-              <b className="font-serif text-[19px] tracking-[2px]">知识工厂</b>
-              <small className="text-mut mt-0.5 block text-[10.5px] tracking-[1.5px]">
-                资料库 · AGENT 外挂
-              </small>
-              <span className="border-acc mt-2.5 block w-[26px] border-b-2" />
-            </div>
-
-            <nav className="mt-4">
-              {NAV.map((item) =>
-                item.href ? (
-                  <NavLink key={item.label} href={item.href}>
-                    {item.label}
-                  </NavLink>
-                ) : (
-                  <span
-                    key={item.label}
-                    aria-disabled="true"
-                    title={`功能页属 AI:PRD-${item.card}，本卡只搭壳`}
-                    className="text-mut/70 flex cursor-not-allowed items-baseline px-[22px] py-[7px]"
-                  >
-                    {item.label}
-                    <span className="text-mut/70 ml-auto text-[10px] tracking-[0.5px]">
-                      待 {item.card}
-                    </span>
-                  </span>
-                ),
-              )}
-            </nav>
-
-            <div className="border-hair text-mut mx-[22px] mt-[22px] border-t pt-3 text-[11px] leading-[1.8]">
-              agent 不看这些页面——它走 MCP 工具，与页面共用同一 core。
-              <br />
-              页面 = 你的监督面。
-            </div>
-          </aside>
-
-          {/* ── 主区 ── */}
-          <main className="min-w-0 flex-1">
-            <div className="bg-sheet rule-double sticky top-0 z-10 flex flex-wrap items-center gap-x-4 gap-y-1 px-[30px] py-[13px]">
-              <span className="font-serif text-[15px] tracking-[1px]">
-                知识工厂 · 资料库
-              </span>
-              <span className="text-mut text-[11.5px]">本地 SQLite · 现算</span>
-              <span className="text-mut ml-auto text-[12px]">
-                写操作一律走 core / MCP，页面只读
-              </span>
-            </div>
-
-            <RedFlagBar />
-
-            <div className="max-w-[1120px] px-[30px] pt-[26px] pb-[80px]">
-              {children}
-            </div>
-          </main>
-        </div>
+        <AntdRegistry>
+          <ConsoleShell flags={<RedFlagBar />}>{children}</ConsoleShell>
+        </AntdRegistry>
       </body>
     </html>
   );
