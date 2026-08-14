@@ -145,6 +145,9 @@ const handler = createMcpHandler(
           "🔴 **出题 / 录题 / 挂载考点之前先调它**——kp_id 一律 resolve 出来，禁凭印象编。" +
           "给一句人话（'绝对值' / '一元一次方程'），回候选考点列表；" +
           "支持子串模糊（'绝对值'命中'绝对值的化简'）与别名，query 短于 3 字自动退前缀/包含路。" +
+          "🔴 **跨学段库必带学段防混段**：本库小学 930 + 初中 415 个考点，" +
+          "'混合运算'、'加减'、'面积' 这类说法两段都有，不带 grade_band 拿回来的 top1 可能是另一段的。" +
+          "出小学的活传 grade_band='小学'，初中的活传 '初中'；确实要跨段找才不传。" +
           "返回 { ok, data:{ query, candidates:[{kpId,name,status,confidence(0~1),matchedVia(exact-name|exact-alias|prefix|trigram),aliasHit?,resolvedFrom?}], lowConfidence, queued, warnings } }。" +
           "🔴 lowConfidence=true（没候选或最高分<0.6）表示**别硬挑一个**：系统已自动开一张待裁工单，" +
           "该换个说法再查，或如实告诉人「这个考点词表里还没有」。",

@@ -276,6 +276,7 @@ export {
 } from "./kg";
 
 export {
+  GRADE_BANDS,
   KNN_CONF_MAX,
   KNN_CONF_MIN,
   KNN_MIN_COS,
@@ -287,6 +288,7 @@ export {
   ftsStringLiteral,
   kpContext,
   resolveKp,
+  type GradeBand,
   type KpCandidate,
   type KpContextCard,
   type KpContextOptions,

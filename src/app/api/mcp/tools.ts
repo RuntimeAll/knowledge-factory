@@ -32,6 +32,7 @@
 import { z } from "zod";
 
 import {
+  GRADE_BANDS,
   IngestError,
   KgError,
   KpNotFoundError,
@@ -238,6 +239,15 @@ export const resolveKpInput = z.object({
     .max(50)
     .optional()
     .describe("返回几条候选，默认 8。"),
+  // 🔴 值域直接取 core 的 GRADE_BANDS：两处各写一份枚举，迟早有一处漂
+  grade_band: z
+    .enum(GRADE_BANDS)
+    .optional()
+    .describe(
+      "🔴 跨学段库必带学段防混段：只在这个学段里找（小学 / 初中）。" +
+        "库里小学 930 + 初中 415 个考点，'混合运算'、'加减'、'面积' 这类说法两段都有，" +
+        "不带学段拿回来的 top1 可能是另一段的，挂上去就是串段事故。不传 = 全库检索。",
+    ),
 });
 
 export const kpContextInput = z.object({
@@ -799,7 +809,12 @@ export function runResolveKp(
   args: ResolveKpArgs,
 ): Promise<ToolPayload<ResolveKpResult>> {
   return run("resolve_kp", () =>
-    resolveKp(args.query, { limit: args.limit, actor: "agent" }),
+    resolveKp(args.query, {
+      limit: args.limit,
+      // 🔴 不传就是 undefined = 全库检索（core 侧照旧不拼那句 AND）
+      gradeBand: args.grade_band,
+      actor: "agent",
+    }),
   );
 }
 

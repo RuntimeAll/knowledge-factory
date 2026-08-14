@@ -1,7 +1,8 @@
 /**
  * KG 金标（AI:PRD-002 · 002-E）—— 回归清单 **B 组**的正式载体，REG-B 这一关跑的就是本文件。
  *
- *   B1 resolve_kp 金标 10 条   真实出题场景的查询 → 期望考点全对、置信度非退化
+ *   B1 resolve_kp 金标 11 条   真实出题场景的查询 → 期望考点全对、置信度非退化
+ *                              （🆕 含 B1-09/B1-11 这对「同一句话问两个学段」的学段金标）
  *   B2 双版本缩范围            同一概念层考点在人教/浙教各挂一处，候选里**只出现一次**
  *   B3 合并后无悬挂            造重复 → merge_kp → 检索/别名/错因候选全跟走，旧 id 可达
  *   B4 编造 id 引导            假 kp_id → KP_NOT_FOUND 且**带最近似候选**（或指得出下一步）
@@ -45,6 +46,7 @@ import {
   verifyAuditChain,
   withCoreWrite,
   type CoreDbHandle,
+  type GradeBand,
   type MatchedVia,
   type RowRef,
 } from "~/core";
@@ -189,6 +191,11 @@ interface 金标条目 {
   场景: string;
   /** 期望走哪一路（决定置信度下限） */
   via: MatchedVia;
+  /**
+   * 🆕 只在这个学段里找（AI:PRD-010 收尾）。
+   * 不填 = 全库检索，钉的就是**默认行为**；填了 = 钉「跨学段库里带上坐标问」这条产线口径。
+   */
+  gradeBand?: GradeBand;
   /** 期望命中的考点**名字**（id 现查） */
   期望: string[];
   /** top1 必须是这几个之一（一对多时把并列的全列上） */
@@ -198,7 +205,13 @@ interface 金标条目 {
 /**
  * 🔴 金标表——**往下追加**即可，别改已有行的期望值（改了就等于把红旗按灭）。
  * 覆盖面：exact-alias 一对多 / exact-name / 名与别名同分 / exact-alias 一对一 /
- *         精确压模糊 / prefix 一对多 / prefix / 别名前缀 / trigram 模糊 / 双字短查询。
+ *         精确压模糊 / prefix 一对多 / prefix / 别名前缀 / trigram 模糊 / 双字短查询 /
+ *         🆕 学段过滤两侧（B1-09 初中 ↔ B1-11 小学，同一句 query）。
+ *
+ * 🔴 B1-09 的期望值这次**动过**（AI:PRD-010 收尾，唯一一次），补的是 gradeBand
+ *    而不是期望考点：小学 930 考点导底后「混合运算」在全库的 top1 变成小学侧的
+ *    prefix 命中，本条当场红。裁定（PRD-010 入库回执 · 方向①）是「查询缺学段坐标」，
+ *    所以给金标补上坐标 + 加一条对称的小学侧金标，而不是把 top1 改成小学那条。
  */
 const 金标: 金标条目[] = [
   {
@@ -278,8 +291,13 @@ const 金标: 金标条目[] = [
   {
     编号: "B1-09",
     query: "混合运算",
-    场景: "跨章节找同类题：中段命中（trigram），有理数/实数/整式三条都该在候选里",
+    场景:
+      "初中跨章节找同类题：中段命中（trigram），有理数/实数/整式三条都该在候选里。" +
+      "🔴 2026-08-15 重钉：小学 930 考点导底后本条曾红（top1 被小学的「混合运算的运算顺序」" +
+      "以 prefix 0.917 盖过）—— 不是打分坏了，是**这条查询本来就缺一个学段坐标**。" +
+      "跨学段库里问「混合运算」而不说学段，没有唯一正确答案，所以补上 gradeBand。",
     via: "trigram",
+    gradeBand: "初中",
     期望: ["有理数的混合运算", "实数的混合运算", "整式的混合运算"],
     top1: ["有理数的混合运算"],
   },
@@ -291,25 +309,47 @@ const 金标: 金标条目[] = [
     期望: ["实数的混合运算"],
     top1: ["实数的混合运算"],
   },
+  {
+    编号: "B1-11",
+    query: "混合运算",
+    场景:
+      "🆕 B1-09 的**对称面**（AI:PRD-010 收尾）：同一句话换个学段问，答案必须整个换一批。" +
+      "小学计算册出题问「混合运算」，要的是「混合运算的运算顺序」这类小学考点，" +
+      "拿回初中的「有理数的混合运算」就是串段事故。一条查询两条金标，学段过滤才算真被钉住。",
+    via: "prefix",
+    gradeBand: "小学",
+    期望: ["混合运算的运算顺序", "混合运算顺序的改变"],
+    top1: ["混合运算的运算顺序", "混合运算顺序的改变"],
+  },
 ];
 
-describe("B1 · resolve_kp 金标 10 条（真库只读）", () => {
-  it("金标表本身：10 条、编号不重、五类场景都覆盖到", () => {
-    expect(金标.length).toBe(10);
-    expect(new Set(金标.map((g) => g.编号)).size).toBe(10);
-    expect(new Set(金标.map((g) => g.query)).size).toBe(10);
+describe("B1 · resolve_kp 金标 11 条（真库只读）", () => {
+  it("金标表本身：11 条、编号不重、五类场景都覆盖到", () => {
+    expect(金标.length).toBe(11);
+    expect(new Set(金标.map((g) => g.编号)).size).toBe(11);
+    // 🔴 唯一性口径从「query」放宽到「query+学段」（AI:PRD-010 收尾）：
+    //    B1-09/B1-11 是**同一句话问两个学段**，这对儿本身就是学段过滤的金标，
+    //    按 query 去重会把它判成重复条目。
+    expect(
+      new Set(金标.map((g) => `${g.query}@${g.gradeBand ?? "全库"}`)).size,
+    ).toBe(11);
     const 路线 = new Set(金标.map((g) => g.via));
     for (const v of ["exact-name", "exact-alias", "prefix", "trigram"]) {
       expect(路线.has(v as MatchedVia), `金标没覆盖 ${v} 这一路`).toBe(true);
     }
+    // 🔴 学段两侧都要有金标（只钉一侧 = 只证明了"过滤没把本段滤没"，没证明"它滤掉了别段"）
+    expect(new Set(金标.map((g) => g.gradeBand))).toEqual(
+      new Set([undefined, "初中", "小学"]),
+    );
   });
 
   for (const g of 金标) {
-    it(`${g.编号} 「${g.query}」→ ${g.期望.join("／")}（${g.via}）`, async () => {
+    it(`${g.编号} 「${g.query}」${g.gradeBand ? `@${g.gradeBand}` : ""}→ ${g.期望.join("／")}（${g.via}）`, async () => {
       const r = await resolveKp(g.query, {
         handle: 真库,
         limit: 20,
         enqueue: false, // 🔴 真库只读：低置信也不许开工单
+        ...(g.gradeBand ? { gradeBand: g.gradeBand } : {}),
       });
       const 说明 = `query=${g.query}｜候选=${r.candidates
         .map((c) => `${c.name}(${c.confidence}/${c.matchedVia})`)
@@ -387,6 +427,63 @@ describe("B1 · resolve_kp 金标 10 条（真库只读）", () => {
       expect(c.confidence).toBeGreaterThanOrEqual(路线口径.trigram.下限);
       expect(c.confidence).toBeLessThanOrEqual(路线口径.trigram.上限);
     }
+  });
+
+  /**
+   * B1-09/B1-11 附证 —— 学段过滤的**三条硬事实**（AI:PRD-010 收尾）。
+   *
+   * 🔴 上面那对金标只证明了「本段该有的还在」。真正要防的是反面：
+   *    ① 过滤之后候选里**一条别段的都没有**（漏一条就是串段事故的入口）；
+   *    ② 过滤在**召回层**生效，不是取回来再截断 —— 判据是「初中候选数 > 全库那 20 条里
+   *       初中的条数」：截断做不出这个数，只有 SQL 里就把小学挡在外面才做得出；
+   *    ③ **不传学段 = 全库**，两段候选并存 —— 默认行为零变化是本次改动的硬约束。
+   */
+  it("B1-09/B1-11 附证：学段过滤在召回层生效、不串段，且不传=全库两段并存", async () => {
+    const 学段 = async (kpId: string) =>
+      (
+        await 行<{ grade_band: string | null }>(
+          真库,
+          "SELECT grade_band FROM kp WHERE id = ?",
+          [kpId],
+        )
+      )[0]?.grade_band;
+
+    const 查 = (band?: GradeBand) =>
+      resolveKp("混合运算", {
+        handle: 真库,
+        limit: 20,
+        enqueue: false,
+        ...(band ? { gradeBand: band } : {}),
+      });
+
+    // ① 不串段
+    for (const band of ["初中", "小学"] as const) {
+      const r = await 查(band);
+      expect(r.candidates.length, `${band}：过滤后候选空了`).toBeGreaterThan(0);
+      for (const c of r.candidates) {
+        expect(
+          await 学段(c.kpId),
+          `${band} 过滤后混进了别段候选：「${c.name}」(${c.kpId})`,
+        ).toBe(band);
+      }
+    }
+
+    // ③ 不传 = 全库：两段并存（默认行为零变化）
+    const 全库 = await 查();
+    const 全库分段 = await Promise.all(
+      全库.candidates.map((c) => 学段(c.kpId)),
+    );
+    expect(
+      new Set(全库分段),
+      `不传学段却只召回了一段——默认行为被改了：${全库.candidates.map((c) => c.name).join("、")}`,
+    ).toEqual(new Set(["小学", "初中"]));
+
+    // ② 过滤发生在召回层：初中侧拿到的条数比"全库前 20 里的初中条数"多
+    const 初中 = await 查("初中");
+    expect(
+      初中.candidates.length,
+      "初中候选数没超过全库前 20 里的初中条数——那说明过滤是取回来才截断的",
+    ).toBeGreaterThan(全库分段.filter((b) => b === "初中").length);
   });
 });
 

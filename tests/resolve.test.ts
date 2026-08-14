@@ -132,7 +132,14 @@ describe("① 四路命中：exact-name / exact-alias / prefix / trigram", () =>
     h = await 造副本("hit");
     绝对值 = (await createKp({ name: "绝对值" }, { handle: h })).id;
     压轴 = (await createKp({ name: "绝对值的化简与压轴" }, { handle: h })).id;
-    有理数 = (await createKp({ name: "有理数加减法则" }, { handle: h })).id;
+    // 🔴 gradeBand 必须显式给（AI:PRD-010 收尾）：副本带着真库那 1345 个考点，
+    //    「加减」那一例要靠学段过滤把小学侧的几百条挡在外面，夹具自己不标学段就会被一起滤掉。
+    有理数 = (
+      await createKp(
+        { name: "有理数加减法则", gradeBand: "初中" },
+        { handle: h },
+      )
+    ).id;
 
     // 🔴 同名别名交叉：'取绝对值' 同时指向两个考点 —— resolve 该给两个候选，不武断
     await addKpAlias(绝对值, "取绝对值", { handle: h });
@@ -192,8 +199,37 @@ describe("① 四路命中：exact-name / exact-alias / prefix / trigram", () =>
   });
 
   it("🔴 query < 3 字：trigram 恒空，退 LIKE 前缀/包含路照样有候选", async () => {
-    const r = await resolveKp("加减", { handle: h, enqueue: false });
+    // 🔴 gradeBand（AI:PRD-010 收尾）：小学 930 考点导底后，「加减」在全库能命中几百条
+    //    （小学一到六年级每册都有加减），默认 8 条候选里本例的夹具早被挤出去了。
+    //    这不是退路坏了 —— 是**跨学段库里问两个字本来就该带学段**。
+    //    本例钉的是「短查询退路给不给得出候选」，学段只是把提问补完整。
+    const r = await resolveKp("加减", {
+      handle: h,
+      enqueue: false,
+      gradeBand: "初中",
+    });
     expect(r.candidates.map((c) => c.kpId)).toContain(有理数);
+  });
+
+  it("🔴 不传 gradeBand = 全库检索：跨学段双段候选并存（默认行为零变化）", async () => {
+    // 🔴 这一条钉的是**没传学段时什么都不许变**。学段过滤是加法：
+    //    传了才多那句 AND，不传时 SQL 与参数表跟过滤上线前逐字相同。
+    //    它红 = 有人把过滤做成了默认值，老调用方会当场被静默改行为。
+    const r = await resolveKp("混合运算", {
+      handle: h,
+      limit: 20,
+      enqueue: false,
+    });
+    const 段 = await 行<{ grade_band: string | null }>(
+      h,
+      `SELECT DISTINCT grade_band FROM kp WHERE id IN (${r.candidates
+        .map((c) => `'${c.kpId}'`)
+        .join(",")})`,
+    );
+    expect(
+      new Set(段.map((x) => x.grade_band)),
+      `不传学段却只召回了一段：${r.candidates.map((c) => c.name).join("、")}`,
+    ).toEqual(new Set(["小学", "初中"]));
   });
 
   it("🔴 命中 merged 壳 → 落到活跃考点并标 resolvedFrom（旧名照样问得出落点）", async () => {

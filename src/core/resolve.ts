@@ -47,6 +47,22 @@
  *   kp_fts 用 trigram（3 字符一 token），**2 字以内的 query MATCH 恒空**
  *   （切不出一个完整 trigram）。所以「加减」「圆」这类短查询退到 LIKE
  *   前缀/包含路 —— 不是 FTS 坏了，是 tokenizer 的物理下限。
+ *
+ * ── 🆕 学段过滤 gradeBand（AI:PRD-010 收尾，2026-08-15）────────────────────
+ *   小学 930 考点导底之后库变成**跨学段**（小学 930 + 初中 415）。同一个说法
+ *   两段都有（「混合运算」小学 25 条、初中 11 条），而小学侧的短名天然更容易
+ *   拿到 prefix 的 0.85~0.95 —— 于是初中那条本该 top1 的考点被压到后面去了。
+ *   这不是打分口径坏了，是**查询缺了一个坐标**：跨学段库里问「混合运算」，
+ *   不说学段本来就没有唯一答案。
+ *
+ *   🔴 三条纪律：
+ *   ① **不传 = 全库检索，行为与过滤上线前逐字相同**（SQL 片段为空串、参数表
+ *      也不多一个）。这是硬约束：老调用方一个都不许受影响。
+ *   ② **过滤在候选召回层生效**（①②③④四路的 SQL 各自带上，外加第五路
+ *      knn-vote 的投票 SQL）—— 不是取回来再截断。截断只会把「本段的第 9 名」
+ *      连同「他段的前 8 名」一起丢掉，越过滤越查不到。
+ *   ③ merged 壳的**落点**也过闸：壳过了学段闸不代表落点还在本段，
+ *      漏检等于从后门放一条串段候选进来（见 ⑤）。
  */
 import { z } from "zod";
 
@@ -63,6 +79,17 @@ import { withCoreWrite } from "./write";
 // ---------------------------------------------------------------------------
 // 契约
 // ---------------------------------------------------------------------------
+
+/**
+ * 学段带值域 = `kp.grade_band` 的取值（🔴 与导底脚本同源；库里 1345 个考点
+ * 每一个都带着它，没有 NULL —— 所以过滤用**全等**，不给 NULL 开后门）。
+ *
+ * 🔴 kp 表**没有** subject 列（学科落在 edition_tree 上，跨了一层映射），
+ *    所以本文件只做学段过滤，不做学科过滤 —— 别照着 gradeBand 的样子
+ *    再发明一个 subject 选项出来，那需要先改数据模型。
+ */
+export const GRADE_BANDS = ["小学", "初中"] as const;
+export type GradeBand = (typeof GRADE_BANDS)[number];
 
 /** 命中方式（描述的是**匹配形态**，不是哪个引擎算出来的） */
 export type MatchedVia =
@@ -162,6 +189,17 @@ export interface ResolveKpOptions {
    *    C3 不绿 / 模型没装会自动关，不必手动传。
    */
   knn?: boolean;
+  /**
+   * 🆕 只在这个学段里找（`kp.grade_band` 全等）。
+   *
+   * 🔴 **不传 = 全库检索，与过滤上线前一字不差**（SQL 片段与参数表都不多一个字）。
+   *    传了 = 五条召回路**各自**在 SQL 里过滤，不是取回来再截断。
+   *
+   * 什么时候必须传：库是跨学段的（小学 930 + 初中 415），同一个说法两段都有
+   * （「混合运算」「加减」「面积」…）。出小学册子问「混合运算」而不说学段，
+   * 拿回来的 top1 可能是初中的「有理数的混合运算」—— 挂上去就是串段事故。
+   */
+  gradeBand?: GradeBand;
 }
 
 /** 低于这条线就是「没把握」，要入队列交人裁 */
@@ -292,6 +330,24 @@ function coverage(query: string, term: string): number {
   return t === 0 ? 0 : clamp01(字数(query) / t);
 }
 
+/**
+ * 学段过滤的 SQL 片段。
+ *
+ * 🔴 不传学段 → **返回空串**：拼出来的 SQL 与过滤上线前逐字相同。
+ *    这条（连同下面的 `段参`）就是「默认行为零变化」的实现方式 ——
+ *    不是「传了个 '%' 通配」也不是「查完再筛」，是那句 AND 压根不存在。
+ *
+ * @param 前缀 kp 表在该条 SQL 里的别名（带点，如 `k.`）；未起别名时留空。
+ */
+function 段(band: GradeBand | undefined, 前缀 = ""): string {
+  return band ? ` AND ${前缀}grade_band = ?` : "";
+}
+
+/** 与 `段()` 配套的参数：必须插在片段所在的**同一位置**，位置错了参数就串了 */
+function 段参(band: GradeBand | undefined): string[] {
+  return band ? [band] : [];
+}
+
 // ---------------------------------------------------------------------------
 // resolve_kp
 // ---------------------------------------------------------------------------
@@ -344,6 +400,8 @@ export async function resolveKp(
   const fetchN = Math.max(MIN_FETCH, limit * FETCH_FACTOR);
   const warnings: string[] = [];
   const hits: Hit[] = [];
+  /** 🔴 undefined = 不过滤（全库），下面每条 SQL 都靠 `段()/段参()` 原地退化成原样 */
+  const band = opts.gradeBand;
 
   // ── ① 精确：活跃名全等 ────────────────────────────────────────────────────
   //    🔴 这一路（也只有这一路）连 merged 壳一起查：用旧名字查旧考点，
@@ -351,8 +409,8 @@ export async function resolveKp(
   for (const row of await q<KpRowLite>(
     h,
     `SELECT id, name, status FROM kp
-      WHERE name = ? COLLATE NOCASE AND status IN ('draft','active','merged')`,
-    [qs],
+      WHERE name = ? COLLATE NOCASE AND status IN ('draft','active','merged')${段(band)}`,
+    [qs, ...段参(band)],
   )) {
     hits.push({ ...row, kpId: row.id, confidence: 1, via: "exact-name" });
   }
@@ -362,8 +420,8 @@ export async function resolveKp(
     h,
     `SELECT k.id AS id, k.name AS name, k.status AS status, a.alias AS alias
        FROM kp_alias a JOIN kp k ON k.id = a.kp_id
-      WHERE a.alias = ? COLLATE NOCASE AND k.status IN ('draft','active','merged')`,
-    [qs],
+      WHERE a.alias = ? COLLATE NOCASE AND k.status IN ('draft','active','merged')${段(band, "k.")}`,
+    [qs, ...段参(band)],
   )) {
     hits.push({
       kpId: row.id,
@@ -380,13 +438,13 @@ export async function resolveKp(
   for (const row of await q<KpRowLite & { term: string; kind: string }>(
     h,
     `SELECT id, name, status, name AS term, 'name' AS kind FROM kp
-      WHERE status IN ('draft','active') AND name LIKE ? ESCAPE '\\'
+      WHERE status IN ('draft','active') AND name LIKE ? ESCAPE '\\'${段(band)}
      UNION ALL
      SELECT k.id, k.name, k.status, a.alias AS term, 'alias' AS kind
        FROM kp_alias a JOIN kp k ON k.id = a.kp_id
-      WHERE k.status IN ('draft','active') AND a.alias LIKE ? ESCAPE '\\'
+      WHERE k.status IN ('draft','active') AND a.alias LIKE ? ESCAPE '\\'${段(band, "k.")}
      LIMIT ?`,
-    [prefixPat, prefixPat, fetchN],
+    [prefixPat, ...段参(band), prefixPat, ...段参(band), fetchN],
   )) {
     hits.push({
       kpId: row.id,
@@ -406,9 +464,9 @@ export async function resolveKp(
       `SELECT k.id AS id, k.name AS name, k.status AS status,
               f.term AS term, f.kind AS kind, bm25(kp_fts) AS s
          FROM kp_fts f JOIN kp k ON k.id = f.kp_id
-        WHERE kp_fts MATCH ? AND k.status IN ('draft','active')
+        WHERE kp_fts MATCH ? AND k.status IN ('draft','active')${段(band, "k.")}
         ORDER BY s LIMIT ?`,
-      [ftsStringLiteral(qs), fetchN],
+      [ftsStringLiteral(qs), ...段参(band), fetchN],
     );
     // bm25 越负越好；批内 min-max 归一（只有一条时视作最优）
     const scores = rows.map((x) => Number(x.s));
@@ -435,13 +493,13 @@ export async function resolveKp(
     for (const row of await q<KpRowLite & { term: string; kind: string }>(
       h,
       `SELECT id, name, status, name AS term, 'name' AS kind FROM kp
-        WHERE status IN ('draft','active') AND name LIKE ? ESCAPE '\\'
+        WHERE status IN ('draft','active') AND name LIKE ? ESCAPE '\\'${段(band)}
        UNION ALL
        SELECT k.id, k.name, k.status, a.alias AS term, 'alias' AS kind
          FROM kp_alias a JOIN kp k ON k.id = a.kp_id
-        WHERE k.status IN ('draft','active') AND a.alias LIKE ? ESCAPE '\\'
+        WHERE k.status IN ('draft','active') AND a.alias LIKE ? ESCAPE '\\'${段(band, "k.")}
        LIMIT ?`,
-      [containsPat, containsPat, fetchN],
+      [containsPat, ...段参(band), containsPat, ...段参(band), fetchN],
     )) {
       hits.push({
         kpId: row.id,
@@ -468,6 +526,23 @@ export async function resolveKp(
           `命中「${hit.name}」(${hit.kpId}) 是 merged 壳，落点 ${landed.id} 状态是 ${landed.status}——不作候选。`,
         );
         continue;
+      }
+      // 🔴 落点补一次学段闸：壳过了闸不代表落点还在本段（跨段合并是坏数据，
+      //    但读侧不设防就等于从后门放一条串段候选进来）。只在传了学段时查这一发。
+      if (band) {
+        const 落点段 = (
+          await q<{ grade_band: string | null }>(
+            h,
+            "SELECT grade_band FROM kp WHERE id = ?",
+            [landed.id],
+          )
+        )[0]?.grade_band;
+        if (落点段 !== band) {
+          warnings.push(
+            `命中「${hit.name}」(${hit.kpId}) 是 merged 壳，落点「${landed.name}」(${landed.id}) 学段是 ${落点段 ?? "空"}、不是 ${band}——按学段过滤时不作候选。`,
+          );
+          continue;
+        }
       }
       resolved.push({
         ...hit,
@@ -502,7 +577,7 @@ export async function resolveKp(
   } else if (opts.knn === false) {
     knn = { ran: false, skipped: "调用方显式关掉了近邻投票（knn:false）" };
   } else {
-    const 票 = await 近邻投票(h, qs);
+    const 票 = await 近邻投票(h, qs, band);
     knn = 票.info;
     warnings.push(...票.warnings);
     if (票.hits.length > 0) {
@@ -592,7 +667,11 @@ interface 投票结果 {
  *    近邻投票是锦上添花，它挂了不该让 resolve_kp 整个查不出东西来。
  *    但原因必须写进 warnings —— 静默关掉一条路 = 以后没人知道它其实一直没在跑。
  */
-async function 近邻投票(h: CoreDbHandle, query: string): Promise<投票结果> {
+async function 近邻投票(
+  h: CoreDbHandle,
+  query: string,
+  band?: GradeBand,
+): Promise<投票结果> {
   const st = await vecAxisStatus(h);
   if (!st.ok) {
     return {
@@ -634,12 +713,14 @@ async function 近邻投票(h: CoreDbHandle, query: string): Promise<投票结�
     status: string;
   }>(
     h,
+    // 🔴 学段闸也罩住这一路：近邻题是按语义找的，不看学段的话
+    //    「小学的混合运算」很容易被初中的题投出来（反之亦然）。
     `SELECT qk.question_id, qk.kp_id, k.name, k.status
        FROM question_kp qk JOIN kp k ON k.id = qk.kp_id
       WHERE qk.is_primary = 1
-        AND k.status IN ('draft','active')
+        AND k.status IN ('draft','active')${段(band, "k.")}
         AND qk.question_id IN (${近邻.map(() => "?").join(",")})`,
-    近邻.map((t) => t.questionId),
+    [...段参(band), ...近邻.map((t) => t.questionId)],
   );
 
   const 分 = new Map(近邻.map((t) => [t.questionId, t.score]));
