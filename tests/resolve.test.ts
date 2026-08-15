@@ -269,10 +269,15 @@ describe("① 四路命中：exact-name / exact-alias / prefix / trigram", () =>
 
 describe("② 编造 kp_id：带得出候选就带，带不出也要指路", () => {
   let h: CoreDbHandle;
+  // 🔴 基线相对不数绝对：真库自己也会长「kp低置信」工单（2026-08-15 首例=「破十法」，
+  //    是小学 KG 方法层缺口的真实需求信号，不是脏数据）——绝对计数会被活库打红，
+  //    口径对齐 REG-F2「活库只增不改旧」先例。
+  let 低置信基线: number;
 
   beforeAll(async () => {
     h = await 造副本("fake-id");
     await createKp({ name: "绝对值的化简与压轴" }, { handle: h });
+    低置信基线 = await 计数(h, "review_queue", "kind = 'kp低置信'");
   });
 
   it("kp_绝对值压轴（可读文本）→ KP_NOT_FOUND 且 candidates 非空", async () => {
@@ -299,7 +304,8 @@ describe("② 编造 kp_id：带得出候选就带，带不出也要指路", () 
   it("找不到人也不许悄悄开工单（兜底那一查 enqueue:false）", async () => {
     // 🔴 只数本组关心的那一类：003-E 之后真库里本来就有别的类别的工单（图审等），
     //    副本自然也带着它们 —— 数总数会把别人的工单算到本组头上。
-    expect(await 计数(h, "review_queue", "kind = 'kp低置信'")).toBe(0);
+    //    对比基线而非 0：本组要证的是「这里的查询没有新增」，不是「真库从没长过」。
+    expect(await 计数(h, "review_queue", "kind = 'kp低置信'")).toBe(低置信基线);
   });
 });
 
@@ -309,10 +315,13 @@ describe("② 编造 kp_id：带得出候选就带，带不出也要指路", () 
 
 describe("③ 低置信 → review_queue，同 query 不重复开", () => {
   let h: CoreDbHandle;
+  let 低置信基线: number;
 
   beforeAll(async () => {
     h = await 造副本("queue");
     await createKp({ name: "有理数加减法则" }, { handle: h });
+    // 🔴 同上组：基线相对，活库长出的真实工单（如「破十法」）不算进本组的账
+    低置信基线 = await 计数(h, "review_queue", "kind = 'kp低置信'");
   });
 
   // 🔴 挑「初中数学 KG 里绝不可能有」的高数词做查询：002 导底后真库有 415 个考点，
@@ -337,25 +346,32 @@ describe("③ 低置信 → review_queue，同 query 不重复开", () => {
       // 🔴 只取本组这一类（副本里带着真库既有的其它工单）
       "SELECT id, kind, state, payload_json, reason FROM review_queue WHERE kind = 'kp低置信' ORDER BY id",
     );
-    expect(rows.length).toBe(1);
-    expect(rows[0]!.kind).toBe("kp低置信");
-    expect(rows[0]!.state).toBe("open");
-    expect(rows[0]!.id).toBe(r.queued!.id);
-    const payload = JSON.parse(rows[0]!.payload_json) as { query: string };
-    expect(payload.query).toBe(词表外);
-    expect(rows[0]!.reason).toContain(词表外);
+    expect(rows.length).toBe(低置信基线 + 1);
+    // 🔴 按本组自己的 query 认领工单，不按位置取行——副本里可能带着真库既有的同类工单
+    const 本单 = rows.find(
+      (x) => (JSON.parse(x.payload_json) as { query: string }).query === 词表外,
+    );
+    expect(本单).toBeTruthy();
+    expect(本单!.kind).toBe("kp低置信");
+    expect(本单!.state).toBe("open");
+    expect(本单!.id).toBe(r.queued!.id);
+    expect(本单!.reason).toContain(词表外);
   });
 
   it("🔴 再查同一个词 → 不重复入队（未决工单去重）", async () => {
     const r = await resolveKp(词表外, { handle: h });
     expect(r.queued?.created).toBe(false);
-    expect(await 计数(h, "review_queue", "kind = 'kp低置信'")).toBe(1);
+    expect(await 计数(h, "review_queue", "kind = 'kp低置信'")).toBe(
+      低置信基线 + 1,
+    );
   });
 
   it("换个词 → 另开一张（去重只按 query，不是一刀切）", async () => {
     const r = await resolveKp("十字相乘", { handle: h });
     expect(r.queued?.created).toBe(true);
-    expect(await 计数(h, "review_queue", "kind = 'kp低置信'")).toBe(2);
+    expect(await 计数(h, "review_queue", "kind = 'kp低置信'")).toBe(
+      低置信基线 + 2,
+    );
   });
 
   it("入队列那笔走的是 core 写路径：闸静息 + 审计链接得上 + C1 覆盖不漏", async () => {
