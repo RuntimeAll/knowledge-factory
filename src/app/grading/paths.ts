@@ -164,7 +164,7 @@ export function extOf(name: string): string {
   return i <= 0 ? "" : name.slice(i).toLowerCase();
 }
 
-/** `2026-08-14T15:30:12+08:00` → `20260814-153012`（当批目录名） */
+/** `2026-08-14T15:30:12+08:00` → `20260814-153012`（当批文件名前缀；🔴 收件箱平铺一层，不建时间戳子目录） */
 export function stampOfIso(iso: string): string {
   const d = iso.slice(0, 10).replace(/-/g, "");
   const t = iso.slice(11, 19).replace(/:/g, "");

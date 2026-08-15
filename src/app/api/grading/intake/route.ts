@@ -3,7 +3,13 @@
  *
  * ════════════════════════════════════════════════════════════════════════════
  * 🔴🔴 本路由是本组**唯一的写**（写操作白名单五类之一：收卷录入），而且写的**不是库**：
- *      POST → `收件箱/<代号>/<时间戳>/` 落新照片 + 向 `收件箱/_队列.jsonl` 追加一行。
+ *      POST → `收件箱/<代号>/<时间戳>-NN_原名.jpg` 落新照片（**平铺一层**）
+ *             + 向 `收件箱/_队列.jsonl` 追加一行。
+ *      🔴 层级契约（2026-08-15 实弹抓出）：watcher 的 `列图()` 只扫 `<代号>/` 下的
+ *         **一层文件**，子目录直接无视 —— 早先落 `<代号>/<时间戳>/` 两层的批次
+ *         对 watcher 是隐形的（永远「收件中」）。时间戳收进文件名：批次归属与
+ *         页序都在名字里（字典序 = 时间序 + 拍摄序），判稳窗把同窗文件并成一批
+ *         正是 watcher 的语义。
  *
  *      跨线契约 §一/§二·6（`ai-bkb/跨线契约-无人值守批改与知识工厂.md`）：
  *        · 收件箱是 PRD-027 的地盘，**管理台上传 API 是唯一写入方**，
@@ -258,19 +264,22 @@ export async function POST(req: Request): Promise<NextResponse> {
     if (f.size === 0) return 拒(`「${f.name}」是 0 字节 —— 空文件不收。`);
   }
 
-  // ── 落盘：收件箱/<代号>/<时间戳>/ ─────────────────────────────────────
+  // ── 落盘：收件箱/<代号>/<时间戳>-NN_原名（🔴 平铺一层，watcher 只扫这一层） ──
   const ts = nowLocalISO();
-  const base = underRoot(inboxDir(), code);
+  const dir = underRoot(inboxDir(), code);
+  const 落名 = (s: string, i: number, orig: string): string =>
+    `${s}-${String(i + 1).padStart(2, "0")}_${safePhotoName(orig)}`;
+  const 有撞名 = (s: string): boolean =>
+    files.some((f, i) => existsSync(underRoot(dir, 落名(s, i, f.name))));
   let stamp = stampOfIso(ts);
-  let dir = underRoot(base, stamp);
-  // 同一秒再提交一次：不合并、不覆盖，另起一个目录（一批 = 一次提交）
-  for (let n = 2; existsSync(dir) && n <= 20; n += 1) {
+  // 同一秒再提交一次：不覆盖，时间戳加尾号换一组文件名
+  // （落进同一个判稳窗会被 watcher 并成一批 —— 那正是它的批次语义，不拦）
+  for (let n = 2; 有撞名(stamp) && n <= 20; n += 1) {
     stamp = `${stampOfIso(ts)}-${n}`;
-    dir = underRoot(base, stamp);
   }
-  if (existsSync(dir)) {
+  if (有撞名(stamp)) {
     return 拒(
-      `目录已存在且试了 20 个后缀都撞上：${dir}（这不该发生，去看一眼收件箱）`,
+      `文件名试了 20 个时间戳尾号都撞上（${dir}/${stamp}-…）——这不该发生，去看一眼收件箱`,
     );
   }
 
@@ -285,14 +294,14 @@ export async function POST(req: Request): Promise<NextResponse> {
   try {
     for (let i = 0; i < files.length; i += 1) {
       const f = files[i]!;
-      // 🔴 序号前缀锁住**拍摄顺序**：整页直读要按页序看，文件系统的字典序靠不住
-      const name = `${String(i + 1).padStart(2, "0")}_${safePhotoName(f.name)}`;
+      // 🔴 序号前缀锁住**拍摄顺序**：整页直读要按页序看；时间戳前缀锁住批次归属
+      const name = 落名(stamp, i, f.name);
       const bytes = Buffer.from(await f.arrayBuffer());
       // 🔴 flag "wx"：撞名直接抛，绝不覆盖（契约：只写新增，不改不删）
       writeFileSync(underRoot(dir, name), bytes, { flag: "wx" });
       saved.push(name);
       // 相对收件箱根的路径（watcher 与看板都按这个口径认这批图）
-      rel.push(`${code}/${stamp}/${name}`);
+      rel.push(`${code}/${name}`);
     }
   } catch (e) {
     // 🔴 写了一半：已经落盘的**不删**（删是我们没有的权限），如实报告写进去几张。
