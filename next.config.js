@@ -51,6 +51,25 @@ const config = {
    * 🔴 只影响 `next dev`：生产构建不读它，所以写死一个内网地址不会带进部署。
    */
   allowedDevOrigins: ["192.168.1.142"],
+
+  /**
+   * dev 左下角那枚红色「N Issue」徽标关掉（2026-08-15 验收：验收时碍眼）。
+   *
+   * 🔴 徽标底下**只有一条已挂账的告警**：ProComponents 响应式断点的 dev-only
+   *    hydration 警告（AI:PRD-008 · 遗留#20，见 prd/PRD-008/验收实录-20260814.md，
+   *    prod build 不受影响）。
+   * 🔴 这一行**只是藏徽标，不是把问题消掉** —— 警告照旧打在浏览器 console 与
+   *    dev server 日志里，遗留#20 也还挂在账上。哪天要复现它，把这行注掉即可。
+   * 🔴 只作用于 `next dev`：生产构建压根不注入这套 devtools。
+   *
+   * ⚠️ 实测挂账（2026-08-15，next 15.5.23）：**这个官方开关当前没生效** ——
+   *    另起干净 dev（turbopack 与 webpack 各一遍、独立 distDir）徽标照旧出现。
+   *    根因：判据在预编译包 dist/compiled/next-devtools 里读
+   *    `process.env.__NEXT_DEV_INDICATOR`，而这份包没吃到 define-env 注入的值。
+   *    ⇒ 配置按官方写法留着（升级 next 后自然生效），眼下要立刻不碍眼就点徽标上
+   *      那个「×」（它写 devIndicator.disabledUntil，是运行期的另一条通路）。
+   */
+  devIndicators: false,
 };
 
 export default config;

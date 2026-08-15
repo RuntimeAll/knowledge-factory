@@ -5,7 +5,8 @@
  *
  * ── 挂一个新页要改的就是这一处 ─────────────────────────────────────────────
  *   ① 找到它所属的组，把那一项的 `todo` 去掉（页建好了就不叫「待开发」）；
- *   ② 组里没有这一项就新加一条 `{ path, name }`；
+ *   ② 组里没有这一项就新加一条 `{ path, name, icon }`（🔴 icon 别省：
+ *      侧栏收起后只剩图标，漏了那一项就是一块白板，见 {@link ConsoleIconName}）；
  *   ③ 别名/旧地址（不进菜单但要有面包屑）加到 {@link HIDDEN_CRUMBS}。
  *   除此之外**不用动 shell.tsx** —— 壳只认这份数据。
  *
@@ -15,10 +16,52 @@
  *    （shell 是 client、面包屑在 client、将来若有 server 端用途也不必再抄一份）。
  */
 
+/**
+ * 图标名（@ant-design/icons 的组件名去掉 `Outlined`，小写连字符）。
+ *
+ * 🔴 这里只放**名字**不放组件：本文件是纯数据（不 import react），
+ *    名字 → 组件的映射在 shell.tsx 的 `MENU_ICONS` 一张表里。
+ * 🔴 侧栏收起后只剩图标，**没图标的项就是一块白板** ——
+ *    所以新加菜单项时 icon 与 name 一样是必填的自觉项（漏了会退化成首字母方块）。
+ */
+export type ConsoleIconName =
+  | "home"
+  | "dashboard"
+  | "database"
+  | "file-search"
+  | "import"
+  | "apartment"
+  | "partition"
+  | "merge-cells"
+  | "appstore"
+  | "tags"
+  | "experiment"
+  | "inbox"
+  | "shop"
+  | "book"
+  | "profile"
+  | "swap"
+  | "team"
+  | "idcard"
+  | "bug"
+  | "audit"
+  | "check-square"
+  | "form"
+  | "cloud-upload"
+  | "project"
+  | "solution"
+  | "control"
+  | "file-done"
+  | "monitor"
+  | "history"
+  | "safety-certificate";
+
 export interface ConsoleMenuItem {
   /** 路由（唯一键） */
   path: string;
   name: string;
+  /** 侧栏图标（收起态唯一的辨识物，见 {@link ConsoleIconName}） */
+  icon?: ConsoleIconName;
   /** 页还没建 ⇒ 置灰 + 「待开发」 */
   todo?: boolean;
   /** 鼠标悬停的一句话（这页管什么） */
@@ -29,6 +72,8 @@ export interface ConsoleMenuGroup {
   /** 组的伪路径（只作菜单键，不是可访问地址） */
   key: string;
   name: string;
+  /** 组标题图标（展开态跟在组名前，收起态组标题整条不出现） */
+  icon?: ConsoleIconName;
   children: ConsoleMenuItem[];
 }
 
@@ -37,18 +82,31 @@ export const CONSOLE_MENU: ConsoleMenuGroup[] = [
   {
     key: "/g/home",
     name: "首页",
+    icon: "home",
     children: [
-      { path: "/", name: "工作台", hint: "库有多大 · 有没有红灯 · 今天该去哪" },
+      {
+        path: "/",
+        name: "工作台",
+        icon: "dashboard",
+        hint: "库有多大 · 有没有红灯 · 今天该去哪",
+      },
     ],
   },
   {
     key: "/g/qbank",
     name: "题库管理",
+    icon: "database",
     children: [
-      { path: "/question", name: "题目管理", hint: "找题、盘题（不改题）" },
+      {
+        path: "/question",
+        name: "题目管理",
+        icon: "file-search",
+        hint: "找题、盘题（不改题）",
+      },
       {
         path: "/ingest",
         name: "录入批次",
+        icon: "import",
         hint: "每次投料的台账 + 闸报告",
       },
     ],
@@ -56,11 +114,18 @@ export const CONSOLE_MENU: ConsoleMenuGroup[] = [
   {
     key: "/g/kg",
     name: "知识图谱",
+    icon: "apartment",
     children: [
-      { path: "/kg", name: "考点管理", hint: "版本树 + 考点盘点" },
+      {
+        path: "/kg",
+        name: "考点管理",
+        icon: "partition",
+        hint: "版本树 + 考点盘点",
+      },
       {
         path: "/kg/merge",
         name: "合并向导",
+        icon: "merge-cells",
         hint: "merge_kp 的人机流程（写）",
       },
     ],
@@ -68,20 +133,24 @@ export const CONSOLE_MENU: ConsoleMenuGroup[] = [
   {
     key: "/g/prod",
     name: "生产管理",
+    icon: "appstore",
     children: [
       {
         path: "/sku",
         name: "SKU 台账",
+        icon: "tags",
         hint: "卖的/备着卖的册子总账",
       },
       {
         path: "/model",
         name: "考察模型",
+        icon: "experiment",
         hint: "exam_model 台账 + 族谱",
       },
       {
         path: "/output",
         name: "产物仓",
+        icon: "inbox",
         hint: "内容寻址仓里的实物件",
       },
     ],
@@ -93,10 +162,12 @@ export const CONSOLE_MENU: ConsoleMenuGroup[] = [
     //    并进去会让人以为货架上的册子和 SKU 台账是同一本账。
     key: "/g/shelf",
     name: "资料货架",
+    icon: "shop",
     children: [
       {
         path: "/shelf",
         name: "六类资料",
+        icon: "book",
         hint: "打卡/专项/试卷/讲义/练习册/课本 的总账（只读挂载 punch 库）",
       },
       {
@@ -105,11 +176,13 @@ export const CONSOLE_MENU: ConsoleMenuGroup[] = [
         //    所以叫「货架题目」而不是「题目」。
         path: "/shelf/questions",
         name: "货架题目",
+        icon: "profile",
         hint: "punch 库那 3230 道题（关键词 + 考点/题型/册 筛选）—— 与本库题库零交集",
       },
       {
         path: "/shelf/reconcile",
         name: "资料对账",
+        icon: "swap",
         hint: "货架成品 ↔ 本库 SKU / 网盘指针，差异只报不改",
       },
     ],
@@ -117,15 +190,18 @@ export const CONSOLE_MENU: ConsoleMenuGroup[] = [
   {
     key: "/g/student",
     name: "学情中心",
+    icon: "team",
     children: [
       {
         path: "/student",
         name: "学员名册",
+        icon: "idcard",
         hint: "代号名册（无真名字段）",
       },
       {
         path: "/cause",
         name: "错因管理",
+        icon: "bug",
         hint: "错因实体 + 映射 + unmapped 红旗",
       },
     ],
@@ -133,37 +209,49 @@ export const CONSOLE_MENU: ConsoleMenuGroup[] = [
   {
     key: "/g/queue",
     name: "审查队列",
+    icon: "audit",
     children: [
-      { path: "/queue", name: "处置台", hint: "所有等人拍板的东西一个入口" },
+      {
+        path: "/queue",
+        name: "处置台",
+        icon: "check-square",
+        hint: "所有等人拍板的东西一个入口",
+      },
     ],
   },
   {
     key: "/g/grading",
     name: "批改流水线",
+    icon: "form",
     children: [
       {
         path: "/grading/intake",
         name: "收卷录入",
+        icon: "cloud-upload",
         hint: "选学员 → 传图 → 提交即入队",
       },
       {
         path: "/grading/board",
         name: "批改看板",
+        icon: "project",
         hint: "审核.db（mode=ro）+ 编排台账",
       },
       {
         path: "/grading/review",
         name: "终审台",
+        icon: "solution",
         hint: "逐题 √/×/去掉 · 写全部 spawn 圣域的 审核库.py",
       },
       {
         path: "/grading/gate",
         name: "升档判据",
+        icon: "control",
         hint: "翻案率/存疑率/风险台账",
       },
       {
         path: "/grading/reports",
         name: "报告架",
+        icon: "file-done",
         hint: "已出件报告取件台",
       },
     ],
@@ -171,15 +259,18 @@ export const CONSOLE_MENU: ConsoleMenuGroup[] = [
   {
     key: "/g/sys",
     name: "系统监控",
+    icon: "monitor",
     children: [
       {
         path: "/audit",
         name: "审计日志",
+        icon: "history",
         hint: "谁在什么时候动了库",
       },
       {
         path: "/health",
         name: "备份与对账",
+        icon: "safety-certificate",
         hint: "快照 + 对账六项 + 回归",
       },
     ],
